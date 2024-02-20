@@ -200,7 +200,7 @@ def init(
     if configs_dict.get("offload", None) is None:
         configs_dict["offload"] = False
     if configs_dict.get("offload_reserve_space_size", None) is None:
-        configs_dict["offload_reserve_space_size"] = 1024**2
+        configs_dict["offload_reserve_space_size"] = 8 * 1024**3
     if configs_dict.get("use_4bit_quantization", None) is None:
         configs_dict["use_4bit_quantization"] = False
     if configs_dict.get("use_8bit_quantization", None) is None:

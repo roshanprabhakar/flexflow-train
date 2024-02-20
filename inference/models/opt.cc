@@ -96,7 +96,7 @@ void OPT::create_opt_model(FFModel &ff,
         1e-05,
         true,
         DT_NONE,
-        std::string("layers_" + std::to_string(i) + "_attention_layer_norm")
+        std::string("layers." + std::to_string(i) + ".self_attn_layer_norm")
             .c_str());
     Tensor residual = res_ln_outputs[0];
     Tensor hidden_states = res_ln_outputs[1];
@@ -122,7 +122,7 @@ void OPT::create_opt_model(FFModel &ff,
                 -0.5), /*scaling factor*/
             false,     /*qk_prod_scaling*/
             false,     /*position_bias*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            std::string("layers." + std::to_string(i) + ".self_attn")
                 .c_str() /*name*/
         );
         break;
@@ -146,7 +146,7 @@ void OPT::create_opt_model(FFModel &ff,
                 -0.5), /*scaling factor*/
             false,     /*qk_prod_scaling*/
             false,     /*position_bias*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            std::string("layers." + std::to_string(i) + ".self_attn")
                 .c_str() /*name*/
         );
         break;
@@ -170,7 +170,7 @@ void OPT::create_opt_model(FFModel &ff,
                 -0.5), /*scaling factor*/
             false,     /*qk_prod_scaling*/
             false,     /*position_bias*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            std::string("layers." + std::to_string(i) + ".self_attn")
                 .c_str() /*name*/
         );
         break;
@@ -188,8 +188,8 @@ void OPT::create_opt_model(FFModel &ff,
                                     1e-05,
                                     true,
                                     DT_NONE,
-                                    std::string("layers_" + std::to_string(i) +
-                                                "_add_bias_residual_layer_norm")
+                                    std::string("layers." + std::to_string(i) +
+                                                ".add_bias_residual_layer_norm")
                                         .c_str());
     added = res_ln_outputs[0];
     Tensor final_norm = res_ln_outputs[1];
@@ -206,7 +206,7 @@ void OPT::create_opt_model(FFModel &ff,
                  nullptr,
                  REG_MODE_NONE,
                  0.0f,
-                 std::string("layers_" + std::to_string(i) + "_fc1").c_str());
+                 std::string("layers." + std::to_string(i) + ".fc1").c_str());
     fc2 = ff.dense(fc1,
                    opt_config.hidden_size,
                    AC_MODE_NONE,
@@ -217,7 +217,7 @@ void OPT::create_opt_model(FFModel &ff,
                    nullptr,
                    REG_MODE_NONE,
                    0.0f,
-                   std::string("layers_" + std::to_string(i) + "_fc2").c_str());
+                   std::string("layers." + std::to_string(i) + ".fc2").c_str());
   }
 
   // final
@@ -244,7 +244,7 @@ void OPT::create_opt_model(FFModel &ff,
                             nullptr,
                             REG_MODE_NONE,
                             0.0f,
-                            "embed_tokens_weight_lm_head");
+                            "lm_head");
 
   Tensor output;
   if (mode == TREE_SEARCH_MODE) {
