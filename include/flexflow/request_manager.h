@@ -23,6 +23,7 @@
 #include <future>
 #include <mutex>
 #include <tokenizers_cpp.h>
+#include "suffix_decoding.h"
 
 namespace FlexFlow {
 
@@ -342,6 +343,8 @@ public:
 
   FFModel *get_ssm_model(int model_id);
 
+  void init_suffix_tree(int max_depth, std::string const &trace_filepath);
+
   void serve_spec_infer(FFModel *model);
   void serve_spec_infer_sync(FFModel *model);
   void serve_decoding(FFModel *model);
@@ -480,6 +483,8 @@ private:
 
   // Multi-model support
   std::vector<FFModel *> ssm_models;
+
+  SuffixTree *suffix_tree;
 
   // Background server handler
   Legion::Future background_server_handler;
