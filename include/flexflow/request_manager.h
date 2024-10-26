@@ -19,11 +19,11 @@
 #include "flexflow/inference.h"
 #include "flexflow/model.h"
 #include "flexflow/utils/file_loader.h"
+#include "suffix_decoding.h"
 #include <condition_variable>
 #include <future>
 #include <mutex>
 #include <tokenizers_cpp.h>
-#include "suffix_decoding.h"
 
 namespace FlexFlow {
 
@@ -343,7 +343,9 @@ public:
 
   FFModel *get_ssm_model(int model_id);
 
-  void init_suffix_tree(int max_depth, std::string const &trace_filepath);
+  void init_suffix_tree(int max_depth,
+                        std::string const &trace_filepath,
+                        std::string const &partition_name);
 
   void serve_spec_infer(FFModel *model);
   void serve_spec_infer_sync(FFModel *model);

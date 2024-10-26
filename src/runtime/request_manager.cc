@@ -469,8 +469,11 @@ size_t RequestManager::get_num_ssms() {
   return ssm_models.size();
 }
 
-void RequestManager::init_suffix_tree(int max_depth, std::string const &trace_filepath, std::string const &partition_name) {
-  // print an error if the suffix tree is already initialized or if the trace_filepath does not exist
+void RequestManager::init_suffix_tree(int max_depth,
+                                      std::string const &trace_filepath,
+                                      std::string const &partition_name) {
+  // print an error if the suffix tree is already initialized or if the
+  // trace_filepath does not exist
   if (suffix_tree != nullptr) {
     std::cerr << "Suffix tree is already initialized." << std::endl;
     assert(false);
@@ -482,7 +485,7 @@ void RequestManager::init_suffix_tree(int max_depth, std::string const &trace_fi
   Trace trace = load_trace(trace_filepath);
   // find the partition with the given name
   TracePartition partition;
-  for (const auto &p : trace.partitions) {
+  for (auto const &p : trace.partitions) {
     if (p.partition_name == partition_name) {
       partition = p;
       break;
@@ -490,20 +493,21 @@ void RequestManager::init_suffix_tree(int max_depth, std::string const &trace_fi
   }
   // print an error if the partition with the given name is not found
   if (partition.partition_name.empty()) {
-    std::cerr << "Partition with name " << partition_name << " not found in the trace." << std::endl;
+    std::cerr << "Partition with name " << partition_name
+              << " not found in the trace." << std::endl;
     assert(false);
   }
   // print an error if the tokenizer is not initialized
-  if (this->tokenizer == nullptr) {
+  if (this->tokenizer_ == nullptr) {
     std::cerr << "Tokenizer is not initialized." << std::endl;
     assert(false);
   }
   std::vector<std::vector<int>> training_dataset;
-  for (const auto& entry : partition.training_entries) {
-    std::vector<int> encoded = this->tokenizer->Encode(entry.response);
+  for (auto const &entry : partition.training_entries) {
+    std::vector<int> encoded = this->tokenizer_->Encode(entry.response);
     training_dataset.push_back(encoded);
   }
-  suffix_tree = std::make_shared<SuffixTree>(training_dataset, max_depth);
+  suffix_tree = new SuffixTree(training_dataset, max_depth);
 }
 
 RequestManager::RequestGuid
@@ -2790,7 +2794,9 @@ void RequestManager::terminate_background_server() {
     str += goodput_str;
 
     if (profiling_requests.size() != all_requests.size()) {
-      std::cerr << "profiling_requests.size()=" << profiling_requests.size() << " != all_requests.size()=" << all_requests.size() << std::endl;
+      std::cerr << "profiling_requests.size()=" << profiling_requests.size()
+                << " != all_requests.size()=" << all_requests.size()
+                << std::endl;
     }
     assert(profiling_requests.size() == all_requests.size());
     str += "\nDecoding Steps: ";
