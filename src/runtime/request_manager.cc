@@ -224,7 +224,8 @@ MatchingStrategy RequestManager::get_suffix_tree_matching_strategy() {
   return suffix_tree_matching_strategy;
 }
 
-void RequestManager::set_suffix_tree_matching_strategy(MatchingStrategy strategy) {
+void RequestManager::set_suffix_tree_matching_strategy(
+    MatchingStrategy strategy) {
   suffix_tree_matching_strategy = strategy;
 }
 
@@ -303,11 +304,12 @@ void RequestManager::set_max_tree_width(int max_tree_width) {
 }
 
 int RequestManager::get_expansion_degree() {
-  assert(expansion_degree > 0 and expansion_degree <= BatchConfig::MAX_TREE_WIDTH and
+  assert(expansion_degree > 0 and
+         expansion_degree <= BatchConfig::MAX_TREE_WIDTH and
          "Invalid expansion_degree");
   return expansion_degree;
 }
-void RequestManager::set_expansion_degree(int expansion_degree_){
+void RequestManager::set_expansion_degree(int expansion_degree_) {
   assert(expansion_degree > 0 and
          expansion_degree <= BatchConfig::MAX_TREE_WIDTH and
          "Invalid expansion_degree");
@@ -801,12 +803,14 @@ bool isPrefixAndRemove(std::vector<int> const &prefix, std::vector<int> &vec) {
   return false;
 }
 
-void RequestManager::insert_completed_request_into_suffix_tree(int batch_index) {
+void RequestManager::insert_completed_request_into_suffix_tree(
+    int batch_index) {
   assert(suffix_tree != nullptr);
   assert(suffix_tree_online_tree_update == true);
   RequestGuid guid = guid_of_requests[batch_index];
   Request &request = all_requests[guid];
-  std::vector<int> output_tokens = std::vector<int>(request.tokens.end() - request.decode_length(), request.tokens.end());
+  std::vector<int> output_tokens = std::vector<int>(
+      request.tokens.end() - request.decode_length(), request.tokens.end());
   assert(output_tokens.size() == request.decode_length());
   if (output_tokens.size() > 0) {
     suffix_tree->insert(output_tokens);
@@ -962,7 +966,8 @@ void RequestManager::update_inference_results(InferenceResult const &result) {
 
   switch (request_manager_status) {
     case PREFILLING:
-      if (decoding_mode == INCREMENTAL_DECODING) {
+      if (decoding_mode == INCREMENTAL_DECODING ||
+          decoding_mode == SUFFIX_DECODING) {
         // This indicates that the prefilling of the requests finishes
         bool all_prefilled = update_llm_prefill_results(result);
         // Check if there are more empty slots
@@ -1020,19 +1025,13 @@ void RequestManager::update_inference_results(InferenceResult const &result) {
       }
       break;
     case DECODING: {
-      bool request_completed = update_llm_decode_results(result);
+      bool request_completed = (decoding_mode == INCREMENTAL_DECODING)
+                                   ? update_llm_decode_results(result)
+                                   : update_llm_suffix_decoding_results(result);
       if (load_pending_request_to_batch()) {
         request_manager_status = PREFILLING;
       } else {
         request_manager_status = DECODING;
-      }
-    } break;
-    case SUFFIX_DECODING: {
-      bool request_completed = update_llm_verify_results(result);
-      if (load_pending_request_to_batch()) {
-        request_manager_status = PREFILLING;
-      } else {
-        request_manager_status = SUFFIX_DECODING;
       }
     } break;
     case LLM_VERIFY: {
@@ -1202,7 +1201,8 @@ BatchConfig RequestManager::prepare_next_batch() {
   }
   switch (request_manager_status) {
     case PREFILLING:
-      if (decoding_mode == INCREMENTAL_DECODING || decoding_mode == SUFFIX_DECODING) {
+      if (decoding_mode == INCREMENTAL_DECODING ||
+          decoding_mode == SUFFIX_DECODING) {
         return prepare_llm_prefilling_batch();
       } else if (decoding_mode == SPECULATIVE_DECODING) {
         if (prefill_model == SSM) {
@@ -1222,7 +1222,13 @@ BatchConfig RequestManager::prepare_next_batch() {
       }
       break;
     case DECODING:
-      return prepare_decoding_batch();
+      if (decoding_mode == INCREMENTAL_DECODING) {
+        return prepare_decoding_batch();
+      } else if (decoding_mode == SUFFIX_DECODING) {
+        return prepare_suffix_decoding_batch_config();
+      } else {
+        assert(false && "Invalid inference mode.");
+      }
     case SSM_SPEC:
       if (current_ssm_step == 0) {
         return prepare_first_spec_batch_config();
@@ -1233,8 +1239,7 @@ BatchConfig RequestManager::prepare_next_batch() {
         return BatchConfig();
       }
     case LLM_VERIFY:
-      return prepare_verify_batch_config_sd();  
-      // return prepare_verify_batch_config();
+      return prepare_verify_batch_config();
     default:
       std::cout << "Invalid request manager status: " << request_manager_status
                 << std::endl;
@@ -1257,7 +1262,8 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
   BatchConfig bc;
   if (decoding_mode == INCREMENTAL_DECODING) {
     bc.inference_mode = InferenceMode::INC_DECODING_MODE;
-  } else if (decoding_mode == SPECULATIVE_DECODING || decoding_mode == SUFFIX_DECODING) {
+  } else if (decoding_mode == SPECULATIVE_DECODING ||
+             decoding_mode == SUFFIX_DECODING) {
     bc.inference_mode = InferenceMode::TREE_VERIFY_MODE;
   }
   bc.prompt_phase = true;
@@ -1284,7 +1290,8 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
       if (request->llm_prefill_len == 0) {
         assert(request->prompt_tree == nullptr);
         assert(this->suffix_tree_max_depth > 0);
-        request->prompt_tree = new SuffixTree({{}}, this->suffix_tree_max_depth);
+        request->prompt_tree =
+            new SuffixTree({{}}, this->suffix_tree_max_depth);
       } else {
         assert(request->prompt_tree != nullptr);
       }
@@ -1751,7 +1758,8 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
     }
     if (verbose) {
       // print token tree
-      std::cout << "Token tree for request " << request_index << ": " << std::endl;
+      std::cout << "Token tree for request " << request_index << ": "
+                << std::endl;
       std::cout << token_tree << std::endl;
     }
     new_bc.requestsInfo[request_index].num_tokens_in_batch = token_tree_index;
@@ -1775,10 +1783,56 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
   return new_bc;
 }
 
-BatchConfig RequestManager::prepare_verify_batch_config_sd() {
+void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
+  request.suffix_decoding_best_token_ids.clear();
+  request.suffix_decoding_best_parents.clear();
+
+  int max_prefix_length = std::min(static_cast<int>(request.tokens.size()),
+                                   this->get_suffix_tree_max_depth());
+  if (max_prefix_length == 0) {
+    return;
+  }
+
+  float best_score = 0;
+  // int best_prefix_length = 0;
+
+  // Get best candidate from the suffix tree
+  for (int length = 1; length <= max_prefix_length; length++) {
+    std::vector<int> prefix(request.tokens.end() - length,
+                            request.tokens.end());
+
+    // Try prompt tree
+    auto [p_token_ids, p_parents, p_score] =
+        request.prompt_tree->find_best_path_or_tree(
+            prefix,
+            this->get_suffix_tree_matching_strategy(),
+            this->get_suffix_tree_max_spec_factor());
+    if (p_score > best_score) {
+      request.suffix_decoding_best_token_ids = p_token_ids;
+      request.suffix_decoding_best_parents = p_parents;
+      // best_prefix_length = length;
+      best_score = p_score;
+    }
+
+    // Try suffix tree
+    auto [s_token_ids, s_parents, s_score] =
+        suffix_tree->find_best_path_or_tree(
+            prefix,
+            this->get_suffix_tree_matching_strategy(),
+            this->get_suffix_tree_max_spec_factor());
+    if (s_score > best_score) {
+      request.suffix_decoding_best_token_ids = s_token_ids;
+      request.suffix_decoding_best_parents = s_parents;
+      // best_prefix_length = length;
+      best_score = s_score;
+    }
+  }
+}
+
+BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
   if (verbose) {
-    std::cout
-        << "\n############### prepare_verify_batch_config (SuffixDecoding) ###############\n";
+    std::cout << "\n############### prepare_suffix_decoding_batch_config "
+                 "###############\n";
   }
   // This method does the following:
   // 1. Commit the verified tokens in the last iteration through the
@@ -1838,82 +1892,50 @@ BatchConfig RequestManager::prepare_verify_batch_config_sd() {
       new_bc.num_tokens_to_commit++;
     }
 
-    // Load the tokens on the token tree that are not yet pruned to
-    // BatchConfig.tokensInfo.
-    // TokenTree &token_tree = request.speculative_token_trees[0];
-    // int token_tree_index = 0;
-    // int layer_index = 0;
-    // for (auto const &tree_layer : token_tree.tree_layers) {
-    //   for (auto const &tree_node : tree_layer) {
-    //     if (tree_node->included == true) {
-    //       new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
-    //       new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
-    //           request.tokens.size() - 1 + token_tree_index;
-    //       new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
-    //           request.tokens.size() - 1 + layer_index;
-    //       new_bc.tokensInfo[new_bc.num_tokens].token_id = tree_node->id;
-    //       new_bc.num_tokens++;
-    //       token_tree_index++;
-    //     }
-    //   }
-    //   layer_index++;
-    // }
     // get tree of tokens from suffix tree
-    int max_prefix_length = std::min(static_cast<int>(request.tokens.size()), this->get_suffix_tree_max_depth());
-    float best_score = 0;
-    std::vector<int> best_token_ids;
-    std::vector<int> best_parents;
-    int best_prefix_length = 0;
-
-    // Get best candidate from the suffix tree
-    for (int length = 1; length <= max_prefix_length; length++) {
-      std::vector<int> prefix(request.tokens.end() - length, request.tokens.end());
-      
-      // Try prompt tree
-      auto [p_token_ids, p_parents, p_score] = request.prompt_tree->find_best_path_or_tree(prefix, this->get_suffix_tree_matching_strategy(), this->get_suffix_tree_max_spec_factor());
-      if (p_score > best_score) {
-        best_token_ids = p_token_ids;
-        best_parents = p_parents;
-        best_prefix_length = length;
-        best_score = p_score;
-      }
-
-      // Try suffix tree
-      auto [s_token_ids, s_parents, s_score] = suffix_tree->find_best_path_or_tree(prefix, this->get_suffix_tree_matching_strategy(), this->get_suffix_tree_max_spec_factor());
-      if (s_score > best_score) {
-          best_token_ids = s_token_ids;
-          best_parents = s_parents;
-          best_prefix_length = length;
-          best_score = s_score;
-      }
-    }
+    populate_best_suffix_tree_candidates(request);
 
     // add bonus token to the batch config
     new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
-    new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request = request.tokens.size() - 1;
-    new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = request.tokens.size() - 1;
+    new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
+        request.tokens.size() - 1;
+    new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
+        request.tokens.size() - 1;
     new_bc.tokensInfo[new_bc.num_tokens].token_id = request.tokens.back();
     new_bc.num_tokens++;
     // add candidate tokens to the batch config
-    for (int i=0; i< best_token_ids.size(); i++) {
+    for (int i = 0; i < request.suffix_decoding_best_token_ids.size(); i++) {
       new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
-      new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request = request.tokens.size() + i;
-      new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = request.tokens.size() + i;
-      new_bc.tokensInfo[new_bc.num_tokens].token_id = best_token_ids[i];
+      new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
+          request.tokens.size() + i;
+      new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
+          request.tokens.size() + i;
+      new_bc.tokensInfo[new_bc.num_tokens].token_id =
+          request.suffix_decoding_best_token_ids[i];
       new_bc.num_tokens++;
     }
-    new_bc.requestsInfo[request_index].num_tokens_in_batch = best_token_ids.size() +1; // +1 for the bonus token
-    request.first_token_offset_in_batch = new_bc.num_tokens - (best_token_ids.size() +1); // -1 for the bonus token
-    request.num_tokens_in_batch = best_token_ids.size() + 1; // +1 for the bonus token
+    new_bc.requestsInfo[request_index].num_tokens_in_batch =
+        request.suffix_decoding_best_token_ids.size() +
+        1; // +1 for the bonus token
+    request.first_token_offset_in_batch =
+        new_bc.num_tokens - (request.suffix_decoding_best_token_ids.size() +
+                             1); // -1 for the bonus token
+    request.num_tokens_in_batch =
+        request.suffix_decoding_best_token_ids.size() +
+        1; // +1 for the bonus token
 
     // Causal mask
     new_bc.causalMask[request_index] = BatchConfig::BitMask();
-    new_bc.causalMask[request_index].non_tree_cache_size = new_bc.requestsInfo[request_index].first_token_index_in_request;
-    assert(best_parents.size() == best_token_ids.size());
-    for (int i=0; i<best_parents.size(); i++) {
-      assert(best_parents[i] < i);
-      if (best_parents[i] >= 0) {
-        new_bc.causalMask[request_index].bit_mask[i] = new_bc.causalMask[request_index].bit_mask[best_parents[i]];
+    new_bc.causalMask[request_index].non_tree_cache_size =
+        new_bc.requestsInfo[request_index].first_token_index_in_request;
+    assert(request.suffix_decoding_best_parents.size() ==
+           request.suffix_decoding_best_token_ids.size());
+    for (int i = 0; i < request.suffix_decoding_best_parents.size(); i++) {
+      assert(request.suffix_decoding_best_parents[i] < i);
+      if (request.suffix_decoding_best_parents[i] >= 0) {
+        new_bc.causalMask[request_index].bit_mask[i] =
+            new_bc.causalMask[request_index]
+                .bit_mask[request.suffix_decoding_best_parents[i]];
       }
       new_bc.causalMask[request_index].bit_mask[i].set_bit(i);
     }
@@ -1923,19 +1945,9 @@ BatchConfig RequestManager::prepare_verify_batch_config_sd() {
   }
 
   if (verbose) {
-    std::cout << "prepare_verify_batch_config NEW batchconfig:" << std::endl;
+    std::cout << "prepare_suffix_decoding_batch_config NEW batchconfig:"
+              << std::endl;
     new_bc.print();
-    // print speculative token trees
-
-    for (int request_index = 0; request_index < get_max_requests_per_batch(); ++request_index) {
-      if (!request_available[request_index]) {
-        continue;
-      }
-      int guid = guid_of_requests[request_index];
-      Request &request = all_requests[guid];
-      std::cout << "Token tree for request " << request_index << ": " << std::endl;
-      std::cout << request.speculative_token_trees[0] << std::endl;
-    }
   }
   profiling.llm_step_start = Realm::Clock::current_time_in_microseconds();
   return new_bc;
@@ -2035,7 +2047,8 @@ bool RequestManager::update_llm_verify_results(
       request_update_attainment(request_index, attained);
       request_completed = true;
       request_complete_clean_up(request_index);
-      if (decoding_mode == SUFFIX_DECODING && get_suffix_tree_online_tree_update()) {
+      if (decoding_mode == SUFFIX_DECODING &&
+          get_suffix_tree_online_tree_update()) {
         insert_completed_request_into_suffix_tree(request_index);
       }
     } else if (!current_attained and slo_violation_early_termination) {
@@ -2045,6 +2058,106 @@ bool RequestManager::update_llm_verify_results(
       request_complete_clean_up(request_index);
     } else {
       update_bitmask_prompt(guid, request.committed_tokens.size() - 1);
+    }
+  }
+
+  // Some requests may be completed after appending the verified tokens.
+  // If there is a request completed, return true.
+  return request_completed;
+}
+
+bool RequestManager::update_llm_suffix_decoding_results(
+    InferenceResult const &llm_verify_result) {
+  assert((decoding_mode == SUFFIX_DECODING) &&
+         "The decoding mode should be suffix decoding");
+  assert(!speculative_sampling &&
+         "Speculative sampling is not supported yet for suffix decoding");
+  // Update llm_cache_size with the last committed_tokens, and clear
+  // committed_tokens
+  int nb_requests_decoded = 0;
+  for (int request_index = 0; request_index < get_max_requests_per_batch();
+       ++request_index) {
+    if (!request_available[request_index]) {
+      // Request in this slot is unavailable
+      continue;
+    }
+    int guid = guid_of_requests[request_index];
+    Request &request = all_requests[guid];
+    assert(request.status == Request::RUNNING);
+    request.llm_cache_size += request.committed_tokens.size() - 1;
+    request.committed_tokens.clear();
+
+    profiling_requests[guid].llm_decoding_steps++;
+    nb_requests_decoded++;
+  }
+
+  // Process the LLM results greedily
+  get_verify_results_suffix_decoding(llm_verify_result);
+
+  long long int current_time = Realm::Clock::current_time_in_microseconds();
+  profiling.llm_step_times.push_back((current_time - profiling.llm_step_start) *
+                                     1e-3);
+  profiling.requests_per_step.push_back(nb_requests_decoded);
+
+  bool request_completed = false;
+
+  // Iterate over the requests
+  for (int request_index = 0; request_index < get_max_requests_per_batch();
+       ++request_index) {
+    if (!request_available[request_index]) {
+      // Request in this slot is unavailable
+      continue;
+    }
+    int guid = guid_of_requests[request_index];
+    Request &request = all_requests[guid];
+    assert(request.status == Request::RUNNING);
+    // if (verbose) {
+    //   std::cout << "Request " << guid << " token tree: " << std::endl;
+    //   std::cout << request.speculative_token_trees[0];
+    // }
+
+    request.decode_latency_ms =
+        (current_time - profiling_requests[guid].start_decoding_time) * 1e-3;
+    bool attained =
+        request.decode_latency_ms <= get_request_expected_latency(request);
+    bool current_attained =
+        request.decode_latency_ms <=
+        get_request_expected_latency(request) +
+            get_baseline_latency() * request.get_slo_ratio() * 6;
+
+    // Initialize the token tree for the request
+    // init_token_tree(guid);
+    assert(!request.committed_tokens.empty() &&
+           "The committed tokens should not be empty.");
+    // Add the last committed token as the root of the speculative token tree
+    // add_root_to_spec_token_tree(guid,
+    // request.committed_tokens.back().token_id);
+
+    // Check if the request is completed. If its completed, clean up the
+    // metainfo stored in the RequestManager. Otherwise, update its bitmask.
+    bool eos_token_found = false;
+    for (auto const &committed_token : request.committed_tokens) {
+      if (committed_token.token_id == eos_token_id) {
+        eos_token_found = true;
+        break;
+      }
+    }
+    if (eos_token_found or request.decode_length() >= get_max_output_length() or
+        request.tokens.size() >= get_max_sequence_length()) {
+      // Request is completed
+      request_update_attainment(request_index, attained);
+      request_completed = true;
+      request_complete_clean_up(request_index);
+      if (get_suffix_tree_online_tree_update()) {
+        insert_completed_request_into_suffix_tree(request_index);
+      }
+    } else if (!current_attained and slo_violation_early_termination) {
+      // Early drop that request
+      request_update_attainment(request_index, attained);
+      request_completed = true;
+      request_complete_clean_up(request_index);
+    } else {
+      // update_bitmask_prompt(guid, request.committed_tokens.size() - 1);
     }
   }
 
@@ -2568,6 +2681,103 @@ void RequestManager::get_verify_results_greedy(
     request.tokens.push_back(
         llm_verify_result
             .token_ids[llm_result_offset + last_accepted_token_index]);
+
+    total_nb_generated_tokens += request.committed_tokens.size() - 1;
+    if (verbose) {
+      std::cout << "Request " << request.guid << " committed tokens: ";
+      for (auto const &committed_token : request.committed_tokens) {
+        std::cout << committed_token.token_id << " ("
+                  << tokenizer_->Decode({committed_token.token_id}) << ") ";
+      }
+      std::cout << std::endl;
+      std::string output = this->tokenizer_->Decode(request.tokens);
+      std::cout << "Output sequence: " << output << std::endl;
+    }
+  }
+  profiling.generated_tokens_per_step.push_back(total_nb_generated_tokens);
+}
+
+void RequestManager::get_verify_results_suffix_decoding(
+    InferenceResult const &llm_verify_result) {
+  // This function maintain the generated token list of the request and the
+  // committed tokens.
+  int total_nb_generated_tokens = 0;
+  for (int request_index = 0; request_index < get_max_requests_per_batch();
+       ++request_index) {
+    if (!request_available[request_index]) {
+      continue;
+    }
+    RequestGuid guid = guid_of_requests[request_index];
+    Request &request = all_requests[guid];
+    assert(request.status == Request::RUNNING);
+
+    int llm_result_offset = request.first_token_offset_in_batch;
+    int llm_cache_size =
+        request.tokens.size() - 1; // index of the token in the LLM's cache
+    int committed_token_index =
+        request.tokens.size() -
+        1; // committed_token.to_index, also absolute depth in request
+
+    // 1. handle bonus token from previous iteration. Don't add it to
+    // request.tokens because it has already been added.
+    assert(llm_verify_result.token_ids[llm_result_offset] ==
+           request.tokens.back());
+    request.committed_tokens.push_back(Request::CommittedToken(
+        llm_cache_size, committed_token_index, request.tokens.back()));
+    committed_token_index++;
+
+    // 2. walk through best_tokens, compare them with
+    // llm_verify_result.token_ids, and add each match to the committed_tokens
+    // as well as request.tokens.
+    assert(request.suffix_decoding_best_token_ids.size() > 0);
+    assert(
+        request.suffix_decoding_best_token_ids[0] ==
+        request.tokens
+            .back()); // first entry is the bonus token from previous iteration
+    assert(request.suffix_decoding_best_parents[0] ==
+           -1); // first entry has no parent
+
+    int last_accepted_token_index = 0; // index of the last accepted token in
+                                       // the suffix_decoding_best_token_ids
+    for (int i = 1; i < request.suffix_decoding_best_token_ids.size(); i++) {
+      int current_token = request.suffix_decoding_best_token_ids[i];
+      int current_parent_idx = request.suffix_decoding_best_parents[i];
+      assert(current_parent_idx >= 0 && current_parent_idx < i);
+      int current_parent_token =
+          request.suffix_decoding_best_token_ids[current_parent_idx];
+      int current_result = llm_verify_result.token_ids[llm_result_offset + i];
+      int last_accepted_token =
+          request.suffix_decoding_best_token_ids[last_accepted_token_index];
+      assert(last_accepted_token == request.tokens.back());
+      int last_parent_idx =
+          request.suffix_decoding_best_parents[last_accepted_token_index];
+
+      // Accept token if:
+      //  (1) it matches the result,
+      //  (2) last accepted token is the token's parent
+      //  (3) no other token has been accepted in this layer
+      if (current_token == current_result &&
+          last_accepted_token == current_parent_token &&
+          last_parent_idx != current_parent_idx) {
+        request.committed_tokens.push_back(Request::CommittedToken(
+            llm_cache_size + i, committed_token_index, current_token));
+        request.tokens.push_back(current_token);
+        committed_token_index++;
+        last_accepted_token_index = i; // update last accepted token index
+      }
+    }
+
+    // 3. add the new bonus token to committed_tokens and request.tokens.
+    request.committed_tokens.push_back(Request::CommittedToken(
+        -1,
+        committed_token_index,
+        llm_verify_result
+            .token_ids[llm_result_offset +
+                       request.suffix_decoding_best_token_ids.size() - 1]));
+    request.tokens.push_back(
+        llm_verify_result
+            .token_ids[llm_result_offset +
+                       request.suffix_decoding_best_token_ids.size() - 1]);
 
     total_nb_generated_tokens += request.committed_tokens.size() - 1;
     if (verbose) {
@@ -3217,7 +3427,8 @@ void RequestManager::add_tokens_to_spec_token_tree(
 void RequestManager::add_tokens_to_spec_token_tree_old_version(
     InferenceResult const &ssm_inference_result) {
 
-  std::vector<int> tree_width_vector = {1, 1, this->expansion_degree, 1, 1, 1, 1, 1};
+  std::vector<int> tree_width_vector = {
+      1, 1, this->expansion_degree, 1, 1, 1, 1, 1};
 
   int expand_width = tree_width_vector[current_ssm_step - 1];
 

@@ -212,10 +212,11 @@ void get_model_meta(FilePaths &file_paths,
               << std::endl;
     assert(false);
   }
-  nlohmann::ordered_json llm_model_config = nlohmann::ordered_json::parse(llm_config_file_handle,
-                                      /*parser_callback_t */ nullptr,
-                                      /*allow_exceptions */ true,
-                                      /*ignore_comments */ true);
+  nlohmann::ordered_json llm_model_config =
+      nlohmann::ordered_json::parse(llm_config_file_handle,
+                                    /*parser_callback_t */ nullptr,
+                                    /*allow_exceptions */ true,
+                                    /*ignore_comments */ true);
 
   model_metadata.llm_model_type = ModelType::UNKNOWN;
   auto architectures = llm_model_config["architectures"];
@@ -263,10 +264,11 @@ void get_model_meta(FilePaths &file_paths,
                 << std::endl;
       assert(false);
     }
-    nlohmann::ordered_json ssm_model_config = nlohmann::ordered_json::parse(ssm_config_file_handle,
-                                        /*parser_callback_t */ nullptr,
-                                        /*allow_exceptions */ true,
-                                        /*ignore_comments */ true);
+    nlohmann::ordered_json ssm_model_config =
+        nlohmann::ordered_json::parse(ssm_config_file_handle,
+                                      /*parser_callback_t */ nullptr,
+                                      /*allow_exceptions */ true,
+                                      /*ignore_comments */ true);
 
     ModelType ssm_model_type = ModelType::UNKNOWN;
     auto architectures = ssm_model_config["architectures"];
@@ -364,7 +366,7 @@ void FlexFlow::top_level_task(Task const *task,
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
- 
+
   std::ifstream input_file(file_paths.trace_file_path);
   assert(input_file.good() && "Prompt file does not exist.");
   nlohmann::ordered_json j = nlohmann::ordered_json::parse(input_file);

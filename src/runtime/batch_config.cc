@@ -125,12 +125,12 @@ std::ostream &operator<<(std::ostream &os,
   return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const BatchConfig::BitMask& bm) {
+std::ostream &operator<<(std::ostream &os, BatchConfig::BitMask const &bm) {
   os << "BitMask {\n"
-  << "  non_tree_cache_size: " << bm.non_tree_cache_size << "\n"
-  << "  tree_or_prompt_size: " << bm.tree_or_prompt_size << "\n"
-  << "  current_layer_size: " << bm.current_layer_size << "\n"
-  << "  bit_mask: [" << bm.bit_mask << "]\n";
+     << "  non_tree_cache_size: " << bm.non_tree_cache_size << "\n"
+     << "  tree_or_prompt_size: " << bm.tree_or_prompt_size << "\n"
+     << "  current_layer_size: " << bm.current_layer_size << "\n"
+     << "  bit_mask: [" << bm.bit_mask << "]\n";
   os << "}";
   return os;
 }

@@ -151,6 +151,8 @@ struct Request {
 
   // TokenTree speculative_token_tree;
   SuffixTree *prompt_tree = nullptr;
+  std::vector<int> suffix_decoding_best_token_ids;
+  std::vector<int> suffix_decoding_best_parents;
   std::vector<TokenTree> speculative_token_trees;
   // To make request manager stateful, we need to store the causal mask here
   BatchConfig::BitMask causal_mask;
@@ -357,7 +359,8 @@ public:
   void set_suffix_tree_online_tree_update(bool online_update);
   void init_suffix_tree(std::string const &trace_filepath,
                         std::string const &partition_name);
-  void insert_completed_request_into_suffix_tree(int batch_index); // for suffix tree
+  void insert_completed_request_into_suffix_tree(
+      int batch_index); // for suffix tree
 
   void serve_spec_infer(FFModel *model);
   void serve_spec_infer_sync(FFModel *model);
@@ -441,7 +444,7 @@ private:
   int max_tree_depth;
   int max_tree_width;
   int k;
-  int expansion_degree=3;
+  int expansion_degree = 3;
   // Profile based latency
   double baseline_latency_ms = 43;
   double ssm_spec_latency_ms = 17;
@@ -544,10 +547,17 @@ private:
   BatchConfig prepare_first_spec_batch_config();
   BatchConfig prepare_verify_batch_config();
   BatchConfig prepare_verify_batch_config_sd();
+  /* ---------- Suffix Decoding Helper Functions ---------- */
+  bool update_llm_suffix_decoding_results(
+      InferenceResult const &llm_verify_result);
+  void populate_best_suffix_tree_candidates(Request &request);
+  BatchConfig prepare_suffix_decoding_batch_config();
 
   // LLM result verification
   void get_verify_results_greedy(InferenceResult const &llm_verify_result);
   void get_verify_results_sample(InferenceResult const &llm_verify_result);
+  void get_verify_results_suffix_decoding(
+      InferenceResult const &llm_verify_result);
 
   // Bitmask related
   void init_bitmask_prompt(RequestGuid guid, int prompt_length);

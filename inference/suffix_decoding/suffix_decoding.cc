@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include "suffix_decoding.h"
 #include "flexflow/inference.h"
 #include "flexflow/request_manager.h"
 #include "models/falcon.h"
@@ -23,7 +24,6 @@
 #include <filesystem>
 #include <string>
 #include <wordexp.h>
-#include "suffix_decoding.h"
 
 using namespace FlexFlow;
 using namespace Legion;
@@ -198,10 +198,11 @@ void get_model_meta(FilePaths &file_paths,
               << std::endl;
     assert(false);
   }
-  nlohmann::ordered_json llm_model_config = nlohmann::ordered_json::parse(llm_config_file_handle,
-                                      /*parser_callback_t */ nullptr,
-                                      /*allow_exceptions */ true,
-                                      /*ignore_comments */ true);
+  nlohmann::ordered_json llm_model_config =
+      nlohmann::ordered_json::parse(llm_config_file_handle,
+                                    /*parser_callback_t */ nullptr,
+                                    /*allow_exceptions */ true,
+                                    /*ignore_comments */ true);
 
   model_metadata.llm_model_type = ModelType::UNKNOWN;
   auto architectures = llm_model_config["architectures"];
@@ -252,9 +253,8 @@ void FlexFlow::top_level_task(Task const *task,
   int max_tree_depth = 16;
   float max_spec_factor = 1.0;
   bool online_tree_update = true;
-  RequestManager::DecodingMode decoding_mode =
-      RequestManager::SUFFIX_DECODING;
-  
+  RequestManager::DecodingMode decoding_mode = RequestManager::SUFFIX_DECODING;
+
   bool do_sample = false;
   int sampling_seed = 0;
   double request_per_second = 1.0;
@@ -365,8 +365,12 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_equal_schedule(false);
   rm->register_output_filepath(file_paths.log_file_path);
   // SuffixTree
-  assert(matching_strategy == "linear_token_path" || matching_strategy == "dynamic_token_tree");
-  rm->set_suffix_tree_matching_strategy(matching_strategy == "linear_token_path" ? MatchingStrategy::LINEAR_TOKEN_PATH : MatchingStrategy::DYNAMIC_TOKEN_TREE);
+  assert(matching_strategy == "linear_token_path" ||
+         matching_strategy == "dynamic_token_tree");
+  rm->set_suffix_tree_matching_strategy(
+      matching_strategy == "linear_token_path"
+          ? MatchingStrategy::LINEAR_TOKEN_PATH
+          : MatchingStrategy::DYNAMIC_TOKEN_TREE);
   rm->set_suffix_tree_max_depth(max_tree_depth);
   rm->set_suffix_tree_max_spec_factor(max_spec_factor);
   rm->set_suffix_tree_online_tree_update(online_tree_update);
@@ -467,7 +471,8 @@ void FlexFlow::top_level_task(Task const *task,
   // // get profliling results
   // std::unordered_map<RequestGuid, RequestProfileInfo> profiling_results =
   //     rm->get_requests_profiling();
-  // std::unordered_map<RequestGuid, GenerationResult> request_generation_results =
+  // std::unordered_map<RequestGuid, GenerationResult>
+  // request_generation_results =
   //     rm->get_request_generation_results();
   // // save profiling results to csv file
   // std::string header =
@@ -496,7 +501,8 @@ void FlexFlow::top_level_task(Task const *task,
   //   double prefilling_time_ms = 0.0;
   //   if (profile_info.start_decoding_time != 0) {
   //     prefilling_time_ms =
-  //         (profile_info.start_decoding_time - profile_info.start_time) / 1000.0;
+  //         (profile_info.start_decoding_time - profile_info.start_time) /
+  //         1000.0;
   //   } else {
   //     prefilling_time_ms =
   //         (profile_info.finish_time - profile_info.start_time) / 1000.0;
@@ -526,7 +532,8 @@ void FlexFlow::top_level_task(Task const *task,
   // for (int num_tokens : profile_info.generated_tokens_per_step) {
   //   total_tokens += num_tokens;
   // }
-  // double throughput_tokens_per_sec = (double)total_tokens / (total_time / 1e6);
+  // double throughput_tokens_per_sec = (double)total_tokens / (total_time /
+  // 1e6);
   // // mean generated tokens per step
   // double mean_generated_tokens_per_step =
   //     (double)std::accumulate(profile_info.generated_tokens_per_step.begin(),
