@@ -150,6 +150,7 @@ struct Request {
   std::vector<BatchConfig::TokenId> tokens;
 
   // TokenTree speculative_token_tree;
+  SuffixTree *prompt_tree = nullptr;
   std::vector<TokenTree> speculative_token_trees;
   // To make request manager stateful, we need to store the causal mask here
   BatchConfig::BitMask causal_mask;
@@ -266,6 +267,7 @@ public:
     DECODING = 1002,
     SSM_SPEC = 1003,
     LLM_VERIFY = 1004,
+    SUFFIX_SPEC = 1005,
   };
   enum BackgroundServerStatus {
     INITIALIZED = 2001,
@@ -275,6 +277,7 @@ public:
   enum DecodingMode {
     INCREMENTAL_DECODING = 3001,
     SPECULATIVE_DECODING = 3002,
+    SUFFIX_DECODING = 3003,
   };
   enum PrefillModel {
     LLM = 4001,
@@ -342,10 +345,10 @@ public:
   void register_output_filepath(std::string const &);
 
   FFModel *get_ssm_model(int model_id);
-
-  void init_suffix_tree(int max_depth,
-                        std::string const &trace_filepath,
+  void set_suffix_tree_max_depth(int max_depth);
+  void init_suffix_tree(std::string const &trace_filepath,
                         std::string const &partition_name);
+  void insert_completed_request_into_suffix_tree(int batch_index); // for suffix tree
 
   void serve_spec_infer(FFModel *model);
   void serve_spec_infer_sync(FFModel *model);
@@ -486,7 +489,8 @@ private:
   // Multi-model support
   std::vector<FFModel *> ssm_models;
 
-  SuffixTree *suffix_tree;
+  int suffix_tree_max_depth = -1; // max depth of the suffix tree
+  SuffixTree *suffix_tree = nullptr;
 
   // Background server handler
   Legion::Future background_server_handler;
@@ -526,6 +530,7 @@ private:
   // cache of the small model.
   BatchConfig prepare_first_spec_batch_config();
   BatchConfig prepare_verify_batch_config();
+  BatchConfig prepare_verify_batch_config_sd();
 
   // LLM result verification
   void get_verify_results_greedy(InferenceResult const &llm_verify_result);

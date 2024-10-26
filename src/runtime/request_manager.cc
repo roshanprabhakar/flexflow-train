@@ -208,6 +208,13 @@ void RequestManager::set_decoding_mode(DecodingMode mode) {
   decoding_mode = mode;
 }
 
+void RequestManager::set_suffix_tree_max_depth(int max_depth) {
+  assert(max_depth > 0);
+  assert(suffix_tree_max_depth == -1);
+  assert(decoding_mode == SUFFIX_DECODING);
+  suffix_tree_max_depth = max_depth;
+}
+
 void RequestManager::set_verbose(bool verbose_) {
   verbose = verbose_;
 }
@@ -469,13 +476,17 @@ size_t RequestManager::get_num_ssms() {
   return ssm_models.size();
 }
 
-void RequestManager::init_suffix_tree(int max_depth,
-                                      std::string const &trace_filepath,
+void RequestManager::init_suffix_tree(std::string const &trace_filepath,
                                       std::string const &partition_name) {
   // print an error if the suffix tree is already initialized or if the
   // trace_filepath does not exist
   if (suffix_tree != nullptr) {
     std::cerr << "Suffix tree is already initialized." << std::endl;
+    assert(false);
+  }
+  if (suffix_tree_max_depth <= 0) {
+    std::cerr << "Invalid max depth for suffix tree: " << suffix_tree_max_depth
+              << std::endl;
     assert(false);
   }
   if (!std::filesystem::exists(trace_filepath)) {
@@ -507,7 +518,7 @@ void RequestManager::init_suffix_tree(int max_depth,
     std::vector<int> encoded = this->tokenizer_->Encode(entry.response);
     training_dataset.push_back(encoded);
   }
-  suffix_tree = new SuffixTree(training_dataset, max_depth);
+  suffix_tree = new SuffixTree(training_dataset, suffix_tree_max_depth);
 }
 
 RequestManager::RequestGuid
@@ -747,6 +758,16 @@ bool isPrefixAndRemove(std::vector<int> const &prefix, std::vector<int> &vec) {
   return false;
 }
 
+void RequestManager::insert_completed_request_into_suffix_tree(int batch_index) {
+  assert(suffix_tree != nullptr);
+  RequestGuid guid = guid_of_requests[batch_index];
+  Request &request = all_requests[guid];
+  std::vector<int> output_tokens = std::vector<int>(request.tokens.end() - request.decode_length(), request.tokens.end());
+  assert(output_tokens.size() == request.decode_length());
+  if (output_tokens.size() > 0) {
+    suffix_tree->insert(output_tokens);
+  }
+}
 void RequestManager::request_complete_clean_up(int batch_index) {
   RequestGuid guid = guid_of_requests[batch_index];
   profiling_requests[guid].finish_time =
@@ -1129,7 +1150,7 @@ BatchConfig RequestManager::prepare_next_batch() {
   }
   switch (request_manager_status) {
     case PREFILLING:
-      if (decoding_mode == INCREMENTAL_DECODING) {
+      if (decoding_mode == INCREMENTAL_DECODING || decoding_mode == SUFFIX_DECODING) {
         return prepare_llm_prefilling_batch();
       } else if (decoding_mode == SPECULATIVE_DECODING) {
         if (prefill_model == SSM) {
@@ -1159,6 +1180,8 @@ BatchConfig RequestManager::prepare_next_batch() {
         // Return an empty batch config
         return BatchConfig();
       }
+    case SUFFIX_SPEC:
+      return prepare_verify_batch_config_sd();
     case LLM_VERIFY:
       return prepare_verify_batch_config();
     default:
@@ -1183,7 +1206,7 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
   BatchConfig bc;
   if (decoding_mode == INCREMENTAL_DECODING) {
     bc.inference_mode = InferenceMode::INC_DECODING_MODE;
-  } else if (decoding_mode == SPECULATIVE_DECODING) {
+  } else if (decoding_mode == SPECULATIVE_DECODING || decoding_mode == SUFFIX_DECODING) {
     bc.inference_mode = InferenceMode::TREE_VERIFY_MODE;
   }
   bc.prompt_phase = true;
@@ -1204,6 +1227,18 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
                  (int)request->tokens.size() - request->llm_prefill_len);
     num_tokens_in_batch = std::max(num_tokens_in_batch, 0);
     bc.requestsInfo[request_index].num_tokens_in_batch = num_tokens_in_batch;
+
+    // Prompt SuffixTree
+    if (decoding_mode == SPECULATIVE_DECODING) {
+      if (request->llm_prefill_len == 0) {
+        assert(request->prompt_tree == nullptr);
+        assert(this->suffix_tree_max_depth > 0);
+        request->prompt_tree = new SuffixTree({{}}, this->suffix_tree_max_depth);
+      } else {
+        assert(request->prompt_tree != nullptr);
+      }
+      request->prompt_tree->insert(request->tokens, num_tokens_in_batch);
+    }
 
     // Copy the streaming cache info
     bc.streamingCacheInfo[request_index] = request->streaming_cache_info;
@@ -1684,6 +1719,110 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
   return new_bc;
 }
 
+BatchConfig RequestManager::prepare_verify_batch_config_sd() {
+  if (verbose) {
+    std::cout
+        << "\n############### prepare_verify_batch_config (SuffixDecoding) ###############\n";
+  }
+  // This method does the following:
+  // 1. Commit the verified tokens in the last iteration through the
+  // BatchConfig. We can do this request by request.
+  // The information of the committed tokens is stored in
+  // Request.llm_committed_tokens. Put the information of the committed tokens
+  // into BatchConfig.committed_tokens.
+  // 2. Load the tokens on the token tree that are not yet pruned to
+  // BatchConfig.tokensInfo. Be careful with the abs_depth etc.
+  // (skip the pruned tokens).
+  // 3. Create the causal mask for the large model based on the small model
+  // causal mask (call create_llm_bitmask()).
+  // 4. Maintain BatchConfig::RequestsInfo and all other fields of
+  // BatchConfig.
+  // Please refer to the implementation of prepare_next_spec_batch_config()
+  // for more details.
+  BatchConfig new_bc;
+  new_bc.inference_mode = InferenceMode::TREE_VERIFY_MODE;
+  std::copy(std::begin(request_available),
+            std::end(request_available),
+            std::begin(new_bc.request_available));
+  new_bc.num_available_requests = num_available_requests;
+
+  for (int request_index = 0; request_index < get_max_requests_per_batch();
+       ++request_index) {
+    if (!request_available[request_index]) {
+      continue;
+    }
+    int guid = guid_of_requests[request_index];
+    Request &request = all_requests[guid];
+    assert(request.status == Request::RUNNING);
+
+    // 1. Maintain requestsInfo
+    new_bc.requestsInfo[request_index].first_token_index_in_request =
+        request.tokens.size() - 1; // Exclude the last token
+    new_bc.requestsInfo[request_index].first_token_offset_in_batch =
+        new_bc.num_tokens;
+    new_bc.requestsInfo[request_index].num_tokens_in_batch = 0;
+
+    // Put the information of the committed tokens into
+    // BatchConfig.committed_tokens.
+    // Note here, we shouldn't put the last token in request.committed_tokens
+    // into new_bc. Because the LLM don't have that token's KV cache.
+    std::vector<Request::CommittedToken> &committed_tokens =
+        request.committed_tokens;
+    for (int committed_token_index = 0;
+         committed_token_index < committed_tokens.size() - 1;
+         committed_token_index++) {
+      Request::CommittedToken &committed_token =
+          committed_tokens.at(committed_token_index);
+      new_bc.committed_tokens[new_bc.num_tokens_to_commit].request_index =
+          request_index;
+      new_bc.committed_tokens[new_bc.num_tokens_to_commit].index_in_kv_cache =
+          committed_token.from_index;
+      new_bc.committed_tokens[new_bc.num_tokens_to_commit].token_depth =
+          committed_token.to_index;
+      new_bc.num_tokens_to_commit++;
+    }
+
+    // Load the tokens on the token tree that are not yet pruned to
+    // BatchConfig.tokensInfo.
+    TokenTree &token_tree = request.speculative_token_trees[0];
+    int token_tree_index = 0;
+    int layer_index = 0;
+    for (auto const &tree_layer : token_tree.tree_layers) {
+      for (auto const &tree_node : tree_layer) {
+        if (tree_node->included == true) {
+          new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
+          new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
+              request.tokens.size() - 1 + token_tree_index;
+          new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
+              request.tokens.size() - 1 + layer_index;
+          new_bc.tokensInfo[new_bc.num_tokens].token_id = tree_node->id;
+          new_bc.num_tokens++;
+          token_tree_index++;
+        }
+      }
+      layer_index++;
+    }
+    new_bc.requestsInfo[request_index].num_tokens_in_batch = token_tree_index;
+
+    request.first_token_offset_in_batch = new_bc.num_tokens - token_tree_index;
+    request.num_tokens_in_batch = token_tree_index;
+
+    // Create the causal mask for the large model based on the small model
+    // causal mask.
+    new_bc.causalMask[request_index] = create_llm_bitmask(guid);
+
+    // Copy the streaming cache info
+    new_bc.streamingCacheInfo[request_index] = request.streaming_cache_info;
+  }
+
+  if (verbose) {
+    std::cout << "prepare_verify_batch_config NEW batchconfig:" << std::endl;
+    new_bc.print();
+  }
+  profiling.llm_step_start = Realm::Clock::current_time_in_microseconds();
+  return new_bc;
+}
+
 bool RequestManager::update_llm_verify_results(
     InferenceResult const &llm_verify_result) {
   // We may have two types of InferenceResults, one is the results from
@@ -1778,6 +1917,9 @@ bool RequestManager::update_llm_verify_results(
       request_update_attainment(request_index, attained);
       request_completed = true;
       request_complete_clean_up(request_index);
+      if (decoding_mode == SUFFIX_DECODING) {
+        insert_completed_request_into_suffix_tree(request_index);
+      }
     } else if (!current_attained and slo_violation_early_termination) {
       // Early drop that request
       request_update_attainment(request_index, attained);
