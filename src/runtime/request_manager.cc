@@ -271,6 +271,18 @@ void RequestManager::set_max_tree_width(int max_tree_width) {
   }
 }
 
+int RequestManager::get_expansion_degree() {
+  assert(expansion_degree > 0 and expansion_degree <= BatchConfig::MAX_TREE_WIDTH and
+         "Invalid expansion_degree");
+  return expansion_degree;
+}
+void RequestManager::set_expansion_degree(int expansion_degree_){
+  assert(expansion_degree > 0 and
+         expansion_degree <= BatchConfig::MAX_TREE_WIDTH and
+         "Invalid expansion_degree");
+  this->expansion_degree = expansion_degree_;
+}
+
 void RequestManager::set_speculative_sampling(bool speculative_sampling_) {
   speculative_sampling = speculative_sampling_;
 }
@@ -1180,8 +1192,6 @@ BatchConfig RequestManager::prepare_next_batch() {
         // Return an empty batch config
         return BatchConfig();
       }
-    case SUFFIX_SPEC:
-      return prepare_verify_batch_config_sd();
     case LLM_VERIFY:
       return prepare_verify_batch_config();
     default:
@@ -1229,7 +1239,7 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
     bc.requestsInfo[request_index].num_tokens_in_batch = num_tokens_in_batch;
 
     // Prompt SuffixTree
-    if (decoding_mode == SPECULATIVE_DECODING) {
+    if (decoding_mode == SUFFIX_DECODING) {
       if (request->llm_prefill_len == 0) {
         assert(request->prompt_tree == nullptr);
         assert(this->suffix_tree_max_depth > 0);
@@ -1697,6 +1707,11 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
         }
       }
       layer_index++;
+    }
+    if (verbose) {
+      // print token tree
+      std::cout << "Token tree for request " << request_index << ": " << std::endl;
+      std::cout << token_tree << std::endl;
     }
     new_bc.requestsInfo[request_index].num_tokens_in_batch = token_tree_index;
 
@@ -2346,7 +2361,7 @@ void RequestManager::get_verify_results_sample(
       }
       std::cout << std::endl;
       std::string output = this->tokenizer_->Decode(request.tokens);
-      std::cout << "Output sequence: " << output << std::endl;
+      // std::cout << "Output sequence: " << output << std::endl;
     }
   }
 }
@@ -3099,7 +3114,7 @@ void RequestManager::add_tokens_to_spec_token_tree(
 void RequestManager::add_tokens_to_spec_token_tree_old_version(
     InferenceResult const &ssm_inference_result) {
 
-  std::vector<int> tree_width_vector = {1, 1, 3, 1, 1, 1, 1, 1};
+  std::vector<int> tree_width_vector = {1, 1, this->expansion_degree, 1, 1, 1, 1, 1};
 
   int expand_width = tree_width_vector[current_ssm_step - 1];
 

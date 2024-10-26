@@ -314,6 +314,8 @@ public:
   void set_max_tree_depth(int max_tree_depth);
   int get_max_tree_width();
   void set_max_tree_width(int max_tree_width);
+  int get_expansion_degree();
+  void set_expansion_degree(int expansion_degree_);
   void set_speculative_sampling(bool speculative_sampling);
   void set_baseline_latency(double baseline_latency_ms);
   double get_baseline_latency();
@@ -432,6 +434,7 @@ private:
   int max_tree_depth;
   int max_tree_width;
   int k;
+  int expansion_degree=3;
   // Profile based latency
   double baseline_latency_ms = 43;
   double ssm_spec_latency_ms = 17;

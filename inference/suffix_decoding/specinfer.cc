@@ -370,8 +370,7 @@ void FlexFlow::top_level_task(Task const *task,
   using json = nlohmann::ordered_json;
   std::ifstream input_file(file_paths.trace_file_path);
   assert(input_file.good() && "Prompt file does not exist.");
-  json j;
-  input_file >> j;
+  nlohmann::ordered_json j = nlohmann::ordered_json::parse(input_file);
   input_file.close();
 
   // Find the partition with name "FEATURE_EXTRACTION"
@@ -433,6 +432,7 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_max_output_length(max_output_length);
   rm->set_max_tree_depth(max_tree_depth);
   rm->set_max_tree_width(max_tree_width);
+  rm->set_expansion_degree(expansion_degree);
   rm->set_verbose(verbose);
   rm->set_streaming_cache(false);
   rm->register_tokenizer(model_metadata.llm_model_type,
@@ -555,7 +555,10 @@ void FlexFlow::top_level_task(Task const *task,
       timestamps.push_back(0);
       ratios.push_back(1.0);
       total_num_requests++;
-      // break;
+
+      if (verbose) {
+        break;
+      }
     }
     TraceEmissionMachine emission_machine(timestamps, ratios);
     std::vector<GenerationResult> result =
