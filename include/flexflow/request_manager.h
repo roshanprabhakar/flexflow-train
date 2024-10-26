@@ -347,7 +347,14 @@ public:
   void register_output_filepath(std::string const &);
 
   FFModel *get_ssm_model(int model_id);
+  int get_suffix_tree_max_depth();
   void set_suffix_tree_max_depth(int max_depth);
+  MatchingStrategy get_suffix_tree_matching_strategy();
+  void set_suffix_tree_matching_strategy(MatchingStrategy strategy);
+  float get_suffix_tree_max_spec_factor();
+  void set_suffix_tree_max_spec_factor(float factor);
+  bool get_suffix_tree_online_tree_update();
+  void set_suffix_tree_online_tree_update(bool online_update);
   void init_suffix_tree(std::string const &trace_filepath,
                         std::string const &partition_name);
   void insert_completed_request_into_suffix_tree(int batch_index); // for suffix tree
@@ -493,6 +500,9 @@ private:
   std::vector<FFModel *> ssm_models;
 
   int suffix_tree_max_depth = -1; // max depth of the suffix tree
+  MatchingStrategy suffix_tree_matching_strategy;
+  float suffix_tree_max_spec_factor = -1.0f;
+  bool suffix_tree_online_tree_update = true;
   SuffixTree *suffix_tree = nullptr;
 
   // Background server handler
