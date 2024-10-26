@@ -3223,21 +3223,21 @@ void FFModel::deserialize_graph_optimal_view(
     optimal_views[guid_to_nodes[guid]] = view;
   }
   assert(dez.get_remaining_bytes() == 0);
-  printf("Deserialized Views...\n");
-  for (auto const &it : optimal_views) {
-    printf("node[%zu]: type(%s) view(%d %d %d) ",
-           it.first.guid,
-           it.first.to_string().c_str(),
-           it.second.ndims,
-           it.second.dim[0],
-           it.second.start_device_id);
-    auto const &list = graph->inEdges.at(it.first);
-    for (auto const &it2 : list) {
-      Edge e = it2;
-      printf(" inEdge(node(%zu) idx(%d))", e.srcOp.guid, e.srcIdx);
-    }
-    printf("\n");
-  }
+  // printf("Deserialized Views...\n");
+  // for (auto const &it : optimal_views) {
+  //   printf("node[%zu]: type(%s) view(%d %d %d) ",
+  //          it.first.guid,
+  //          it.first.to_string().c_str(),
+  //          it.second.ndims,
+  //          it.second.dim[0],
+  //          it.second.start_device_id);
+  //   auto const &list = graph->inEdges.at(it.first);
+  //   for (auto const &it2 : list) {
+  //     Edge e = it2;
+  //     printf(" inEdge(node(%zu) idx(%d))", e.srcOp.guid, e.srcIdx);
+  //   }
+  //   printf("\n");
+  // }
 }
 
 }; // namespace FlexFlow

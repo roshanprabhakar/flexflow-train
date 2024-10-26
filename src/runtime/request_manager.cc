@@ -208,6 +208,10 @@ void RequestManager::set_decoding_mode(DecodingMode mode) {
   decoding_mode = mode;
 }
 
+void RequestManager::get_suffix_tree_max_depth() {
+  assert(suffix_tree_max_depth > 0);
+  return suffix_tree_max_depth;
+}
 void RequestManager::set_suffix_tree_max_depth(int max_depth) {
   assert(max_depth > 0);
   assert(suffix_tree_max_depth == -1);
@@ -1193,7 +1197,8 @@ BatchConfig RequestManager::prepare_next_batch() {
         return BatchConfig();
       }
     case LLM_VERIFY:
-      return prepare_verify_batch_config();
+      return prepare_verify_batch_config_sd();  
+      // return prepare_verify_batch_config();
     default:
       std::cout << "Invalid request manager status: " << request_manager_status
                 << std::endl;
@@ -1817,6 +1822,37 @@ BatchConfig RequestManager::prepare_verify_batch_config_sd() {
       }
       layer_index++;
     }
+    // get tree of tokens from suffix tree
+    int max_prefix_length = std::min(static_cast<int>(text.size()), this->get_suffix_tree_max_depth());
+    float best_score = 0;
+    std::vector<int> best_token_ids;
+    std::vector<int> best_parents;
+    int best_prefix_length = 0;
+
+    // Try different prefix lengths
+    for (int length = 1; length <= max_prefix_length; length++) {
+      std::vector<int> prefix(text.end() - length, text.end());
+      
+      // Try prompt tree
+      auto [p_token_ids, p_parents, p_score] = prompt_tree.find_best_path_or_tree(prefix, matching_strategy, max_spec_factor);
+      if (p_score > best_score) {
+        best_token_ids = p_token_ids;
+        best_parents = p_parents;
+        best_prefix_length = length;
+        best_score = p_score;
+      }
+
+      // Try suffix tree
+      auto [s_token_ids, s_parents, s_score] = suffix_tree.find_best_path_or_tree(prefix, matching_strategy, max_spec_factor);
+      if (s_score > best_score) {
+          best_token_ids = s_token_ids;
+          best_parents = s_parents;
+          best_prefix_length = length;
+          best_score = s_score;
+      }
+    }
+
+    // add tokens to the batch config and create the bitmask
     new_bc.requestsInfo[request_index].num_tokens_in_batch = token_tree_index;
 
     request.first_token_offset_in_batch = new_bc.num_tokens - token_tree_index;
@@ -1825,6 +1861,13 @@ BatchConfig RequestManager::prepare_verify_batch_config_sd() {
     // Create the causal mask for the large model based on the small model
     // causal mask.
     new_bc.causalMask[request_index] = create_llm_bitmask(guid);
+    // new_bc.causalMask[request_index] = BatchConfig::BitMask();
+    // new_bc.causalMask[request_index].non_tree_cache_size = new_bc.requestsInfo[request_index].first_token_index_in_request;
+    // for (int i=0; i<new_bc.requestsInfo[request_index].num_tokens_in_batch; i++) {
+    //   for (int j=i; j>=0; j--) {
+    //     new_bc.causalMask[request_index].bit_mask[i].set_bit(j);
+    //   }
+    // }
 
     // Copy the streaming cache info
     new_bc.streamingCacheInfo[request_index] = request.streaming_cache_info;
@@ -1833,6 +1876,17 @@ BatchConfig RequestManager::prepare_verify_batch_config_sd() {
   if (verbose) {
     std::cout << "prepare_verify_batch_config NEW batchconfig:" << std::endl;
     new_bc.print();
+    // print speculative token trees
+
+    for (int request_index = 0; request_index < get_max_requests_per_batch(); ++request_index) {
+      if (!request_available[request_index]) {
+        continue;
+      }
+      int guid = guid_of_requests[request_index];
+      Request &request = all_requests[guid];
+      std::cout << "Token tree for request " << request_index << ": " << std::endl;
+      std::cout << request.speculative_token_trees[0] << std::endl;
+    }
   }
   profiling.llm_step_start = Realm::Clock::current_time_in_microseconds();
   return new_bc;
