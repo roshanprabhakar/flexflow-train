@@ -1292,7 +1292,7 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
         assert(request->prompt_tree == nullptr && "Prompt tree was already initialized");
         assert(this->suffix_tree_max_depth > 0 && "Invalid max depth for suffix tree");
         request->prompt_tree =
-            new SuffixTree({{}}, this->suffix_tree_max_depth);
+            new SuffixTree({}, this->suffix_tree_max_depth);
       } else {
         assert(request->prompt_tree != nullptr && "Prompt tree was not initialized");
       }

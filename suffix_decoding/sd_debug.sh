@@ -31,7 +31,6 @@ rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_sd.out |
     -tensor-parallelism-degree 4 \
     -ll:fsize $FSIZE -ll:zsize $ZSIZE -ll:csize $CSIZE \
     --fusion \
-    -ll:force_kthreads \
     --max-sequence-length 2000 \
     --max-requests-per-batch 1 \
     --max-tokens-per-batch 1024 \
