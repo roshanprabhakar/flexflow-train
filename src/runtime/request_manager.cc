@@ -1289,12 +1289,12 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
     // Prompt SuffixTree
     if (decoding_mode == SUFFIX_DECODING) {
       if (request->llm_prefill_len == 0) {
-        assert(request->prompt_tree == nullptr);
-        assert(this->suffix_tree_max_depth > 0);
+        assert(request->prompt_tree == nullptr && "Prompt tree was already initialized");
+        assert(this->suffix_tree_max_depth > 0 && "Invalid max depth for suffix tree");
         request->prompt_tree =
             new SuffixTree({{}}, this->suffix_tree_max_depth);
       } else {
-        assert(request->prompt_tree != nullptr);
+        assert(request->prompt_tree != nullptr && "Prompt tree was not initialized");
       }
       request->prompt_tree->insert(request->tokens, num_tokens_in_batch);
     }
@@ -2879,7 +2879,8 @@ void RequestManager::background_serving_task(
       ssm->config.lg_ctx = ctx;
     }
   }
-  if (rm->decoding_mode == INCREMENTAL_DECODING) {
+  if (rm->decoding_mode == INCREMENTAL_DECODING ||
+      rm->decoding_mode == SUFFIX_DECODING) {
     // No SSMs: perform incremental decoding
     rm->serve_decoding(llm);
   } else {

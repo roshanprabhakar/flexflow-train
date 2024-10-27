@@ -360,6 +360,8 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_baseline_latency(50);
   rm->set_ssm_spec_latency(20);
   rm->set_llm_verify_latency(50);
+  rm->set_max_tree_depth(8);
+  rm->set_max_tree_width(16);
   rm->set_spec_infer_old_version(true);
   rm->set_greedy_schedule(false);
   rm->set_equal_schedule(false);
