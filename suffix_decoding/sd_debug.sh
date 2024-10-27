@@ -15,9 +15,9 @@ matching_strategy="linear_token_path"
 max_tree_depth=10
 max_spec_factor=1.0
 
-
+export CUDA_VISIBLE_DEVICES=7
 export LEGION_BACKTRACE=1
-FSIZE=30000
+FSIZE=36000
 ZSIZE=30000
 CSIZE=100000
 
@@ -27,8 +27,8 @@ python ../inference/utils/download_hf_model.py --half-precision-only $model_name
 rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_sd.out || true
 
 ./inference/suffix_decoding/suffix_decoding \
-    -ll:gpu 4 -ll:cpu 4 -ll:util 4 \
-    -tensor-parallelism-degree 4 \
+    -ll:gpu 1 -ll:cpu 4 -ll:util 4 \
+    -tensor-parallelism-degree 1 \
     -ll:fsize $FSIZE -ll:zsize $ZSIZE -ll:csize $CSIZE \
     --fusion \
     --max-sequence-length 2000 \
@@ -40,7 +40,7 @@ rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_sd.out |
     --max-spec-factor $max_spec_factor \
     --disable-online-tree-update \
     -llm-model $model_name \
-    -trace /usr/FlexFlow/build/_deps/suffix_decoding-src/trace/cortex.json \
+    -trace /usr/suffix-tree-decoding/trace/flexflow/cortex_ff_FEATURE_EXTRACTION.json \
     -trace-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_ff_${partition_name}_sd.json \
     -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_sd.out \
     -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_sd.csv \

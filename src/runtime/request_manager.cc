@@ -1795,7 +1795,8 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
   }
 
   float best_score = 0;
-  // int best_prefix_length = 0;
+  int best_prefix_length = 0;
+  std::vector<int> best_prefix;
 
   // Get best candidate from the suffix tree
   for (int length = 1; length <= max_prefix_length; length++) {
@@ -1811,8 +1812,9 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
     if (p_score > best_score) {
       request.suffix_decoding_best_token_ids = p_token_ids;
       request.suffix_decoding_best_parents = p_parents;
-      // best_prefix_length = length;
+      best_prefix_length = length;
       best_score = p_score;
+      best_prefix = prefix;
     }
 
     // Try suffix tree
@@ -1824,10 +1826,28 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
     if (s_score > best_score) {
       request.suffix_decoding_best_token_ids = s_token_ids;
       request.suffix_decoding_best_parents = s_parents;
-      // best_prefix_length = length;
+      best_prefix_length = length;
       best_score = s_score;
+      best_prefix = prefix;
     }
   }
+  std::cout << "Populated best suffix tree candidates for request " << request.guid << " with score " << best_score << std::endl;
+  std::cout << "Best prefix length: " << best_prefix_length << std::endl;
+  std::cout << "Best prefix: ";
+  for (const auto &token : best_prefix) {
+    std::cout << token << " ";
+  }
+  std::cout << std::endl;
+  std::cout << "Best token ids: ";
+  for (const auto &id : request.suffix_decoding_best_token_ids) {
+    std::cout << id << " ";
+  }
+  std::cout << std::endl;
+  std::cout << "Best parents: ";
+  for (const auto &parent : request.suffix_decoding_best_parents) {
+    std::cout << parent << " ";
+  }
+  std::cout << std::endl;
 }
 
 BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
@@ -1931,14 +1951,14 @@ BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
         new_bc.requestsInfo[request_index].first_token_index_in_request;
     assert(request.suffix_decoding_best_parents.size() ==
            request.suffix_decoding_best_token_ids.size());
+    // bonus token from prev iter
+    new_bc.causalMask[request_index].bit_mask[0].set_bit(0);
     for (int i = 0; i < request.suffix_decoding_best_parents.size(); i++) {
       assert(request.suffix_decoding_best_parents[i] < i);
-      if (request.suffix_decoding_best_parents[i] >= 0) {
-        new_bc.causalMask[request_index].bit_mask[i] =
-            new_bc.causalMask[request_index]
-                .bit_mask[request.suffix_decoding_best_parents[i]];
-      }
-      new_bc.causalMask[request_index].bit_mask[i].set_bit(i);
+      int idx_to_copy_from = (i == 0) ? 0 : request.suffix_decoding_best_parents[i]+1;
+      assert(idx_to_copy_from < i+1);
+      new_bc.causalMask[request_index].bit_mask[i+1] = new_bc.causalMask[request_index].bit_mask[idx_to_copy_from];
+      new_bc.causalMask[request_index].bit_mask[i+1].set_bit(i+1);
     }
 
     // Copy the streaming cache info
@@ -2702,6 +2722,8 @@ void RequestManager::get_verify_results_suffix_decoding(
     InferenceResult const &llm_verify_result) {
   // This function maintain the generated token list of the request and the
   // committed tokens.
+  std::cout << "Entering get_verify_results_suffix_decoding" << std::endl;
+  std::cout << llm_verify_result << std::endl;
   int total_nb_generated_tokens = 0;
   for (int request_index = 0; request_index < get_max_requests_per_batch();
        ++request_index) {
@@ -2710,6 +2732,12 @@ void RequestManager::get_verify_results_suffix_decoding(
     }
     RequestGuid guid = guid_of_requests[request_index];
     Request &request = all_requests[guid];
+    std::cout << "Processing request " << guid << std::endl;
+    std::cout << "request.tokens: [";
+    for (auto token : request.tokens) {
+      std::cout << token << ", ";
+    }
+    std::cout << "]" << std::endl;
     assert(request.status == Request::RUNNING);
 
     int llm_result_offset = request.first_token_offset_in_batch;
@@ -2718,40 +2746,34 @@ void RequestManager::get_verify_results_suffix_decoding(
     int committed_token_index =
         request.tokens.size() -
         1; // committed_token.to_index, also absolute depth in request
-
+    std::cout << "llm_result_offset: " << llm_result_offset << std::endl;
+    std::cout << "llm_cache_size: " << llm_cache_size << std::endl;
+    std::cout << "committed_token_index: " << committed_token_index << std::endl;
     // 1. handle bonus token from previous iteration. Don't add it to
     // request.tokens because it has already been added.
-    assert(llm_verify_result.token_ids[llm_result_offset] ==
-           request.tokens.back());
+    // assert(llm_verify_result.token_ids[llm_result_offset] ==
+    //        request.tokens.back());
     request.committed_tokens.push_back(Request::CommittedToken(
         llm_cache_size, committed_token_index, request.tokens.back()));
+    llm_cache_size++;
     committed_token_index++;
 
     // 2. walk through best_tokens, compare them with
     // llm_verify_result.token_ids, and add each match to the committed_tokens
     // as well as request.tokens.
     assert(request.suffix_decoding_best_token_ids.size() > 0);
-    assert(
-        request.suffix_decoding_best_token_ids[0] ==
-        request.tokens
-            .back()); // first entry is the bonus token from previous iteration
-    assert(request.suffix_decoding_best_parents[0] ==
-           -1); // first entry has no parent
+    // first entry has no parent
+    assert(request.suffix_decoding_best_parents[0] == -1);
 
-    int last_accepted_token_index = 0; // index of the last accepted token in
-                                       // the suffix_decoding_best_token_ids
-    for (int i = 1; i < request.suffix_decoding_best_token_ids.size(); i++) {
+    int last_accepted_token_idx = -1;
+    for (int i = 0; i < (int)request.suffix_decoding_best_token_ids.size(); i++) {
       int current_token = request.suffix_decoding_best_token_ids[i];
-      int current_parent_idx = request.suffix_decoding_best_parents[i];
-      assert(current_parent_idx >= 0 && current_parent_idx < i);
-      int current_parent_token =
-          request.suffix_decoding_best_token_ids[current_parent_idx];
       int current_result = llm_verify_result.token_ids[llm_result_offset + i];
-      int last_accepted_token =
-          request.suffix_decoding_best_token_ids[last_accepted_token_index];
-      assert(last_accepted_token == request.tokens.back());
-      int last_parent_idx =
-          request.suffix_decoding_best_parents[last_accepted_token_index];
+      int parent_idx = request.suffix_decoding_best_parents[i];
+      int last_parent_idx = (last_accepted_token_idx == -1) ? -1 : request.suffix_decoding_best_parents[last_accepted_token_idx];
+      TokenId last_accepted_token = request.tokens.back();
+      TokenId current_parent_token = (parent_idx == -1) ? request.tokens.back()
+                                                         : request.suffix_decoding_best_token_ids[parent_idx];
 
       // Accept token if:
       //  (1) it matches the result,
@@ -2759,26 +2781,30 @@ void RequestManager::get_verify_results_suffix_decoding(
       //  (3) no other token has been accepted in this layer
       if (current_token == current_result &&
           last_accepted_token == current_parent_token &&
-          last_parent_idx != current_parent_idx) {
+          last_parent_idx != parent_idx) {
         request.committed_tokens.push_back(Request::CommittedToken(
             llm_cache_size + i, committed_token_index, current_token));
         request.tokens.push_back(current_token);
         committed_token_index++;
-        last_accepted_token_index = i; // update last accepted token index
+        last_accepted_token_idx=i;
       }
     }
 
-    // 3. add the new bonus token to committed_tokens and request.tokens.
+    // 3. add the new bonus token to committed_tokens and request.tokens. This will be the child of the last token to be accepted.
+    int bonus_token_idx=0;
+    for (int i=last_accepted_token_idx+1; i<request.suffix_decoding_best_token_ids.size(); i++) {
+      if (request.suffix_decoding_best_parents[i] == last_accepted_token_idx) {
+        bonus_token_idx=i;
+      }
+    }
+    std::cout << "last_accepted_token_idx: " << last_accepted_token_idx << std::endl;
+    std::cout << "bonus_token_idx: " << bonus_token_idx << std::endl;
+    std::cout << "bonus token: " << llm_verify_result.token_ids[llm_result_offset + bonus_token_idx] << std::endl;
     request.committed_tokens.push_back(Request::CommittedToken(
         -1,
         committed_token_index,
-        llm_verify_result
-            .token_ids[llm_result_offset +
-                       request.suffix_decoding_best_token_ids.size() - 1]));
-    request.tokens.push_back(
-        llm_verify_result
-            .token_ids[llm_result_offset +
-                       request.suffix_decoding_best_token_ids.size() - 1]);
+        llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]));
+    request.tokens.push_back(llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]);
 
     total_nb_generated_tokens += request.committed_tokens.size() - 1;
     if (verbose) {
