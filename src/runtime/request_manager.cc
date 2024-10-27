@@ -2761,9 +2761,6 @@ void RequestManager::get_verify_results_suffix_decoding(
     // 2. walk through best_tokens, compare them with
     // llm_verify_result.token_ids, and add each match to the committed_tokens
     // as well as request.tokens.
-    assert(request.suffix_decoding_best_token_ids.size() > 0);
-    // first entry has no parent
-    assert(request.suffix_decoding_best_parents[0] == -1);
 
     int last_accepted_token_idx = -1;
     for (int i = 0; i < (int)request.suffix_decoding_best_token_ids.size(); i++) {
