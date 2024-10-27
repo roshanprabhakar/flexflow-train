@@ -1880,7 +1880,7 @@ BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
     std::vector<Request::CommittedToken> &committed_tokens =
         request.committed_tokens;
     for (int committed_token_index = 0;
-         committed_token_index < committed_tokens.size() - 1;
+         committed_token_index < (int)committed_tokens.size() - 1;
          committed_token_index++) {
       Request::CommittedToken &committed_token =
           committed_tokens.at(committed_token_index);
