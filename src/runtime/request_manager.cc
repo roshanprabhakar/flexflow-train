@@ -204,7 +204,8 @@ int RequestManager::get_max_output_length() {
 }
 
 void RequestManager::set_decoding_mode(DecodingMode mode) {
-  assert(mode == INCREMENTAL_DECODING || mode == SPECULATIVE_DECODING);
+  assert(mode == INCREMENTAL_DECODING || mode == SPECULATIVE_DECODING ||
+         mode == SUFFIX_DECODING);
   decoding_mode = mode;
 }
 

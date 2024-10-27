@@ -28,7 +28,6 @@ from flexflow.serve.models import (
 )
 from flexflow.core import *
 from transformers import AutoConfig, AutoModelForCausalLM
-from peft import PeftModel, PeftConfig, LoraConfig
 from huggingface_hub import HfApi
 import sys, torch, shutil, hashlib
 from typing import Union, List

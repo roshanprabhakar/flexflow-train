@@ -52,7 +52,7 @@ struct ModelMeta {
 void parse_input_args(char **argv,
                       int argc,
                       FilePaths &paths,
-                      std::string llm_model_name,
+                      std::string &llm_model_name,
                       bool &use_full_precision,
                       bool &verbose,
                       int &max_requests_per_batch,
