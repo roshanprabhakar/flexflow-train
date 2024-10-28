@@ -400,6 +400,7 @@ double RequestManager::get_request_expected_latency(Request &request) {
 }
 
 Request &RequestManager::get_request_with_guid(RequestGuid guid) {
+  assert(all_requests.find(guid) != all_requests.end() && "Request with the given GUID does not exist.");
   return all_requests[guid];
 }
 
@@ -819,8 +820,7 @@ void RequestManager::insert_completed_request_into_suffix_tree(
   }
   long long int end_time = Realm::Clock::current_time_in_microseconds();
   assert(profiling.tree_operation_step_times.size() > 0);
-  profiling.tree_operation_step_times[profiling.tree_operation_step_times.size() - 1] +=
-      (double)(end_time - start_time) * 1e-3;
+  profiling.tree_operation_step_times[profiling.tree_operation_step_times.size() - 1] += ((double)(end_time - start_time) * 1e-3);
 }
 void RequestManager::request_complete_clean_up(int batch_index) {
   RequestGuid guid = guid_of_requests[batch_index];
@@ -1835,6 +1835,7 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
       best_prefix = prefix;
     }
   }
+  profiling_requests[request.guid].prefix_length_per_step.push_back(best_prefix_length);
 
   if (verbose) {
     std::cout << "Populated best suffix tree candidates for request " << request.guid << " with score " << best_score << std::endl;
@@ -1971,6 +1972,10 @@ BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
 
     // Copy the streaming cache info
     new_bc.streamingCacheInfo[request_index] = request.streaming_cache_info;
+
+    if (profiling_requests[request.guid].llm_decoding_steps == 0) {
+      profiling_requests[request.guid].start_decoding_time = Realm::Clock::current_time_in_microseconds();
+    }
   }
   long long int end_time = Realm::Clock::current_time_in_microseconds();
   profiling.tree_operation_step_times.push_back((double)(end_time - start_time) * 1e-3);
@@ -2077,11 +2082,11 @@ bool RequestManager::update_llm_verify_results(
       // Request is completed
       request_update_attainment(request_index, attained);
       request_completed = true;
-      request_complete_clean_up(request_index);
       if (decoding_mode == SUFFIX_DECODING &&
           get_suffix_tree_online_tree_update()) {
         insert_completed_request_into_suffix_tree(request_index);
       }
+      request_complete_clean_up(request_index);
     } else if (!current_attained and slo_violation_early_termination) {
       // Early drop that request
       request_update_attainment(request_index, attained);
@@ -2168,13 +2173,14 @@ bool RequestManager::update_llm_suffix_decoding_results(
     }
     if (eos_token_found or request.decode_length() >= get_max_output_length() or
         request.tokens.size() >= get_max_sequence_length()) {
+      if (get_suffix_tree_online_tree_update()) {
+        insert_completed_request_into_suffix_tree(request_index);
+      }
       // Request is completed
       request_update_attainment(request_index, attained);
       request_completed = true;
       request_complete_clean_up(request_index);
-      if (get_suffix_tree_online_tree_update()) {
-        insert_completed_request_into_suffix_tree(request_index);
-      }
+      
     } else if (!current_attained and slo_violation_early_termination) {
       // Early drop that request
       request_update_attainment(request_index, attained);
@@ -2774,6 +2780,7 @@ void RequestManager::get_verify_results_suffix_decoding(
     // as well as request.tokens.
 
     int last_accepted_token_idx = -1;
+    bool found_eos = false;
     for (int i = 0; i < (int)request.suffix_decoding_best_token_ids.size(); i++) {
       int current_token = request.suffix_decoding_best_token_ids[i];
       int parent_idx = request.suffix_decoding_best_parents[i];
@@ -2798,6 +2805,10 @@ void RequestManager::get_verify_results_suffix_decoding(
         request.tokens.push_back(current_token);
         committed_token_index++;
         last_accepted_token_idx=i;
+        if (current_token == eos_token_id) {
+          found_eos = true;
+          break;
+        }
       }
     }
 
@@ -2813,11 +2824,13 @@ void RequestManager::get_verify_results_suffix_decoding(
       std::cout << "bonus_token_idx: " << bonus_token_idx << std::endl;
       std::cout << "bonus token: " << llm_verify_result.token_ids[llm_result_offset + bonus_token_idx] << std::endl;
     }
-    request.committed_tokens.push_back(Request::CommittedToken(
-        -1,
-        committed_token_index,
-        llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]));
-    request.tokens.push_back(llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]);
+    if (!found_eos) {
+      request.committed_tokens.push_back(Request::CommittedToken(
+          -1,
+          committed_token_index,
+          llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]));
+      request.tokens.push_back(llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]);
+    }
 
     total_nb_generated_tokens += request.committed_tokens.size() - 1;
     profiling_requests[guid].speculated_length_per_step.push_back((int)request.suffix_decoding_best_token_ids.size());
