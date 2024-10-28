@@ -434,7 +434,7 @@ void FlexFlow::top_level_task(Task const *task,
       total_num_requests++;
 
       if (verbose) {
-        break;
+        // break;
       }
     }
     TraceEmissionMachine emission_machine(timestamps, ratios);

@@ -1092,17 +1092,25 @@ bool RequestManager::update_llm_prefill_results(InferenceResult const &result) {
           // Temporarily offload request from the batch
           request_offload_from_batch(request->batch_index);
           prefilled_requests.push(request);
-        }
 
-        if (decoding_mode == SPECULATIVE_DECODING) {
-          // Add the last token to the token tree
-          assert(request->committed_tokens.empty() &&
-                 "The committed tokens should be empty.");
-          request->committed_tokens.push_back(Request::CommittedToken{
-              -1, (int)request->tokens.size() - 1, request->tokens.back()});
-          init_token_tree(request->guid);
-          add_root_to_spec_token_tree(request->guid, request->tokens.back());
-          update_bitmask_prompt(request->guid, 1);
+          if (decoding_mode == SUFFIX_DECODING) {
+            // create prompt tree
+            assert(request->prompt_tree == nullptr && "Prompt tree was already initialized");
+            assert(this->suffix_tree_max_depth > 0 && "Invalid max depth for suffix tree");
+            assert(request->tokens.size() > 0 && "Attempting to create prompt tree for empty request");
+            request->prompt_tree = new SuffixTree({request->tokens}, this->suffix_tree_max_depth);
+          }
+
+          if (decoding_mode == SPECULATIVE_DECODING) {
+            // Add the last token to the token tree
+            assert(request->committed_tokens.empty() &&
+                  "The committed tokens should be empty.");
+            request->committed_tokens.push_back(Request::CommittedToken{
+                -1, (int)request->tokens.size() - 1, request->tokens.back()});
+            init_token_tree(request->guid);
+            add_root_to_spec_token_tree(request->guid, request->tokens.back());
+            update_bitmask_prompt(request->guid, 1);
+          }
         }
       } else {
         // Next phase will still be prefilling
@@ -1285,19 +1293,7 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
                  (int)request->tokens.size() - request->llm_prefill_len);
     num_tokens_in_batch = std::max(num_tokens_in_batch, 0);
     bc.requestsInfo[request_index].num_tokens_in_batch = num_tokens_in_batch;
-
-    // Prompt SuffixTree
-    if (decoding_mode == SUFFIX_DECODING) {
-      if (request->llm_prefill_len == 0) {
-        assert(request->prompt_tree == nullptr && "Prompt tree was already initialized");
-        assert(this->suffix_tree_max_depth > 0 && "Invalid max depth for suffix tree");
-        request->prompt_tree =
-            new SuffixTree({}, this->suffix_tree_max_depth);
-      } else {
-        assert(request->prompt_tree != nullptr && "Prompt tree was not initialized");
-      }
-      request->prompt_tree->insert(request->tokens, num_tokens_in_batch);
-    }
+ 
 
     // Copy the streaming cache info
     bc.streamingCacheInfo[request_index] = request->streaming_cache_info;
@@ -1831,23 +1827,25 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
       best_prefix = prefix;
     }
   }
-  std::cout << "Populated best suffix tree candidates for request " << request.guid << " with score " << best_score << std::endl;
-  std::cout << "Best prefix length: " << best_prefix_length << std::endl;
-  std::cout << "Best prefix: ";
-  for (const auto &token : best_prefix) {
-    std::cout << token << " ";
+  if (verbose) {
+    std::cout << "Populated best suffix tree candidates for request " << request.guid << " with score " << best_score << std::endl;
+    std::cout << "Best prefix length: " << best_prefix_length << std::endl;
+    std::cout << "Best prefix: ";
+    for (const auto &token : best_prefix) {
+      std::cout << token << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "Best token ids: ";
+    for (const auto &id : request.suffix_decoding_best_token_ids) {
+      std::cout << id << " ";
+    }
+    std::cout << std::endl;
+    std::cout << "Best parents: ";
+    for (const auto &parent : request.suffix_decoding_best_parents) {
+      std::cout << parent << " ";
+    }
+    std::cout << std::endl;
   }
-  std::cout << std::endl;
-  std::cout << "Best token ids: ";
-  for (const auto &id : request.suffix_decoding_best_token_ids) {
-    std::cout << id << " ";
-  }
-  std::cout << std::endl;
-  std::cout << "Best parents: ";
-  for (const auto &parent : request.suffix_decoding_best_parents) {
-    std::cout << parent << " ";
-  }
-  std::cout << std::endl;
 }
 
 BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
@@ -2722,8 +2720,10 @@ void RequestManager::get_verify_results_suffix_decoding(
     InferenceResult const &llm_verify_result) {
   // This function maintain the generated token list of the request and the
   // committed tokens.
-  std::cout << "Entering get_verify_results_suffix_decoding" << std::endl;
-  std::cout << llm_verify_result << std::endl;
+  if (verbose) {
+    std::cout << "Entering get_verify_results_suffix_decoding" << std::endl;
+    std::cout << llm_verify_result << std::endl;
+  }
   int total_nb_generated_tokens = 0;
   for (int request_index = 0; request_index < get_max_requests_per_batch();
        ++request_index) {
@@ -2732,12 +2732,16 @@ void RequestManager::get_verify_results_suffix_decoding(
     }
     RequestGuid guid = guid_of_requests[request_index];
     Request &request = all_requests[guid];
-    std::cout << "Processing request " << guid << std::endl;
-    std::cout << "request.tokens: [";
-    for (auto token : request.tokens) {
-      std::cout << token << ", ";
+    
+    if (verbose) {
+      std::cout << "Processing request " << guid << std::endl;
+      std::cout << "request.tokens: [";
+      for (auto token : request.tokens) {
+        std::cout << token << ", ";
+      }
+      std::cout << "]" << std::endl;
     }
-    std::cout << "]" << std::endl;
+
     assert(request.status == Request::RUNNING);
 
     int llm_result_offset = request.first_token_offset_in_batch;
@@ -2746,9 +2750,11 @@ void RequestManager::get_verify_results_suffix_decoding(
     int committed_token_index =
         request.tokens.size() -
         1; // committed_token.to_index, also absolute depth in request
-    std::cout << "llm_result_offset: " << llm_result_offset << std::endl;
-    std::cout << "llm_cache_size: " << llm_cache_size << std::endl;
-    std::cout << "committed_token_index: " << committed_token_index << std::endl;
+    if (verbose) {
+      std::cout << "llm_result_offset: " << llm_result_offset << std::endl;
+      std::cout << "llm_cache_size: " << llm_cache_size << std::endl;
+      std::cout << "committed_token_index: " << committed_token_index << std::endl;
+    }
     // 1. handle bonus token from previous iteration. Don't add it to
     // request.tokens because it has already been added.
     // assert(llm_verify_result.token_ids[llm_result_offset] ==
@@ -2765,13 +2771,16 @@ void RequestManager::get_verify_results_suffix_decoding(
     int last_accepted_token_idx = -1;
     for (int i = 0; i < (int)request.suffix_decoding_best_token_ids.size(); i++) {
       int current_token = request.suffix_decoding_best_token_ids[i];
-      int current_result = llm_verify_result.token_ids[llm_result_offset + i];
       int parent_idx = request.suffix_decoding_best_parents[i];
-      int last_parent_idx = (last_accepted_token_idx == -1) ? -1 : request.suffix_decoding_best_parents[last_accepted_token_idx];
+      int current_result = llm_verify_result.token_ids[llm_result_offset + parent_idx+1];
+      int last_parent_idx = (last_accepted_token_idx == -1) ? -2 : request.suffix_decoding_best_parents[last_accepted_token_idx];
       TokenId last_accepted_token = request.tokens.back();
       TokenId current_parent_token = (parent_idx == -1) ? request.tokens.back()
                                                          : request.suffix_decoding_best_token_ids[parent_idx];
-
+      if (verbose) {
+        printf("\ti=%i: {current_token: %d, current_result: %d, last_accepted_token: %d, current_parent_token: %d, last_parent_idx: %d, parent_idx: %d, last_accepted_token_idx: %i}\n",
+              i, current_token, current_result, last_accepted_token, current_parent_token, last_parent_idx, parent_idx, last_accepted_token_idx);
+      }
       // Accept token if:
       //  (1) it matches the result,
       //  (2) last accepted token is the token's parent
@@ -2788,15 +2797,23 @@ void RequestManager::get_verify_results_suffix_decoding(
     }
 
     // 3. add the new bonus token to committed_tokens and request.tokens. This will be the child of the last token to be accepted.
-    int bonus_token_idx=0;
-    for (int i=last_accepted_token_idx+1; i<request.suffix_decoding_best_token_ids.size(); i++) {
-      if (request.suffix_decoding_best_parents[i] == last_accepted_token_idx) {
-        bonus_token_idx=i;
+    // int bonus_token_idx=0;
+    // for (int i=last_accepted_token_idx+1; i<request.suffix_decoding_best_token_ids.size(); i++) {
+    //   if (request.suffix_decoding_best_parents[i] == last_accepted_token_idx) {
+    //     bonus_token_idx=i;
+    //   }
+    // }
+    int bonus_token_idx = last_accepted_token_idx+1;
+    if (verbose) {
+      std::cout << "last_accepted_token_idx: " << last_accepted_token_idx << std::endl;
+      std::cout << "accepted_tokens: ";
+      for (int i=1; i<request.committed_tokens.size(); i++) {
+        std::cout << request.committed_tokens[i].token_id << " ";
       }
+      std::cout << std::endl;
+      std::cout << "bonus_token_idx: " << bonus_token_idx << std::endl;
+      std::cout << "bonus token: " << llm_verify_result.token_ids[llm_result_offset + bonus_token_idx] << std::endl;
     }
-    std::cout << "last_accepted_token_idx: " << last_accepted_token_idx << std::endl;
-    std::cout << "bonus_token_idx: " << bonus_token_idx << std::endl;
-    std::cout << "bonus token: " << llm_verify_result.token_ids[llm_result_offset + bonus_token_idx] << std::endl;
     request.committed_tokens.push_back(Request::CommittedToken(
         -1,
         committed_token_index,
