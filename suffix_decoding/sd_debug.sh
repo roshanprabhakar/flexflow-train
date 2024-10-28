@@ -18,7 +18,7 @@ export LEGION_BACKTRACE=1
 
 ########### LLAMA 70B on 8 GPUs ###########
 model_name="meta-llama/Meta-Llama-3-70B-Instruct"
-partition_name="FEATURE_EXTRACTION"
+partition_name="SQL_FANOUT1"
 NGPUS=8
 FSIZE=32000
 ZSIZE=200000
@@ -26,7 +26,7 @@ CSIZE=200000
 
 ########### LLAMA 8B on 8 GPUs ###########
 model_name="meta-llama/Meta-Llama-3-8B-Instruct"
-partition_name="SQL_FANOUT1"
+partition_name="FEATURE_EXTRACTION"
 NGPUS=1
 FSIZE=30000
 ZSIZE=100000
@@ -50,7 +50,7 @@ rm usr/FlexFlow/inference/output/cortex_${partition_name}_sd.out || true
     --max-tree-depth $max_tree_depth \
     --max-spec-factor $max_spec_factor \
     -llm-model $model_name \
-    -trace /usr/suffix-tree-decoding/trace/flexflow/cortex_ff_SQL_FANOUT1.json \
+    -trace /usr/suffix-tree-decoding/trace/flexflow/cortex_ff_${partition_name}.json \
     -trace-output-path usr/FlexFlow/inference/output/cortex_ff_${partition_name}_sd.json \
     -output-file usr/FlexFlow/inference/output/cortex_${partition_name}_sd.out \
     -csv-output-path usr/FlexFlow/inference/output/cortex_${partition_name}_sd.csv \

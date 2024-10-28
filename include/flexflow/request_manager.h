@@ -241,6 +241,10 @@ struct RequestProfileInfo {
   int llm_decoding_steps = 0;
   int ssm_decoding_steps = 0;
   long long start_time = 0, start_decoding_time = 0, finish_time = 0;
+  // suffix decoding metrics
+  std::vector<int> speculated_length_per_step;
+  std::vector<int> accepted_tokens_per_step;
+  std::vector<int> prefix_length_per_step;
 };
 struct ProfileInfo {
   // For SpecInfer: One step is comprised of one ssm speculation phase + a
@@ -255,6 +259,7 @@ struct ProfileInfo {
   std::vector<double> ssm_step_times;
   // Number of requests getting decoded at each step
   std::vector<int> ssm_steps;
+  std::vector<double> tree_operation_step_times;
   // Number of generated tokens at each step
   std::vector<int> generated_tokens_per_step;
   // To calculate the E2E time of serving

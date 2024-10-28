@@ -235,6 +235,21 @@ void get_model_meta(FilePaths &file_paths,
          "Invalid LLM model type passed (or no type was passed).");
 }
 
+std::string vectorToString(const std::vector<double>& vec, int precision = 4) {
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(precision) << "\"[";
+  
+  for (size_t i = 0; i < vec.size(); ++i) {
+    oss << vec[i];
+    if (i < vec.size() - 1) {
+      oss << ",";
+    }
+  }
+  
+  oss << "]\"";
+  return oss.str();
+}
+
 void FlexFlow::top_level_task(Task const *task,
                               std::vector<PhysicalRegion> const &regions,
                               Context ctx,
@@ -434,7 +449,7 @@ void FlexFlow::top_level_task(Task const *task,
       total_num_requests++;
 
       if (verbose) {
-        // break;
+        break;
       }
     }
     TraceEmissionMachine emission_machine(timestamps, ratios);
@@ -470,133 +485,184 @@ void FlexFlow::top_level_task(Task const *task,
   // terminate the request manager by stopping the background thread
   rm->terminate_background_server();
 
-  // // get profliling results
-  // std::unordered_map<RequestGuid, RequestProfileInfo> profiling_results =
-  //     rm->get_requests_profiling();
-  // std::unordered_map<RequestGuid, GenerationResult>
-  // request_generation_results =
-  //     rm->get_request_generation_results();
-  // // save profiling results to csv file
-  // std::string header =
-  //     "llm,max_tree_depth,online_tree_update,matching_strategy,batch_size,tokens_per_batch,total_time_ms,throughput_tokens_per_"
-  //     "sec,mean_generated_tokens_per_step,mean_decoding_steps,mean_output_"
-  //     "length,mean_e2e_latency,mean_llm_ttft,mean_llm_tpot,mean_ssm_step_time,"
-  //     "mean_candidate_size";
-  // std::string row = "";
+  // get profliling results
+  std::unordered_map<RequestGuid, RequestProfileInfo> profiling_results =
+      rm->get_requests_profiling();
+  std::unordered_map<RequestGuid, GenerationResult>
+  request_generation_results =
+      rm->get_request_generation_results();
+  // save profiling results to csv file
+  std::string header =
+      "llm,partition,max_tree_depth,online_tree_update,matching_strategy,batch_size,tokens_per_batch,mean_speculated_length,mean_accepted_candidate_length,mean_acceptance_rate,mean_prefix_length,mean_total_time_ms,throughput_tokens_per_sec,mean_generated_tokens_per_step,mean_decoding_steps,mean_output_length,mean_e2e_latency,mean_llm_ttft,mean_llm_tpot,mean_tree_operation_time_per_step,mean_speculated_length_per_req,mean_accepted_candidate_length_per_req,mean_acceptance_rate_per_req,mean_prefix_length_per_req";
+  std::string row = "";
 
-  // double mean_decoding_steps = 0;
-  // double mean_output_length = 0;
-  // double mean_e2e_latency = 0;
-  // double mean_llm_ttft = 0;
-  // double mean_llm_tpot = 0;
-  // double mean_ssm_step_time = 0;
-  // double mean_candidate_size = 0;
+  double mean_decoding_steps = 0;
+  double mean_output_length = 0;
+  double mean_e2e_latency = 0;
+  double mean_llm_ttft = 0;
+  double mean_llm_tpot = 0;
+  
+  std::vector<double> mean_speculated_length_per_req;
+  std::vector<double> mean_accepted_candidate_length_per_req;
+  std::vector<double> mean_acceptance_rate_per_req;
+  std::vector<double> mean_prefix_length_per_req;
+  std::vector<double> mean_tree_operation_time_per_req;
+  double mean_speculated_length = 0;
+  double mean_accepted_candidate_length = 0;
+  double mean_acceptance_rate = 0;
+  double mean_prefix_length = 0;
 
-  // for (auto &profiling_result : profiling_results) {
-  //   RequestGuid guid = profiling_result.first;
-  //   RequestProfileInfo &profile_info = profiling_result.second;
-  //   GenerationResult &result = request_generation_results[guid];
-  //   mean_decoding_steps += profile_info.llm_decoding_steps;
-  //   mean_output_length += result.output_tokens.size();
-  //   mean_e2e_latency += profile_info.finish_time - profile_info.start_time;
-  //   // LLM ttft
-  //   double prefilling_time_ms = 0.0;
-  //   if (profile_info.start_decoding_time != 0) {
-  //     prefilling_time_ms =
-  //         (profile_info.start_decoding_time - profile_info.start_time) /
-  //         1000.0;
-  //   } else {
-  //     prefilling_time_ms =
-  //         (profile_info.finish_time - profile_info.start_time) / 1000.0;
-  //   }
-  //   mean_llm_ttft += prefilling_time_ms;
-  //   // LLM tpot
-  //   double per_token_time_ms = 0;
-  //   if (profile_info.start_decoding_time != 0) {
-  //     per_token_time_ms =
-  //         (profile_info.finish_time - profile_info.start_decoding_time) /
-  //         1000.0 / result.output_tokens.size();
-  //   }
-  //   mean_llm_tpot += per_token_time_ms;
-  // }
-  // mean_decoding_steps /= profiling_results.size();
-  // mean_output_length /= profiling_results.size();
-  // mean_e2e_latency /= profiling_results.size();
-  // mean_llm_ttft /= profiling_results.size();
-  // mean_llm_tpot /= profiling_results.size();
+  for (auto &profiling_result : profiling_results) {
+    RequestGuid guid = profiling_result.first;
+    RequestProfileInfo &profile_info = profiling_result.second;
+    GenerationResult &result = request_generation_results[guid];
+    mean_decoding_steps += profile_info.llm_decoding_steps;
+    mean_output_length += result.output_tokens.size();
+    mean_e2e_latency += profile_info.finish_time - profile_info.start_time;
+    // LLM ttft
+    double prefilling_time_ms = 0.0;
+    if (profile_info.start_decoding_time != 0) {
+      prefilling_time_ms =
+          (profile_info.start_decoding_time - profile_info.start_time) /
+          1000.0;
+    } else {
+      prefilling_time_ms =
+          (profile_info.finish_time - profile_info.start_time) / 1000.0;
+    }
+    mean_llm_ttft += prefilling_time_ms;
+    // LLM tpot
+    double per_token_time_ms = 0;
+    if (profile_info.start_decoding_time != 0) {
+      per_token_time_ms =
+          (profile_info.finish_time - profile_info.start_decoding_time) /
+          1000.0 / result.output_tokens.size();
+    }
+    mean_llm_tpot += per_token_time_ms;
 
-  // ProfileInfo profile_info = rm->get_profiling_info();
-  // // total time
-  // long long total_time =
-  //     profile_info.server_end_time - profile_info.server_start_time;
-  // // throughput tokens per sec
-  // int total_tokens = 0;
-  // for (int num_tokens : profile_info.generated_tokens_per_step) {
-  //   total_tokens += num_tokens;
-  // }
-  // double throughput_tokens_per_sec = (double)total_tokens / (total_time /
-  // 1e6);
-  // // mean generated tokens per step
-  // double mean_generated_tokens_per_step =
-  //     (double)std::accumulate(profile_info.generated_tokens_per_step.begin(),
-  //                             profile_info.generated_tokens_per_step.end(),
-  //                             0);
-  // double total_request_steps =
-  //     (double)std::accumulate(profile_info.requests_per_step.begin(),
-  //                             profile_info.requests_per_step.end(),
-  //                             0);
-  // mean_generated_tokens_per_step /= total_request_steps;
+    // Suffix decoding stuff
+    double mean_spec_len_req = 0;
+    double mean_acceptance_rate_req = 0;
+    double mean_accepted_candidate_len_req = 0;
+    mean_spec_len_req = (double)std::accumulate(profile_info.speculated_length_per_step.begin(),
+                                                        profile_info.speculated_length_per_step.end(),
+                                                      0);
+    mean_acceptance_rate_req = mean_spec_len_req;
+    mean_spec_len_req /= profile_info.speculated_length_per_step.size();
+    mean_speculated_length_per_req.push_back( mean_spec_len_req );
+    mean_speculated_length += mean_spec_len_req;
+    mean_accepted_candidate_len_req = (double)std::accumulate(profile_info.accepted_tokens_per_step.begin(),
+                                                        profile_info.accepted_tokens_per_step.end(),
+                                                      0);
+    mean_acceptance_rate_req /= mean_accepted_candidate_len_req;
+    mean_accepted_candidate_len_req /= profile_info.accepted_tokens_per_step.size();
+    mean_accepted_candidate_length_per_req.push_back( mean_accepted_candidate_len_req );
+    mean_accepted_candidate_length += mean_accepted_candidate_len_req;
 
-  // // SSM tpots
-  // for (double time : profile_info.ssm_step_times) {
-  //   mean_ssm_step_time += time;
-  // }
-  // mean_ssm_step_time /= profile_info.ssm_step_times.size();
-  // // SSM number of steps (= candidate length)
-  // for (int nb : profile_info.ssm_steps) {
-  //   mean_candidate_size += nb;
-  // }
-  // mean_candidate_size /= profile_info.ssm_steps.size();
+    mean_acceptance_rate_per_req.push_back(mean_acceptance_rate_req);
+    mean_acceptance_rate += mean_acceptance_rate_req;
 
-  // // add all metrics to csv
-  // row += model_metadata.llm_model_name + ",";
-  // row += model_metadata.model_names.ssm_model_names[0] + ",";
-  // row += std::to_string(max_requests_per_batch) + ",";
-  // row += std::to_string(max_tokens_per_batch) + ",";
-  // row += std::to_string((double)total_time / 1000.0) + ",";
-  // row += std::to_string(throughput_tokens_per_sec) + ",";
-  // row += std::to_string(mean_generated_tokens_per_step) + ",";
-  // row += std::to_string(mean_decoding_steps) + ",";
-  // row += std::to_string(mean_output_length) + ",";
-  // row += std::to_string(mean_e2e_latency) + ",";
-  // row += std::to_string(mean_llm_ttft) + ",";
-  // row += std::to_string(mean_llm_tpot) + ",";
-  // row += std::to_string(mean_ssm_step_time) + ",";
-  // row += std::to_string(mean_candidate_size);
+    mean_prefix_length_per_req.push_back((double)std::accumulate(profile_info.prefix_length_per_step.begin(),
+                                                        profile_info.prefix_length_per_step.end(),
+                                                      0) / profile_info.prefix_length_per_step.size());
+    mean_prefix_length += mean_prefix_length_per_req.back();
+  }
+  mean_decoding_steps /= profiling_results.size();
+  mean_output_length /= profiling_results.size();
+  mean_e2e_latency /= profiling_results.size();
+  mean_llm_ttft /= profiling_results.size();
+  mean_llm_tpot /= profiling_results.size();
+  mean_speculated_length /= profiling_results.size();
+  mean_accepted_candidate_length /= profiling_results.size();
+  mean_acceptance_rate /= profiling_results.size();
+  mean_prefix_length /= profiling_results.size();
 
-  // // csv filepath
-  // // create csv filepath and add header if it doesn't exist
-  // bool csv_file_exists = std::filesystem::exists(file_paths.csv_file_path);
-  // if (!csv_file_exists) {
-  //   // Create new file and write header
-  //   std::ofstream file(file_paths.csv_file_path);
-  //   if (!file.is_open()) {
-  //     std::cerr << "Failed to open file: " << file_paths.csv_file_path
-  //               << std::endl;
-  //     assert(false);
-  //   }
-  //   file << header << "\n";
-  //   file.close();
-  // }
+  ProfileInfo profile_info = rm->get_profiling_info();
+  // total time
+  long long total_time =
+      profile_info.server_end_time - profile_info.server_start_time;
+  // throughput tokens per sec
+  int total_tokens = 0;
+  for (int num_tokens : profile_info.generated_tokens_per_step) {
+    total_tokens += num_tokens;
+  }
+  double throughput_tokens_per_sec = (double)total_tokens / (total_time /
+  1e6);
+  // mean generated tokens per step
+  double mean_generated_tokens_per_step =
+      (double)std::accumulate(profile_info.generated_tokens_per_step.begin(),
+                              profile_info.generated_tokens_per_step.end(),
+                              0);
+  double total_request_steps =
+      (double)std::accumulate(profile_info.requests_per_step.begin(),
+                              profile_info.requests_per_step.end(),
+                              0);
+  mean_generated_tokens_per_step /= total_request_steps;
+  double mean_tree_operation_time_per_step = 
+      (double)std::accumulate(profile_info.tree_operation_step_times.begin(),
+                              profile_info.tree_operation_step_times.end(),
+                              0);
+  mean_tree_operation_time_per_step /= profile_info.tree_operation_step_times.size();
 
-  // // Append the new row
-  // std::ofstream file(file_paths.csv_file_path, std::ios::app);
-  // if (!file.is_open()) {
-  //   std::cerr << "Failed to open file: " << file_paths.csv_file_path
-  //             << std::endl;
-  // }
-  // file << row << "\n";
-  // file.close();
+  // add all metrics to csv
+  row += model_metadata.llm_model_name + ",";
+  row += target_partition + ",";
+  row += std::to_string(max_tree_depth) + ",";
+  row += std::to_string(online_tree_update) + ",";
+  row += matching_strategy + ",";
+  row += std::to_string(max_requests_per_batch) + ",";
+  row += std::to_string(max_tokens_per_batch) + ",";
+
+  // avg speculated length
+  row += std::to_string(mean_speculated_length) + ",";
+  // avg accepted candidate length
+  row += std::to_string(mean_accepted_candidate_length) + ",";
+  // avg acceptance rate
+  row += std::to_string(mean_acceptance_rate) + ",";
+  // avg prefix length
+  row += std::to_string(mean_prefix_length) + ",";
+
+  row += std::to_string((double)total_time / 1000.0) + ",";
+  row += std::to_string(throughput_tokens_per_sec) + ",";
+  row += std::to_string(mean_generated_tokens_per_step) + ",";
+  row += std::to_string(mean_decoding_steps) + ",";
+  row += std::to_string(mean_output_length) + ",";
+  row += std::to_string(mean_e2e_latency) + ",";
+  row += std::to_string(mean_llm_ttft) + ",";
+  row += std::to_string(mean_llm_tpot) + ",";
+  // mean_tree_operation_time_per_step
+  row += std::to_string(mean_tree_operation_time_per_step) + ",";
+  // mean_speculated_length_per_req
+  row += vectorToString(mean_speculated_length_per_req) + ",";
+  // mean_accepted_candidate_length_per_req
+  row += vectorToString(mean_accepted_candidate_length_per_req) + ",";
+  // mean_acceptance_rate_per_req
+  row += vectorToString(mean_acceptance_rate_per_req) + ",";
+  // mean_prefix_length_per_req
+  row += vectorToString(mean_prefix_length_per_req) + ",";
+
+  // csv filepath
+  // create csv filepath and add header if it doesn't exist
+  bool csv_file_exists = std::filesystem::exists(file_paths.csv_file_path);
+  if (!csv_file_exists) {
+    // Create new file and write header
+    std::ofstream file(file_paths.csv_file_path);
+    if (!file.is_open()) {
+      std::cerr << "Failed to open file: " << file_paths.csv_file_path
+                << std::endl;
+      assert(false);
+    }
+    file << header << "\n";
+    file.close();
+  }
+
+  // Append the new row
+  std::ofstream file(file_paths.csv_file_path, std::ios::app);
+  if (!file.is_open()) {
+    std::cerr << "Failed to open file: " << file_paths.csv_file_path
+              << std::endl;
+  }
+  file << row << "\n";
+  file.close();
 
   // Execution fence
   {

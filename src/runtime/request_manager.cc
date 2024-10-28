@@ -808,6 +808,7 @@ void RequestManager::insert_completed_request_into_suffix_tree(
     int batch_index) {
   assert(suffix_tree != nullptr);
   assert(suffix_tree_online_tree_update == true);
+  long long int start_time = Realm::Clock::current_time_in_microseconds();
   RequestGuid guid = guid_of_requests[batch_index];
   Request &request = all_requests[guid];
   std::vector<int> output_tokens = std::vector<int>(
@@ -816,6 +817,10 @@ void RequestManager::insert_completed_request_into_suffix_tree(
   if (output_tokens.size() > 0) {
     suffix_tree->insert(output_tokens);
   }
+  long long int end_time = Realm::Clock::current_time_in_microseconds();
+  assert(profiling.tree_operation_step_times.size() > 0);
+  profiling.tree_operation_step_times[profiling.tree_operation_step_times.size() - 1] +=
+      (double)(end_time - start_time) * 1e-3;
 }
 void RequestManager::request_complete_clean_up(int batch_index) {
   RequestGuid guid = guid_of_requests[batch_index];
@@ -1781,6 +1786,9 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
 }
 
 void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
+  
+  long long int start_time = Realm::Clock::current_time_in_microseconds();
+  
   request.suffix_decoding_best_token_ids.clear();
   request.suffix_decoding_best_parents.clear();
 
@@ -1827,6 +1835,7 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
       best_prefix = prefix;
     }
   }
+
   if (verbose) {
     std::cout << "Populated best suffix tree candidates for request " << request.guid << " with score " << best_score << std::endl;
     std::cout << "Best prefix length: " << best_prefix_length << std::endl;
@@ -1875,6 +1884,7 @@ BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
             std::begin(new_bc.request_available));
   new_bc.num_available_requests = num_available_requests;
 
+  long long int start_time = Realm::Clock::current_time_in_microseconds();
   for (int request_index = 0; request_index < get_max_requests_per_batch();
        ++request_index) {
     if (!request_available[request_index]) {
@@ -1962,6 +1972,8 @@ BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
     // Copy the streaming cache info
     new_bc.streamingCacheInfo[request_index] = request.streaming_cache_info;
   }
+  long long int end_time = Realm::Clock::current_time_in_microseconds();
+  profiling.tree_operation_step_times.push_back((double)(end_time - start_time) * 1e-3);
 
   if (verbose) {
     std::cout << "prepare_suffix_decoding_batch_config NEW batchconfig:"
@@ -2130,10 +2142,6 @@ bool RequestManager::update_llm_suffix_decoding_results(
     int guid = guid_of_requests[request_index];
     Request &request = all_requests[guid];
     assert(request.status == Request::RUNNING);
-    // if (verbose) {
-    //   std::cout << "Request " << guid << " token tree: " << std::endl;
-    //   std::cout << request.speculative_token_trees[0];
-    // }
 
     request.decode_latency_ms =
         (current_time - profiling_requests[guid].start_decoding_time) * 1e-3;
@@ -2148,9 +2156,6 @@ bool RequestManager::update_llm_suffix_decoding_results(
     // init_token_tree(guid);
     assert(!request.committed_tokens.empty() &&
            "The committed tokens should not be empty.");
-    // Add the last committed token as the root of the speculative token tree
-    // add_root_to_spec_token_tree(guid,
-    // request.committed_tokens.back().token_id);
 
     // Check if the request is completed. If its completed, clean up the
     // metainfo stored in the RequestManager. Otherwise, update its bitmask.
@@ -2796,13 +2801,7 @@ void RequestManager::get_verify_results_suffix_decoding(
       }
     }
 
-    // 3. add the new bonus token to committed_tokens and request.tokens. This will be the child of the last token to be accepted.
-    // int bonus_token_idx=0;
-    // for (int i=last_accepted_token_idx+1; i<request.suffix_decoding_best_token_ids.size(); i++) {
-    //   if (request.suffix_decoding_best_parents[i] == last_accepted_token_idx) {
-    //     bonus_token_idx=i;
-    //   }
-    // }
+    // 3. Add the bonus token
     int bonus_token_idx = last_accepted_token_idx+1;
     if (verbose) {
       std::cout << "last_accepted_token_idx: " << last_accepted_token_idx << std::endl;
@@ -2821,6 +2820,10 @@ void RequestManager::get_verify_results_suffix_decoding(
     request.tokens.push_back(llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]);
 
     total_nb_generated_tokens += request.committed_tokens.size() - 1;
+    profiling_requests[guid].speculated_length_per_step.push_back((int)request.suffix_decoding_best_token_ids.size());
+    assert(request.committed_tokens.size() >=2); // at least two bonus tokens should be added
+    profiling_requests[guid].accepted_tokens_per_step.push_back((int)request.committed_tokens.size()-2);
+
     if (verbose) {
       std::cout << "Request " << request.guid << " committed tokens: ";
       for (auto const &committed_token : request.committed_tokens) {
