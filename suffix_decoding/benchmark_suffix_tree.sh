@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-set -x
+# set -x
 set -e
 
 # Cd into directory holding this script
