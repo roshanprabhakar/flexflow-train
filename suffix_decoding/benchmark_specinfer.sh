@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# set -x
+set -x
 set -e
 
 # Cd into directory holding this script
@@ -54,11 +54,10 @@ python ../inference/utils/download_hf_model.py --half-precision-only $model_name
 export LEGION_BACKTRACE=1
 
 for i in "${!partitions[@]}"; do
-    partition_name=${partitions[$i]}
-    rm /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}.csv || true
     for j in "${!batch_sizes[@]}"; do
     for k in "${!max_tree_depths[@]}"; do
     for l in "${!expansion_degrees[@]}"; do
+        partition_name=${partitions[$i]}
         batch_size=${batch_sizes[$j]}
         max_tree_depth=${max_tree_depths[$k]}
         expansion_degree=${expansion_degrees[$l]}
@@ -67,6 +66,7 @@ for i in "${!partitions[@]}"; do
         # create model name version where "/" is replaced with "-"
         model_name_=$(echo $model_name | tr / -)
         small_model_name_=$(echo $small_model_name | tr / -)
+        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.csv || true
         rm /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.out || true
 
         time ./inference/suffix_decoding/specinfer \
@@ -85,7 +85,7 @@ for i in "${!partitions[@]}"; do
             -trace /home/yak/goliaro/suffix-tree-decoding/trace/llama70b/cortex.json \
             -trace-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_ff_speciner_${partition_name}.json \
             -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.out \
-            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}.csv \
+            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.csv \
             -target-partition ${partition_name}
     done
     done

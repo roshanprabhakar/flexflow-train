@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-# set -x
+set -x
 set -e
 
 # Cd into directory holding this script
@@ -61,12 +61,11 @@ python ../inference/utils/download_hf_model.py --half-precision-only $model_name
 export LEGION_BACKTRACE=1
 
 for i in "${!partitions[@]}"; do
-    partition_name=${partitions[$i]}
-    rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}.csv || true
     for j in "${!batch_sizes[@]}"; do
     for k in "${!matching_strategies[@]}"; do
     for l in "${!online_tree_update[@]}"; do
     for td in "${!max_tree_depths[@]}"; do
+        partition_name=${partitions[$i]}
         batch_size=${batch_sizes[$j]}
         matching_strategy=${matching_strategies[$k]}
         otu=${online_tree_update[$k]}
@@ -75,6 +74,7 @@ for i in "${!partitions[@]}"; do
         echo "Running partition ${partition_name} with model ${model_name}, batch size ${batch_size}, and tokens per batch ${tokens_per_batch} with matching strategy ${matching_strategy}, online tree update ${otu}, and max tree depth ${max_tree_depth}"
         # create model name version where "/" is replaced with "-"
         model_name_=$(echo $model_name | tr / -)
+        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_${model_name_}_${batch_size}_${batch_size}_${matching_strategy}_otu-${otu}_max_tree_depth-${max_tree_depth}.csv || true
         rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_${model_name_}_${batch_size}_${batch_size}_${matching_strategy}_otu-${otu}_max_tree_depth-${max_tree_depth}.out || true
 
         otu_arg=""
@@ -98,7 +98,7 @@ for i in "${!partitions[@]}"; do
             -trace /home/yak/goliaro/suffix-tree-decoding/trace/llama70b/cortex.json \
             -trace-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_ff_${partition_name}.json \
             -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_${model_name_}_${batch_size}_${matching_strategy}_otu-${otu}_max_tree_depth-${max_tree_depth}.out \
-            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}.csv \
+            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_${model_name_}_${batch_size}_${batch_size}_${matching_strategy}_otu-${otu}_max_tree_depth-${max_tree_depth}.csv \
             -target-partition ${partition_name}
     done
     done
