@@ -24,16 +24,16 @@ tokens_per_batch=1024
 # CSIZE=60000
 
 partitions=(
-    # QUESTION_SUGGESTION
+    QUESTION_SUGGESTION
     # CATEGORIZATION
     # FEATURE_EXTRACTION
-    SQL_FANOUT1
+    # SQL_FANOUT1
     # SQL_FANOUT2
     # SQL_FANOUT3
     # SQL_COMBINE
 )
 batch_sizes=(
-    1
+    8
     # 16
 )
 matching_strategies=(
@@ -62,7 +62,7 @@ export LEGION_BACKTRACE=1
 
 for i in "${!partitions[@]}"; do
     partition_name=${partitions[$i]}
-    # rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}.csv || true
+    rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}.csv || true
     for j in "${!batch_sizes[@]}"; do
     for k in "${!matching_strategies[@]}"; do
     for l in "${!online_tree_update[@]}"; do

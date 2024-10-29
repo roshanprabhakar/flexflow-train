@@ -690,6 +690,10 @@ ProfileInfo RequestManager::get_profiling_info() {
   return profiling;
 }
 
+std::vector<NewProfileInfo> RequestManager::get_new_profiling_info() {
+  return new_profiling_info;
+}
+
 BatchConfigFuture RequestManager::get_next_batch_config(
     InferenceResultFuture const &result, Context ctx, Runtime *runtime) {
   RequestManager *rm = this;
@@ -1791,6 +1795,8 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
   
   request.suffix_decoding_best_token_ids.clear();
   request.suffix_decoding_best_parents.clear();
+  request.suffix_decoding_best_score = 0.0;
+  request.suffix_decoding_best_prefix_length = 0;
 
   int max_prefix_length = std::min(static_cast<int>(request.tokens.size()),
                                    this->get_suffix_tree_max_depth());
@@ -1798,8 +1804,6 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
     return;
   }
 
-  float best_score = 0;
-  int best_prefix_length = 0;
   std::vector<int> best_prefix;
 
   // Get best candidate from the suffix tree
@@ -1813,11 +1817,11 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
             prefix,
             this->get_suffix_tree_matching_strategy(),
             this->get_suffix_tree_max_spec_factor());
-    if (p_score > best_score) {
+    if (p_score > request.suffix_decoding_best_score) {
       request.suffix_decoding_best_token_ids = p_token_ids;
       request.suffix_decoding_best_parents = p_parents;
-      best_prefix_length = length;
-      best_score = p_score;
+      request.suffix_decoding_best_prefix_length = length;
+      request.suffix_decoding_best_score = p_score;
       best_prefix = prefix;
     }
 
@@ -1827,19 +1831,19 @@ void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
             prefix,
             this->get_suffix_tree_matching_strategy(),
             this->get_suffix_tree_max_spec_factor());
-    if (s_score > best_score) {
+    if (s_score > request.suffix_decoding_best_score) {
       request.suffix_decoding_best_token_ids = s_token_ids;
       request.suffix_decoding_best_parents = s_parents;
-      best_prefix_length = length;
-      best_score = s_score;
+      request.suffix_decoding_best_prefix_length = length;
+      request.suffix_decoding_best_score = s_score;
       best_prefix = prefix;
     }
   }
-  profiling_requests[request.guid].prefix_length_per_step.push_back(best_prefix_length);
+  profiling_requests[request.guid].prefix_length_per_step.push_back(request.suffix_decoding_best_prefix_length);
 
   if (verbose) {
-    std::cout << "Populated best suffix tree candidates for request " << request.guid << " with score " << best_score << std::endl;
-    std::cout << "Best prefix length: " << best_prefix_length << std::endl;
+    std::cout << "Populated best suffix tree candidates for request " << request.guid << " with score " << request.suffix_decoding_best_score << std::endl;
+    std::cout << "Best prefix length: " << request.suffix_decoding_best_prefix_length << std::endl;
     std::cout << "Best prefix: ";
     for (const auto &token : best_prefix) {
       std::cout << token << " ";
@@ -2832,10 +2836,17 @@ void RequestManager::get_verify_results_suffix_decoding(
       request.tokens.push_back(llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]);
     }
 
-    total_nb_generated_tokens += request.committed_tokens.size() - 1;
-    profiling_requests[guid].speculated_length_per_step.push_back((int)request.suffix_decoding_best_token_ids.size());
-    assert(request.committed_tokens.size() >=2); // at least two bonus tokens should be added
-    profiling_requests[guid].accepted_tokens_per_step.push_back((int)request.committed_tokens.size()-2);
+    assert(request.committed_tokens.size() >=2);
+    int nb_generated_tokens = (int)request.committed_tokens.size() -1; // exclude previous bonus token
+    int accepted_tokens = (int)request.committed_tokens.size() - 1; // exclude previous bonus token
+    if (!found_eos) {
+      accepted_tokens--; // exclude the last bonus token (if we found eos, we don't add it)
+    }
+    
+    total_nb_generated_tokens += nb_generated_tokens;
+    profiling_requests[guid].speculated_size_per_step.push_back((int)request.suffix_decoding_best_token_ids.size());
+    profiling_requests[guid].accepted_tokens_per_step.push_back(accepted_tokens);
+    profiling_requests[guid].generated_tokens_per_step__.push_back(nb_generated_tokens);
 
     if (verbose) {
       std::cout << "Request " << request.guid << " committed tokens: ";
@@ -2847,6 +2858,17 @@ void RequestManager::get_verify_results_suffix_decoding(
       std::string output = this->tokenizer_->Decode(request.tokens);
       std::cout << "Output sequence: " << output << std::endl;
     }
+
+    NewProfileInfo new_profile_info;
+    new_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
+    new_profile_info.request_guid = guid;
+    new_profile_info.request_step_idx = profiling_requests[guid].llm_decoding_steps-1;
+    new_profile_info.num_speculated_tokens = (int)request.suffix_decoding_best_token_ids.size();
+    new_profile_info.num_accepted_tokens = accepted_tokens;
+    new_profile_info.prefix_length = request.suffix_decoding_best_prefix_length;
+    new_profile_info.speculation_score = request.suffix_decoding_best_score;
+    new_profile_info.num_generated_tokens = nb_generated_tokens;
+    new_profiling_info.push_back(new_profile_info);
   }
   profiling.generated_tokens_per_step.push_back(total_nb_generated_tokens);
 }

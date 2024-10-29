@@ -153,6 +153,8 @@ struct Request {
   SuffixTree *prompt_tree = nullptr;
   std::vector<int> suffix_decoding_best_token_ids;
   std::vector<int> suffix_decoding_best_parents;
+  float suffix_decoding_best_score = 0.0f;
+  int suffix_decoding_best_prefix_length = 0;
   std::vector<TokenTree> speculative_token_trees;
   // To make request manager stateful, we need to store the causal mask here
   BatchConfig::BitMask causal_mask;
@@ -235,6 +237,16 @@ struct Request {
   }
 };
 
+struct NewProfileInfo {
+  long long timestamp;
+  BatchConfig::RequestGuid request_guid;
+  int request_step_idx;
+  int num_speculated_tokens;
+  int num_accepted_tokens;
+  int prefix_length;
+  double speculation_score;
+  int num_generated_tokens;
+};
 struct RequestProfileInfo {
   int llm_prefilling_steps = 0;
   int ssm_prefilling_steps = 0;
@@ -242,9 +254,10 @@ struct RequestProfileInfo {
   int ssm_decoding_steps = 0;
   long long start_time = 0, start_decoding_time = 0, finish_time = 0;
   // suffix decoding metrics
-  std::vector<int> speculated_length_per_step;
+  std::vector<int> speculated_size_per_step;
   std::vector<int> accepted_tokens_per_step;
   std::vector<int> prefix_length_per_step;
+  std::vector<int> generated_tokens_per_step__;
 };
 struct ProfileInfo {
   // For SpecInfer: One step is comprised of one ssm speculation phase + a
@@ -421,6 +434,7 @@ public:
   std::unordered_map<RequestGuid, GenerationResult>
       get_request_generation_results();
   ProfileInfo get_profiling_info();
+  std::vector<NewProfileInfo> get_new_profiling_info();
 
   // Comparters
   struct SharedTokenTreeNodePtrRequestGuidWeightedLess {
@@ -522,6 +536,7 @@ private:
 
   ProfileInfo profiling;
   std::unordered_map<RequestGuid, RequestProfileInfo> profiling_requests;
+  std::vector<NewProfileInfo> new_profiling_info;
   double total_request_run_time;
   bool load_pending_request_to_batch();
   void request_update_attainment(int index, bool attained);
