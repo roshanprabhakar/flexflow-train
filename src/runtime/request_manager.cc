@@ -1993,6 +1993,14 @@ BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
   return new_bc;
 }
 
+int get_tree_size(Request const &request) {
+  int size = 0;
+  for (auto &layer : request.speculative_token_trees[0].tree_layers) {
+    size += (int)layer.size();
+  }
+  return size;
+}
+
 bool RequestManager::update_llm_verify_results(
     InferenceResult const &llm_verify_result) {
   // We may have two types of InferenceResults, one is the results from
@@ -2241,6 +2249,12 @@ bool RequestManager::update_ssm_inference_results(
     append_bitmask(guid);
 
     profiling_requests[guid].ssm_decoding_steps++;
+
+    if (current_ssm_step == ssm_tree_depth) {
+      assert(profiling_requests[guid].ssm_decoding_steps % ssm_tree_depth == 0);
+      profiling_requests[guid].speculation_start_timestamp = profiling.ssm_step_start;
+      profiling_requests[guid].speculation_end_timestamp = Realm::Clock::current_time_in_microseconds();
+    }
   }
 
   // Stop conditions
@@ -2650,6 +2664,7 @@ void RequestManager::get_verify_results_greedy(
 
     int current_token_index = 1; // Because we skip the root
                                  // We skip the first layer
+    bool found_eos = false;
     for (auto layer_it = token_tree.tree_layers.begin() + 1;
          layer_it != token_tree.tree_layers.end();
          ++layer_it) {
@@ -2692,13 +2707,22 @@ void RequestManager::get_verify_results_greedy(
             last_accepted_token_index = current_token_index;
             last_accepted_token_index_in_layer = current_token_index_in_layer;
             committed_token_index++;
+            if (node_ptr->id == eos_token_id) {
+              found_eos = true;
+            }
           }
           current_token_index++;
           current_token_index_in_layer++;
         }
+        if (found_eos) {
+          break;
+        }
       }
       if (!token_accepted_this_layer) {
         // No token is accepted in this layer, we should stop the traversal
+        break;
+      }
+      if (found_eos) {
         break;
       }
     }
@@ -2707,16 +2731,39 @@ void RequestManager::get_verify_results_greedy(
     // from_index: since this token is not in the token tree, the llm
     // doesn't have its KV cache, so the from_index should be a place
     // holder, which is -1
-    request.committed_tokens.push_back(Request::CommittedToken(
-        -1,
-        committed_token_index,
-        llm_verify_result
-            .token_ids[llm_result_offset + last_accepted_token_index]));
-    request.tokens.push_back(
-        llm_verify_result
-            .token_ids[llm_result_offset + last_accepted_token_index]);
+    if (!found_eos) {
+      request.committed_tokens.push_back(Request::CommittedToken(
+          -1,
+          committed_token_index,
+          llm_verify_result
+              .token_ids[llm_result_offset + last_accepted_token_index]));
+      request.tokens.push_back(
+          llm_verify_result
+              .token_ids[llm_result_offset + last_accepted_token_index]);
+    }
 
-    total_nb_generated_tokens += request.committed_tokens.size() - 1;
+    assert(request.committed_tokens.size() >=2);
+    int nb_generated_tokens = (int)request.committed_tokens.size() -1; // exclude previous bonus token
+    int accepted_tokens = (int)request.committed_tokens.size() - 1; // exclude previous bonus token
+    if (!found_eos) {
+      accepted_tokens--; // exclude the last bonus token (if we found eos, we don't add it)
+    }
+    total_nb_generated_tokens += nb_generated_tokens;
+    
+
+    NewProfileInfo new_profile_info;
+    new_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
+    new_profile_info.request_guid = guid;
+    new_profile_info.request_step_idx = profiling_requests[guid].llm_decoding_steps-1; // check if this has already been incremented
+    new_profile_info.num_speculated_tokens = get_tree_size(request);
+    new_profile_info.num_accepted_tokens = accepted_tokens;
+    new_profile_info.prefix_length = -1;
+    new_profile_info.speculation_score = -1.0;
+    new_profile_info.num_generated_tokens = nb_generated_tokens;
+    new_profile_info.speculation_start_timestamp = profiling_requests[guid].speculation_start_timestamp;
+    new_profile_info.speculation_end_timestamp = profiling_requests[guid].speculation_end_timestamp;
+    new_profiling_info.push_back(new_profile_info);
+
     if (verbose) {
       std::cout << "Request " << request.guid << " committed tokens: ";
       for (auto const &committed_token : request.committed_tokens) {

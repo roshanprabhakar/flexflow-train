@@ -246,6 +246,8 @@ struct NewProfileInfo {
   int prefix_length;
   double speculation_score;
   int num_generated_tokens;
+  long long speculation_start_timestamp;
+  long long speculation_end_timestamp;
 };
 struct RequestProfileInfo {
   int llm_prefilling_steps = 0;
@@ -253,6 +255,8 @@ struct RequestProfileInfo {
   int llm_decoding_steps = 0;
   int ssm_decoding_steps = 0;
   long long start_time = 0, start_decoding_time = 0, finish_time = 0;
+  long long speculation_start_timestamp;
+  long long speculation_end_timestamp;
   // suffix decoding metrics
   std::vector<int> speculated_size_per_step;
   std::vector<int> accepted_tokens_per_step;
