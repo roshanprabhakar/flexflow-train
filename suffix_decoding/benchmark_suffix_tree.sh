@@ -25,19 +25,19 @@ tokens_per_batch=1024
 
 partitions=(
     QUESTION_SUGGESTION
-    # CATEGORIZATION
-    # FEATURE_EXTRACTION
-    # SQL_FANOUT1
-    # SQL_FANOUT2
-    # SQL_FANOUT3
-    # SQL_COMBINE
+    CATEGORIZATION
+    FEATURE_EXTRACTION
+    SQL_FANOUT1
+    SQL_FANOUT2
+    SQL_FANOUT3
+    SQL_COMBINE
 )
 batch_sizes=(
     8
     # 16
 )
 matching_strategies=(
-    # linear_token_path
+    linear_token_path
     dynamic_token_tree
 )
 online_tree_update=(

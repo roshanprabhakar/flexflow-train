@@ -1,5 +1,5 @@
 #! /usr/bin/env bash
-set -x
+# set -x
 set -e
 
 # Cd into directory holding this script
@@ -17,24 +17,24 @@ CSIZE=200000
 MAX_SEQ_LEN=2000
 tokens_per_batch=1024
 
-# comment these lines in for debugging
-model_name=meta-llama/Meta-Llama-3-8B-Instruct
-FSIZE=30000
-ZSIZE=90000
-CSIZE=120000
+# # comment these lines in for debugging
+# model_name=meta-llama/Meta-Llama-3-8B-Instruct
+# FSIZE=30000
+# ZSIZE=90000
+# CSIZE=120000
 
 partitions=(
     QUESTION_SUGGESTION
-    # CATEGORIZATION
-    # FEATURE_EXTRACTION
-    # SQL_FANOUT1
-    # SQL_FANOUT2
-    # SQL_FANOUT3
-    # SQL_COMBINE
+    CATEGORIZATION
+    FEATURE_EXTRACTION
+    SQL_FANOUT1
+    SQL_FANOUT2
+    SQL_FANOUT3
+    SQL_COMBINE
 )
 batch_sizes=(
-    1
-    # 8
+    # 1
+    8
     # 16
 )
 
@@ -55,7 +55,7 @@ export LEGION_BACKTRACE=1
 
 for i in "${!partitions[@]}"; do
     partition_name=${partitions[$i]}
-    rm /usr/FlexFlow/inference/output/cortex_specinfer_${partition_name}.csv || true
+    rm /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}.csv || true
     for j in "${!batch_sizes[@]}"; do
     for k in "${!max_tree_depths[@]}"; do
     for l in "${!expansion_degrees[@]}"; do
@@ -67,7 +67,7 @@ for i in "${!partitions[@]}"; do
         # create model name version where "/" is replaced with "-"
         model_name_=$(echo $model_name | tr / -)
         small_model_name_=$(echo $small_model_name | tr / -)
-        rm /usr/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.out || true
+        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.out || true
 
         time ./inference/suffix_decoding/specinfer \
             -ll:gpu $NGPUS -ll:cpu 4 -ll:util 4 \
@@ -82,10 +82,10 @@ for i in "${!partitions[@]}"; do
             --expansion-degree ${expansion_degree} \
             -llm-model $model_name \
             -ssm-model $small_model_name \
-            -trace /usr/suffix-tree-decoding/trace/llama70b/cortex.json \
-            -trace-output-path /usr/FlexFlow/inference/output/cortex_ff_speciner_${partition_name}.json \
-            -output-file /usr/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.out \
-            -csv-output-path /usr/FlexFlow/inference/output/cortex_specinfer_${partition_name}.csv \
+            -trace /home/yak/goliaro/suffix-tree-decoding/trace/llama70b/cortex.json \
+            -trace-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_ff_speciner_${partition_name}.json \
+            -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}_${model_name_}_${small_model_name_}_${batch_size}_${max_tree_depth}_${expansion_degree}.out \
+            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_specinfer_${partition_name}.csv \
             -target-partition ${partition_name}
     done
     done
