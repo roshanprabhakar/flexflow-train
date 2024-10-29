@@ -9,13 +9,19 @@ make -j
 source set_python_envs.sh
 
 model_name=meta-llama/Meta-Llama-3-70B-Instruct
-tokens_per_batchs=1024
 NGPUS=8
 FSIZE=70000
 ZSIZE=200000
 CSIZE=200000
 MAX_SEQ_LEN=7000
 max_spec_factor=4.0
+tokens_per_batch=1024
+
+# comment these lines in for debugging
+# model_name=meta-llama/Meta-Llama-3-8B-Instruct
+# FSIZE=70000
+# ZSIZE=30000
+# CSIZE=60000
 
 partitions=(
     # QUESTION_SUGGESTION
@@ -27,7 +33,7 @@ partitions=(
     # SQL_COMBINE
 )
 batch_sizes=(
-    8
+    1
     # 16
 )
 matching_strategies=(
@@ -56,7 +62,7 @@ export LEGION_BACKTRACE=1
 
 for i in "${!partitions[@]}"; do
     partition_name=${partitions[$i]}
-    rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}.csv || true
+    # rm /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}.csv || true
     for j in "${!batch_sizes[@]}"; do
     for k in "${!matching_strategies[@]}"; do
     for l in "${!online_tree_update[@]}"; do
@@ -89,10 +95,9 @@ for i in "${!partitions[@]}"; do
             --max-tree-depth $max_tree_depth \
             --max-spec-factor $max_spec_factor \
             -llm-model $model_name \
-            -ssm-model $small_model_name \
             -trace /home/yak/goliaro/suffix-tree-decoding/trace/llama70b/cortex.json \
             -trace-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_ff_${partition_name}.json \
-            -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_${model_name_}_${batch_size}_${batch_size}_${matching_strategy}_otu-${otu}_max_tree_depth-${max_tree_depth}.out \
+            -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}_${model_name_}_${batch_size}_${matching_strategy}_otu-${otu}_max_tree_depth-${max_tree_depth}.out \
             -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_${partition_name}.csv \
             -target-partition ${partition_name}
     done

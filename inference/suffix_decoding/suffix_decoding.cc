@@ -518,7 +518,7 @@ void FlexFlow::top_level_task(Task const *task,
     GenerationResult &result = request_generation_results[guid];
     mean_decoding_steps += profile_info.llm_decoding_steps;
     mean_output_length += result.output_tokens.size();
-    mean_e2e_latency += profile_info.finish_time - profile_info.start_time;
+    mean_e2e_latency += (double)(profile_info.finish_time - profile_info.start_time)/1000.0;
     // LLM ttft
     double prefilling_time_ms = 0.0;
     if (profile_info.start_decoding_time != 0) {
