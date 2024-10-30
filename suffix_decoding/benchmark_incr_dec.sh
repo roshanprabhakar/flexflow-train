@@ -17,19 +17,19 @@ MAX_SEQ_LEN=7000
 tokens_per_batch=1024
 
 # comment these lines in for debugging
-model_name=meta-llama/Meta-Llama-3-8B-Instruct
-FSIZE=32000
-ZSIZE=30000
-CSIZE=60000
+# model_name=meta-llama/Meta-Llama-3-8B-Instruct
+# FSIZE=32000
+# ZSIZE=30000
+# CSIZE=60000
 
 partitions=(
-    # QUESTION_SUGGESTION
-    # CATEGORIZATION
+    QUESTION_SUGGESTION
+    CATEGORIZATION
     FEATURE_EXTRACTION
-    # SQL_FANOUT1
-    # SQL_FANOUT2
-    # SQL_FANOUT3
-    # SQL_COMBINE
+    SQL_FANOUT1
+    SQL_FANOUT2
+    SQL_FANOUT3
+    SQL_COMBINE
 )
 batch_sizes=(
     8
@@ -48,8 +48,8 @@ for i in "${!partitions[@]}"; do
         echo "Running partition ${partition_name} with model ${model_name}, batch size ${batch_size}, and tokens per batch ${tokens_per_batch}"
         # create model name version where "/" is replaced with "-"
         model_name_=$(echo $model_name | tr / -)
-        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.csv || true
-        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.out || true
+        rm /usr/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.csv || true
+        rm /usr/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.out || true
 
         time ./inference/suffix_decoding/incr_dec \
             -ll:gpu $NGPUS -ll:cpu 4 -ll:util 4 \
@@ -61,10 +61,10 @@ for i in "${!partitions[@]}"; do
             --max-tokens-per-batch $tokens_per_batch \
             --max-output-length 900 \
             -llm-model $model_name \
-            -trace /home/yak/goliaro/suffix-tree-decoding/trace/llama70b/cortex.json \
-            -trace-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}.json \
-            -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.out \
-            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.csv \
+            -trace /usr/suffix-tree-decoding/trace/llama70b/cortex.json \
+            -trace-output-path /usr/FlexFlow/inference/output/cortex_incr_dec_${partition_name}.json \
+            -output-file /usr/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.out \
+            -csv-output-path /usr/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.csv \
             -target-partition ${partition_name}
     done
 done
