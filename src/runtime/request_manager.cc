@@ -1168,6 +1168,14 @@ bool RequestManager::update_llm_decode_results(InferenceResult const &result) {
         request.decode_latency_ms <= get_request_expected_latency(request);
     profiling_requests[guid].llm_decoding_steps++;
     nb_requests_decoded++;
+
+    NewProfileInfo new_profile_info;
+    new_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
+    new_profile_info.request_guid = guid;
+    new_profile_info.request_step_idx = profiling_requests[guid].llm_decoding_steps-1;
+    new_profile_info.num_generated_tokens = 1;
+    new_profiling_info.push_back(new_profile_info);
+
     if (request.tokens.back() == eos_token_id or
         request.decode_length() >= get_max_output_length() or
         request.tokens.size() >= get_max_sequence_length()) {
