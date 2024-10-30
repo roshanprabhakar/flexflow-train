@@ -48,10 +48,10 @@ for i in "${!partitions[@]}"; do
         echo "Running partition ${partition_name} with model ${model_name}, batch size ${batch_size}, and tokens per batch ${tokens_per_batch}"
         # create model name version where "/" is replaced with "-"
         model_name_=$(echo $model_name | tr / -)
-        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec${partition_name}_${model_name_}_${batch_size}.csv || true
-        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec${partition_name}_${model_name_}_${batch_size}.out || true
+        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.csv || true
+        rm /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.out || true
 
-        time ./inference/suffix_decoding/suffix_decoding \
+        time ./inference/suffix_decoding/incr_dec \
             -ll:gpu $NGPUS -ll:cpu 4 -ll:util 4 \
             -tensor-parallelism-degree $NGPUS \
             -ll:fsize $FSIZE -ll:zsize $ZSIZE -ll:csize $CSIZE \
@@ -63,8 +63,8 @@ for i in "${!partitions[@]}"; do
             -llm-model $model_name \
             -trace /home/yak/goliaro/suffix-tree-decoding/trace/llama70b/cortex.json \
             -trace-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}.json \
-            -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec${partition_name}_${model_name_}_${batch_size}.out \
-            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec${partition_name}_${model_name_}_${batch_size}.csv \
+            -output-file /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.out \
+            -csv-output-path /home/yak/goliaro/FlexFlow/inference/output/cortex_incr_dec_${partition_name}_${model_name_}_${batch_size}.csv \
             -target-partition ${partition_name}
     done
 done
