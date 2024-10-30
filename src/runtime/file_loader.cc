@@ -229,65 +229,58 @@ void load_attention_weights_v2(DT *ptr,
   size_t single_proj_size =
       hidden_dim *
       head_dim; // size of each of Q,K,V,O weights for a single head
+  size_t one_weight_file_size =
+      num_heads * single_proj_size; // size of each of Q/K/V/O for all heads
 
-  size_t qo_size = single_proj_size * num_heads,
-         kv_size = single_proj_size * num_kv_heads;
-  size_t kv_replicate_size = qo_size;
+  size_t q_size = one_weight_file_size, o_size = one_weight_file_size;
+  size_t k_size = single_proj_size * num_kv_heads,
+         v_size = single_proj_size * num_kv_heads;
+
+  size_t k_replicate_size = one_weight_file_size;
+  size_t v_replicate_size = one_weight_file_size;
+
   int replicate_num = num_heads / num_kv_heads;
-  // stride for q, k, v, o
-  size_t stride_size =
-      (qo_size + kv_replicate_size * 2 + qo_size) / tensor_parallelism_degree;
 
+  // stride for q, k, v, o
+  size_t stride_size = (q_size + v_replicate_size + k_replicate_size + o_size) /
+                       tensor_parallelism_degree;
   for (auto filename : weight_filenames) {
     std::cout << "Loading weight file " << filename << std::endl;
     std::string weight_filepath = join_path({weights_folder, filename});
-    size_t file_size = (file_index == 0 || file_index == 3) ? qo_size : kv_size;
+
+    int data_index = 0;
+    size_t partial_size = (file_index == 0 || file_index == 3)
+                              ? one_weight_file_size
+                              : single_proj_size * num_kv_heads;
+    size_t one_partition_size =
+        one_weight_file_size / tensor_parallelism_degree;
 
     std::ifstream in(weight_filepath, std::ios::in | std::ios::binary);
     if (!in.good()) {
       std::cout << "Could not open file: " << weight_filepath << std::endl;
     }
     assert(in.good() && "incorrect weight file path");
-    std::vector<DT> host_array(file_size);
-    size_t loaded_data_size = sizeof(DT) * file_size;
+    std::vector<DT> host_array(partial_size);
+    size_t loaded_data_size = sizeof(DT) * partial_size;
     in.seekg(0, in.end);
     in.seekg(0, in.beg);
     in.read((char *)host_array.data(), loaded_data_size);
     size_t in_get_size = in.gcount();
+
     if (in_get_size != loaded_data_size) {
       std::cout << "load attention data error " << in_get_size << ", "
                 << loaded_data_size << ", " << file_index << ", "
                 << weight_filepath << "\n";
       assert(false && "data size mismatch");
     }
-
+    // wq, wk, wo
     if (file_index == 0) {
-      // q, o
-      int one_partition_size = qo_size / tensor_parallelism_degree;
-      int data_index = 0;
       for (int i = 0; i < tensor_parallelism_degree; i++) {
         for (int j = 0; j < one_partition_size; j++) {
           ptr[base_index + i * stride_size + j] = host_array.at(data_index++);
         }
       }
-      base_index += one_partition_size;
-    } else if (file_index == 3) {
-      // o
-      int one_partition_size =
-          head_dim * (num_heads / tensor_parallelism_degree);
-      int data_index = 0;
-      for (int i = 0; i < qo_size; i++) {
-        int part_idx = (i / one_partition_size) % tensor_parallelism_degree;
-        int block_num = (i / one_partition_size);
-        int offset =
-            block_num / tensor_parallelism_degree * one_partition_size +
-            (i % one_partition_size);
-        ptr[base_index + part_idx * stride_size + offset] =
-            host_array.at(data_index++);
-      }
-      base_index += one_partition_size;
     } else {
-      // k, v
       for (int i = 0; i < num_heads; i++) {
         int kv_idx = i / (num_heads / num_kv_heads);
         int head_idx = i % (num_heads / tensor_parallelism_degree);
@@ -297,11 +290,52 @@ void load_attention_weights_v2(DT *ptr,
               j] = host_array.at(kv_idx * single_proj_size + j);
         }
       }
-      base_index += kv_replicate_size / tensor_parallelism_degree;
     }
 
+    // assert(data_index == partial_size);
+    base_index += one_partition_size;
     file_index++;
+  }
+  assert(base_index == (q_size + k_replicate_size + v_replicate_size) /
+                           tensor_parallelism_degree);
+
+  {
+    std::cout << "Loading weight file " << o_file << std::endl;
+    std::string weight_filepath = join_path({weights_folder, o_file});
+
+    std::ifstream in(weight_filepath, std::ios::in | std::ios::binary);
+    if (!in.good()) {
+      std::cout << "Could not open file: " << weight_filepath << std::endl;
+    }
+    assert(in.good() && "incorrect weight file path");
+    std::vector<DT> host_array(one_weight_file_size);
+    size_t loaded_data_size = sizeof(DT) * one_weight_file_size;
+    in.seekg(0, in.end);
+    in.seekg(0, in.beg);
+    in.read((char *)host_array.data(), loaded_data_size);
+    size_t in_get_size = in.gcount();
+
+    if (in_get_size != loaded_data_size) {
+      std::cout << "load data error" << std::endl;
+      assert(false);
+    }
+    assert(one_weight_file_size == host_array.size());
+    int data_index = 0;
+
+    int one_partition_size =
+        head_dim * (num_heads / tensor_parallelism_degree);
+    for (int i = 0; i < one_weight_file_size; i++) {
+      int part_idx = (i / one_partition_size) % tensor_parallelism_degree;
+      int block_num = (i / one_partition_size);
+      int offset = block_num / tensor_parallelism_degree * one_partition_size +
+                   (i % one_partition_size);
+      ptr[base_index + part_idx * stride_size + offset] =
+          host_array.at(data_index++);
+    }
+
     in.close();
+
+    assert(data_index == one_weight_file_size);
   }
 }
 
@@ -689,46 +723,58 @@ void FileDataLoader::load_single_weight_tensor(FFModel *ff,
 
   std::string weight_filename = removeGuidOperatorName(std::string(l->name));
 
-  if (l->op_type == OP_INC_MULTIHEAD_SELF_ATTENTION ||
-      l->op_type == OP_SPEC_INC_MULTIHEAD_SELF_ATTENTION ||
-      l->op_type == OP_TREE_INC_MULTIHEAD_SELF_ATTENTION) {
-    if (weight_idx == 0) {
-      load_attention_weights_v2(data,
-                                num_heads,
-                                num_kv_heads,
-                                hidden_dim,
-                                qkv_inner_dim,
-                                weight_filename,
-                                weights_folder,
-                                volume,
-                                tensor_parallelism_degree);
-    } else {
-      long long value;
-      l->get_int_property("final_bias", value);
-      bool final_bias = (bool)value;
-      load_attention_bias_v2(data,
-                             num_heads,
-                             num_kv_heads,
-                             hidden_dim,
-                             qkv_inner_dim,
-                             final_bias,
-                             weight_filename,
-                             weights_folder);
-    }
-  } else if (l->op_type == OP_ADD_BIAS_RESIDUAL_LAYERNORM) {
-    assert(weight_idx >= 0 || weight_idx <= 2);
-    weight_filename += (weight_idx == 0)
-                           ? ".attn_bias"
-                           : ((weight_idx == 1) ? ".weight" : ".bias");
-    std::cout << "Loading weight file " << weight_filename << std::endl;
-    std::string weight_filepath = join_path({weights_folder, weight_filename});
-    load_from_file(data, volume, weight_filepath);
+  if (ff->config.benchmarking) {
+    std::cout << "Initializing weight " << weight_filename
+              << " with random data (benchmarking mode)" << std::endl;
+    // If benchmarking, we don't need to load the weights
+    // We can just fill the weight tensor with random data
   } else {
-    // default op
-    assert(weight_idx == 0 || weight_idx == 1);
-    // handle exception
-    if (weight_filename != "embed_tokens_weight_lm_head") {
-      weight_filename += weight_idx == 0 ? ".weight" : ".bias";
+    if (l->op_type == OP_INC_MULTIHEAD_SELF_ATTENTION ||
+        l->op_type == OP_SPEC_INC_MULTIHEAD_SELF_ATTENTION ||
+        l->op_type == OP_TREE_INC_MULTIHEAD_SELF_ATTENTION) {
+      if (weight_idx == 0) {
+        load_attention_weights_v2(data,
+                                  num_heads,
+                                  num_kv_heads,
+                                  hidden_dim,
+                                  head_dim,
+                                  weight_filename,
+                                  weights_folder,
+                                  volume,
+                                  tensor_parallelism_degree);
+      } else {
+        long long value;
+        l->get_int_property("final_bias", value);
+        bool final_bias = (bool)value;
+        load_attention_bias_v2(data,
+                               num_heads,
+                               num_kv_heads,
+                               hidden_dim,
+                               head_dim,
+                               final_bias,
+                               weight_filename,
+                               weights_folder);
+      }
+    } else if (l->op_type == OP_ADD_BIAS_RESIDUAL_LAYERNORM) {
+      assert(weight_idx >= 0 || weight_idx <= 2);
+      weight_filename += (weight_idx == 0)
+                             ? ".attn_bias"
+                             : ((weight_idx == 1) ? ".weight" : ".bias");
+      std::cout << "Loading weight file " << weight_filename << std::endl;
+      std::string weight_filepath =
+          join_path({weights_folder, weight_filename});
+      load_from_file(data, volume, weight_filepath);
+    } else {
+      // default op
+      assert(weight_idx == 0 || weight_idx == 1);
+      // handle exception
+      if (weight_filename != "embed_tokens_weight_lm_head") {
+        weight_filename += weight_idx == 0 ? ".weight" : ".bias";
+      }
+      std::cout << "Loading weight file " << weight_filename << std::endl;
+      std::string weight_filepath =
+          join_path({weights_folder, weight_filename});
+      load_from_file(data, volume, weight_filepath);
     }
   }
 
