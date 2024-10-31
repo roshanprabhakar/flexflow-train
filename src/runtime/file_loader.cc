@@ -322,8 +322,7 @@ void load_attention_weights_v2(DT *ptr,
     assert(one_weight_file_size == host_array.size());
     int data_index = 0;
 
-    int one_partition_size =
-        head_dim * (num_heads / tensor_parallelism_degree);
+    int one_partition_size = head_dim * (num_heads / tensor_parallelism_degree);
     for (int i = 0; i < one_weight_file_size; i++) {
       int part_idx = (i / one_partition_size) % tensor_parallelism_degree;
       int block_num = (i / one_partition_size);

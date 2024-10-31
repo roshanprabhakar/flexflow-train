@@ -217,18 +217,18 @@ void LLAMA::create_llama_model(FFModel &ff,
     Tensor multi =
         ff.sigmoid_silu_multi(w1, w3, llama_config.intermediate_size);
 
-    w2 =
-        ff.dense(multi,
-                 llama_config.hidden_size,
-                 AC_MODE_NONE,
-                 false,
-                 DT_NONE,
-                 nullptr,
-                 nullptr,
-                 nullptr,
-                 REG_MODE_NONE,
-                 0.0f,
-                 std::string("layers." + std::to_string(i) + ".mlp.down_proj").c_str());
+    w2 = ff.dense(
+        multi,
+        llama_config.hidden_size,
+        AC_MODE_NONE,
+        false,
+        DT_NONE,
+        nullptr,
+        nullptr,
+        nullptr,
+        REG_MODE_NONE,
+        0.0f,
+        std::string("layers." + std::to_string(i) + ".mlp.down_proj").c_str());
   }
   // final normalization and linear
   Tensor final_rms_norm_output[2] = {nullptr, nullptr};

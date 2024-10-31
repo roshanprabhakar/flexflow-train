@@ -185,15 +185,16 @@ __global__ void
     }
   }
 
+  BatchConfig::PerRequestInfo const &request_info =
+      request_infos[requext_idx_in_batch];
   BatchConfig::BitMask &causal_mask = causalMask[requext_idx_in_batch];
 
-  int const q_length = request_infos[requext_idx_in_batch].num_tokens_in_batch,
-            q_start = request_infos[requext_idx_in_batch]
-                          .first_token_index_in_request -
+  int const q_length = request_info.num_tokens_in_batch,
+            q_start = request_info.first_token_index_in_request -
                       causal_mask.non_tree_cache_size,
             non_tree_cache_size = causal_mask.non_tree_cache_size,
-            kv_len = causal_mask.non_tree_cache_size +
-                     causal_mask.tree_or_prompt_size;
+            kv_len = request_info.num_tokens_in_batch +
+                     request_info.first_token_index_in_request;
 
   uint8_t packed_bits = 0;
   for (int bit_idx = 0; bit_idx < 8; bit_idx++) {
@@ -244,8 +245,9 @@ void update_custom_mask(BatchConfig const *batch_config,
        req_idx++) {
     if (batch_config->request_available[req_idx]) {
       int q_len = batch_config->requestsInfo[req_idx].num_tokens_in_batch;
-      int kv_len = batch_config->causalMask[req_idx].non_tree_cache_size +
-                   batch_config->causalMask[req_idx].tree_or_prompt_size;
+      int kv_len =
+          batch_config->requestsInfo[req_idx].num_tokens_in_batch +
+          batch_config->requestsInfo[req_idx].first_token_index_in_request;
       parallelism += (q_len * kv_len + 7) / 8;
     }
   }
