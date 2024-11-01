@@ -7,6 +7,8 @@
 #include "kernels/managed_per_device_ff_handle.h"
 #include <random>
 
+using namespace FlexFlow;
+
 GenericTensorAccessorW create_random_filled_accessor_w(TensorShape const &shape,
                                                        Allocator &allocator,
                                                        bool cpu_fill = false);
@@ -42,7 +44,8 @@ std::vector<T> load_data_to_host_from_device(GenericTensorAccessorR accessor) {
 
 template <typename T>
 bool contains_non_zero(std::vector<T> &data) {
-  return !all_of(data, [](T const &val) { return val == 0; });
+  return !all_of(
+      data.begin(), data.end(), [](T const &val) { return val == 0; });
 }
 
 #endif
