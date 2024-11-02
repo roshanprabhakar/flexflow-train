@@ -331,9 +331,9 @@ void FlexFlow::top_level_task(Task const *task,
   int sampling_seed = 0;
   bool streaming_cache = false;
   bool slo_attainment_early_termination = false;
-  int baseline_latency_ms = 50;
-  int ssm_spec_latency_ms = 20;
-  int llm_verify_latency_ms = 50;
+  double baseline_latency_ms = 50;
+  double ssm_spec_latency_ms = 20;
+  double llm_verify_latency_ms = 50;
   double request_per_second = 1.0;
 
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
