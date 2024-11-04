@@ -1588,7 +1588,12 @@ class RequestManager(object):
         c_model_type = enum_to_int(ModelType, model_type)
         c_tokenizer_filepath = get_c_name(tokenizer_filepath)
         return ffc().flexflow_request_manager_register_tokenizer(
-            self.handle, c_model_type, bos_token_id, eos_token_id, c_tokenizer_filepath
+            self.handle,
+            c_model_type,
+            bos_token_id,
+            len(eos_token_id),
+            eos_token_id,
+            c_tokenizer_filepath,
         )
 
     def register_output_filepath(self, output_filepath):
@@ -1621,6 +1626,9 @@ class RequestManager(object):
         return ffc().flexflow_request_manager_set_max_sequence_length(
             self.handle, max_length
         )
+
+    def get_max_sequence_length(self):
+        return ffc().flexflow_request_manager_get_max_sequence_length(self.handle)
 
     def set_enable_peft_finetuning(self, enable_peft_finetuning):
         return ffc().flexflow_request_manager_set_enable_peft_finetuning(
@@ -2060,6 +2068,7 @@ class Request:
     prompt: Optional[str] = None
     max_length: int = -1
     max_new_tokens: int = -1
+    add_special_tokens: bool = True
     peft_model_id: Optional[PEFTModelID] = None
     dataset_filepath: Optional[str] = None
     max_training_steps: int = 1
@@ -4652,91 +4661,6 @@ class FFModel(object):
         assert ret_val == True
         return np_array
 
-    def _estimate_max_num_tokens(
-        max_length: int, max_new_tokens: int, prompt: Optional[str]
-    ):
-        if prompt is None:
-            assert max_new_tokens == -1
-        return (
-            math.ceil(max_new_tokens + len(prompt.split()) * 1.5)
-            if max_new_tokens != -1
-            else max_length
-        )
-
-    def _estimate_max_num_chars(
-        max_length: int, max_new_tokens: int, prompt: Optional[str]
-    ):
-        return (
-            5 * FFModel._estimate_max_num_tokens(max_length, max_new_tokens, prompt)
-            + 100
-        )
-
-    # deprecated
-    def generate_inf_only(
-        self,
-        prompt_list: List[str],
-        max_length: int,
-        max_new_tokens: int,
-    ):
-        if max_length != -1 and max_new_tokens != -1:
-            raise ValueError(
-                f"Both `max_new_tokens` (={max_new_tokens}) and `max_length`(={max_length}) seem to have been set."
-            )
-        if max_length == -1 and max_new_tokens == -1:
-            raise ValueError(
-                f"Both `max_new_tokens` (={max_new_tokens}) and `max_length`(={max_length}) were left unset."
-            )
-        assert isinstance(prompt_list, list)
-        c_input_texts = [get_c_name(prompt) for prompt in prompt_list]
-        c_output_texts = [
-            ffi.new(
-                "char[]",
-                FFModel._estimate_max_num_chars(max_length, max_new_tokens, prompt),
-            )
-            for prompt in prompt_list
-        ]
-        c_output_length_and_tokens = [
-            ffi.new(
-                "int[]",
-                FFModel._estimate_max_num_tokens(max_length, max_new_tokens, prompt)
-                + 100,
-            )
-            for prompt in prompt_list
-        ]
-        c_request_types = [
-            enum_to_int(RequestType, RequestType.REQ_INFERENCE) for _ in prompt_list
-        ]
-        max_lengths = [max_length for _ in prompt_list]
-        max_new_tokens_ = [max_new_tokens for _ in prompt_list]
-        peft_model_ids = [PEFTModelID.no_id_handle() for _ in prompt_list]
-        dataset_filepaths = [ffi.NULL for _ in prompt_list]
-        training_steps = [0 for _ in prompt_list]
-        num_finetuning_losses = ffi.new("int *")
-        c_finetuning_losses = ffi.new("float[]", 0)
-        ffc().flexflow_model_generate(
-            self.handle,
-            len(prompt_list),
-            c_request_types,
-            c_input_texts,
-            c_output_texts,
-            max_lengths,
-            max_new_tokens_,
-            peft_model_ids,
-            dataset_filepaths,
-            training_steps,
-            c_output_length_and_tokens,
-            num_finetuning_losses,
-            c_finetuning_losses,
-        )
-        from flexflow.serve import GenerationResult
-
-        return [
-            GenerationResult(
-                text=ffi.string(c_output_text), tokens=[], finetuning_losses=[]
-            )
-            for c_output_text in c_output_texts
-        ]
-
     def generate(self, requests_list: List[Request]):
         assert isinstance(requests_list, list)
         for request in requests_list:
@@ -4756,37 +4680,27 @@ class FFModel(object):
                 raise ValueError(
                     f"Finetuning requests should not have `max_new_tokens` set."
                 )
+        max_sequence_length = RequestManager().get_max_sequence_length()
         c_input_texts = [
             get_c_name(request.prompt) for request in requests_list
         ]  # entry will be None for finetuning requests
         c_output_texts = [
             (
-                ffi.new(
-                    "char[]",
-                    FFModel._estimate_max_num_chars(
-                        request.max_length, request.max_new_tokens, request.prompt
-                    ),
-                )
+                ffi.new("char[]", max_sequence_length * 5)
                 if request.req_type == RequestType.REQ_INFERENCE
                 else ffi.NULL
             )
             for request in requests_list
         ]
         c_output_length_and_tokens = [
-            ffi.new(
-                "int[]",
-                FFModel._estimate_max_num_tokens(
-                    request.max_length, request.max_new_tokens, request.prompt
-                )
-                + 100,
-            )
-            for request in requests_list
+            ffi.new("int[]", max_sequence_length + 100) for request in requests_list
         ]
         c_request_types = [
             enum_to_int(RequestType, request.req_type) for request in requests_list
         ]
         max_lengths = [request.max_length for request in requests_list]
         max_new_tokens_ = [request.max_new_tokens for request in requests_list]
+        add_special_tokens_ = [request.add_special_tokens for request in requests_list]
 
         peft_model_ids = [
             (
@@ -4813,6 +4727,7 @@ class FFModel(object):
             c_output_texts,
             max_lengths,
             max_new_tokens_,
+            add_special_tokens_,
             peft_model_ids,
             dataset_filepaths,
             training_steps,

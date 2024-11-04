@@ -27,7 +27,7 @@ from flexflow.serve.models import (
     MPTConfig,
 )
 from flexflow.core import *
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel, PeftConfig, LoraConfig
 from huggingface_hub import HfApi
 import torch, shutil, hashlib, json, gc
@@ -104,6 +104,7 @@ class LLM:
         self.output_file = output_file
         self.rm = None
         self.pefts = {}
+        self.tokenizer=None
 
     def __del__(self):
         # Stop the background server before deleting the object
@@ -499,6 +500,10 @@ class LLM:
         eos_token_id = (
             -1 if self.hf_config.eos_token_id is None else self.hf_config.eos_token_id
         )
+        if type(eos_token_id) == int:
+            eos_token_id = [eos_token_id]
+        elif type(eos_token_id) != list:
+            raise ValueError("eos_token_id must be an integer or a list of integers")
         self.rm.register_tokenizer(
             self.model_type, bos_token_id, eos_token_id, self.tokenizer_path
         )
@@ -548,9 +553,29 @@ class LLM:
                     )
         return self.model.ffmodel.generate(requests)
 
+    def __chat2prompt(self, messages: List[dict]):
+        """Convert a list of messages to a single prompt string
+
+        :param messages: The list of messages to convert
+        :type messages: List[dict]
+        :return: The prompt string
+        :rtype: str
+        """
+        # ensure that each element is a dictionary, containing the "role" and "content" keys
+        for message in messages:
+            if type(message) != dict or "role" not in message or "content" not in message:
+                raise ValueError(
+                    "Each element in the list must be a dictionary with the keys 'role' and 'content'"
+                )
+        if self.tokenizer is None:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        if self.tokenizer.chat_template is None:
+            raise ValueError(f"Model {self.model_name} does not support chat completion")
+        return self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
     def generate(
         self,
-        requests_or_prompts: Union[str, List[str], Request, List[Request]],
+        requests_or_prompts: Union[str, List[str], List[dict], Request, List[Request]],
         max_length: int = -1,
         max_new_tokens: int = -1,
     ):
@@ -591,7 +616,30 @@ class LLM:
                     for req in requests_or_prompts
                 ]
                 return self._generate(requests)
-            else:
+            elif type(requests_or_prompts[0]) == dict:
+                prompt = self.__chat2prompt(requests_or_prompts)
+                request = Request(
+                    req_type=RequestType.REQ_INFERENCE,
+                    prompt=prompt,
+                    max_length=max_length,
+                    max_new_tokens=max_new_tokens,
+                    add_special_tokens=False,
+                )
+                return self._generate([request])
+            elif type(requests_or_prompts[0]) == list:
+                prompts = [self.__chat2prompt(messages) for messages in requests_or_prompts]
+                requests = [
+                    Request(
+                        req_type=RequestType.REQ_INFERENCE,
+                        prompt=prompt,
+                        max_length=max_length,
+                        max_new_tokens=max_new_tokens,
+                        add_special_tokens=False,
+                    )
+                    for prompt in prompts
+                ]
+                return self._generate(requests)
+            elif type(requests_or_prompts[0]) == Request:
                 print(requests_or_prompts)
                 return self._generate(requests_or_prompts)
         else:

@@ -1685,6 +1685,7 @@ void flexflow_model_generate(flexflow_model_t handle_,
                              char **output_texts,
                              int *max_lengths,
                              int *max_new_tokens_,
+                             bool *add_special_tokens_,
                              flexflow_peft_model_id_t *peft_model_ids,
                              char const **dataset_filepaths,
                              int *training_steps,
@@ -1701,22 +1702,25 @@ void flexflow_model_generate(flexflow_model_t handle_,
       inference_req.prompt = text_str;
       inference_req.max_length = max_lengths[i];
       inference_req.max_new_tokens = max_new_tokens_[i];
+      inference_req.add_special_tokens = add_special_tokens_[i];
       PEFTModelID *peft_model_id = FFCObjectWrapper::unwrap(peft_model_ids[i]);
       if (peft_model_id != nullptr) {
         inference_req.peft_model_id = *peft_model_id;
       }
       requests.push_back(inference_req);
-      DEBUG_PRINT("[Model] generate[%d] %p %s %i %i",
+      DEBUG_PRINT("[Model] generate[%d] %p %s %i %i %i",
                   i,
                   handle,
                   text_str.c_str(),
                   max_lengths[i],
-                  max_new_tokens_[i]);
+                  max_new_tokens_[i],
+                  add_special_tokens_[i]);
     } else if (request_types[i] == RequestType::REQ_FINETUNING) {
       Request fine_tuning_req;
       fine_tuning_req.req_type = RequestType::REQ_FINETUNING;
       fine_tuning_req.max_length = max_lengths[i];
       fine_tuning_req.max_new_tokens = max_new_tokens_[i];
+      fine_tuning_req.add_special_tokens = add_special_tokens_[i];
       PEFTModelID *peft_model_id = FFCObjectWrapper::unwrap(peft_model_ids[i]);
       if (peft_model_id != nullptr) {
         fine_tuning_req.peft_model_id = *peft_model_id;
@@ -1725,12 +1729,13 @@ void flexflow_model_generate(flexflow_model_t handle_,
       fine_tuning_req.dataset_filepath = dataset_fp;
       fine_tuning_req.max_training_steps = training_steps[i];
       requests.push_back(fine_tuning_req);
-      DEBUG_PRINT("[Model] finetune[%d] %p %s %i %i %i",
+      DEBUG_PRINT("[Model] finetune[%d] %p %s %i %i %i %i",
                   i,
                   handle,
                   dataset_fp.c_str(),
                   max_lengths[i],
-                  max_new_tokens[i],
+                  max_new_tokens_[i],
+                  add_special_tokens_[i],
                   training_steps[i]);
     } else {
       assert(false && "Unknown request type");
@@ -2754,6 +2759,12 @@ void flexflow_request_manager_set_max_sequence_length(
   DEBUG_PRINT("[RequestManager] set max_sequence_length %d", max_seq_length);
 }
 
+int flexflow_request_manager_get_max_sequence_length(
+    flexflow_request_manager_t handle_) {
+  RequestManager *handle = FFCObjectWrapper::unwrap(handle_);
+  return handle->get_max_sequence_length();
+}
+
 void flexflow_request_manager_set_enable_peft_finetuning(
     flexflow_request_manager_t handle_, bool enable_peft_finetuning_) {
   RequestManager *handle = FFCObjectWrapper::unwrap(handle_);
@@ -2766,14 +2777,19 @@ void flexflow_request_manager_register_tokenizer(
     flexflow_request_manager_t handle_,
     enum ModelType model_type,
     int bos_token_id,
-    int eos_token_id,
+    int num_eos_token_ids,
+    int *eos_token_ids,
     char const *tokenizer_filepath) {
   RequestManager *handle = FFCObjectWrapper::unwrap(handle_);
   assert(tokenizer_filepath != nullptr &&
          "Cannot convert nullptr char * to std::string");
   std::string const tokenizer_filepath_str(tokenizer_filepath);
+  std::vector<int> eos_token_ids_vec;
+  for (int i = 0; i < num_eos_token_ids; i++) {
+    eos_token_ids_vec.push_back(eos_token_ids[i]);
+  }
   handle->register_tokenizer(
-      model_type, bos_token_id, eos_token_id, tokenizer_filepath_str);
+      model_type, bos_token_id, eos_token_ids_vec, tokenizer_filepath_str);
   DEBUG_PRINT(
       "[RequestManager] register tokenizer %p %s", handle, tokenizer_filepath);
 }

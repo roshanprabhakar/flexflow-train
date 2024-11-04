@@ -56,6 +56,7 @@ std::ostream &operator<<(std::ostream &os, Request const &req) {
   os << "  peft_model_id: " << req.peft_model_id << "\n";
   os << "  max_length: " << req.max_length << "\n";
   os << "  max_new_tokens: " << req.max_new_tokens << "\n";
+  os << "  add_special_tokens: " << req.add_special_tokens << "\n";
   os << "  initial_len: " << req.initial_len << "\n";
   os << "  ssm_cache_size: " << req.ssm_cache_size << "\n";
   os << "  llm_cache_size: " << req.llm_cache_size << "\n";
@@ -178,11 +179,11 @@ void RequestManager::set_inference_finished(bool finished) {
 
 void RequestManager::register_tokenizer(ModelType type,
                                         int bos_token_id,
-                                        int eos_token_id,
+                                        std::vector<int> eos_token_ids,
                                         std::string const &path) {
   this->model_type = type;
   this->bos_token_id = bos_token_id;
-  this->eos_token_id = eos_token_id;
+  this->eos_token_ids = eos_token_ids;
   std::filesystem::path tokenizer_folder(path);
 
   if (model_type == ModelType::LLAMA) {
@@ -271,6 +272,7 @@ RequestManager::RequestGuid
   request.guid = next_available_guid++;
   request.max_length = request_.max_length;
   request.max_new_tokens = request_.max_new_tokens;
+  request.add_special_tokens = request_.add_special_tokens;
   // both unset
   if (request.max_length == -1 && request.max_new_tokens == -1) {
     request.max_length = get_max_sequence_length() - 1;
@@ -285,7 +287,8 @@ RequestManager::RequestGuid
   }
   request.peft_model_id = request_.peft_model_id;
   request.warmup = request_.warmup;
-  if (bos_token_id >= 0 && model_type != ModelType::FALCON) {
+  if (bos_token_id >= 0 && model_type != ModelType::FALCON &&
+      request.add_special_tokens) {
     request.tokens.push_back(bos_token_id);
   }
   if (request_.benchmarking_tokens >= 0) {
@@ -378,6 +381,7 @@ RequestManager::RequestGuid
   request.initial_len = 0;
   request.max_length = request_.max_length;
   request.max_new_tokens = request_.max_new_tokens;
+  request.add_special_tokens = request_.add_special_tokens;
   if (request.max_new_tokens != -1) {
     std::cerr
         << "Error: max_new_tokens is not allowed for PEFT finetuning requests"
@@ -402,7 +406,8 @@ RequestManager::RequestGuid
     request.benchmarking_tokens = request_.benchmarking_tokens;
     std::vector<int32_t> input_tokens;
     std::vector<int32_t> output_tokens;
-    bool bos_added = (bos_token_id >= 0 && model_type != ModelType::FALCON);
+    bool bos_added = (bos_token_id >= 0 && request.add_special_tokens &&
+                      model_type != ModelType::FALCON);
     if (bos_added) {
       input_tokens.push_back(bos_token_id);
     }
@@ -424,7 +429,8 @@ RequestManager::RequestGuid
       std::string output_text("");
       std::vector<int32_t> input_tokens;
       input_tokens = this->tokenizer_->Encode(text);
-      if (bos_token_id >= 0 && model_type != ModelType::FALCON) {
+      if (bos_token_id >= 0 && model_type != ModelType::FALCON &&
+          request.add_special_tokens) {
         input_tokens.insert(input_tokens.begin(), bos_token_id);
       }
       std::vector<int32_t> output_tokens =
@@ -557,6 +563,15 @@ BatchConfig RequestManager::prepare_next_batch_task(
   return rm->prepare_next_batch(*bc, result);
 }
 
+bool RequestManager::is_eos_token(int token_id) {
+  for (int eos_token : eos_token_ids) {
+    if (token_id == eos_token) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool RequestManager::check_inf_req_completion(BatchConfig const &old_bc,
                                               int i) {
   Request &request = all_requests[old_bc.requestsInfo[i].request_guid];
@@ -564,7 +579,7 @@ bool RequestManager::check_inf_req_completion(BatchConfig const &old_bc,
   // printf("model_type = %d\n", this->model_type);
   if (request.tokens.size() >= old_bc.requestsInfo[i].max_length) {
     request_completed = true;
-  } else if (request.tokens.back() == eos_token_id) {
+  } else if (is_eos_token(request.tokens.back())) {
     // Encounter EOS token id
     request_completed = true;
   }
@@ -673,6 +688,7 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
         // Unlike Huggingface, the sentencepiece C++ library automatically
         // removes the BOS token
         if (model_type == ModelType::LLAMA && old_llama_tokenizer &&
+            request.add_special_tokens &&
             request.tokens.at(0) == bos_token_id) {
           output = "<s> " + output;
         }
@@ -1134,6 +1150,7 @@ BeamSearchBatchConfig
         // Unlike Huggingface, the sentencepiece C++ library automatically
         // removes the BOS token
         if (model_type == ModelType::LLAMA && old_llama_tokenizer &&
+            request.add_special_tokens &&
             request.tokens.at(0) == bos_token_id) {
           output = "<s> " + output;
         }
@@ -1277,6 +1294,7 @@ BeamSearchBatchConfig
         // Unlike Huggingface, the sentencepiece C++ library automatically
         // removes the BOS token
         if (model_type == ModelType::LLAMA && old_llama_tokenizer &&
+            request.add_special_tokens &&
             request.tokens.at(0) == bos_token_id) {
           output = "<s> " + output;
         }
@@ -1325,7 +1343,7 @@ BeamSearchBatchConfig
       // Unlike Huggingface, the sentencepiece C++ library automatically removes
       // the BOS token
       if (model_type == ModelType::LLAMA && old_llama_tokenizer &&
-          request.tokens.at(0) == bos_token_id) {
+          request.add_special_tokens && request.tokens.at(0) == bos_token_id) {
         output = "<s> " + output;
       }
       log_req_mgr.print("Output: %s", output.c_str());

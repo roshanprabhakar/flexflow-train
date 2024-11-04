@@ -653,6 +653,7 @@ void flexflow_model_generate(flexflow_model_t handle_,
                              char **output_texts,
                              int *max_lengths,
                              int *max_new_tokens_,
+                             bool *add_special_tokens_,
                              flexflow_peft_model_id_t *peft_model_ids,
                              char const **dataset_filepaths,
                              int *training_steps,
@@ -1019,6 +1020,9 @@ void flexflow_request_manager_set_max_spec_tree_token_num(
 void flexflow_request_manager_set_max_sequence_length(
     flexflow_request_manager_t handle_, int max_seq_length);
 
+int flexflow_request_manager_get_max_sequence_length(
+    flexflow_request_manager_t handle_);
+
 void flexflow_request_manager_set_enable_peft_finetuning(
     flexflow_request_manager_t handle_, bool enable_peft_finetuning_);
 
@@ -1026,7 +1030,8 @@ void flexflow_request_manager_register_tokenizer(
     flexflow_request_manager_t handle_,
     enum ModelType model_type,
     int bos_token_id,
-    int eos_token_id,
+    int num_eos_token_ids,
+    int *eos_token_ids,
     char const *tokenizer_filepath);
 
 void flexflow_request_manager_register_output_filepath(
