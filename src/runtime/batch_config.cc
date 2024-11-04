@@ -110,6 +110,7 @@ int BatchConfig::max_output_length() {
 
 int BatchConfig::max_kv_cache_size() {
   return RequestManager::get_request_manager()->get_max_kv_cache_size();
+}
 bool BatchConfig::streaming_cache() {
   return RequestManager::get_request_manager()->get_streaming_cache();
 }
