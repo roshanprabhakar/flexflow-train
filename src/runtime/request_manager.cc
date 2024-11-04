@@ -322,6 +322,10 @@ void RequestManager::set_streaming_cache(bool streaming_cache_) {
   streaming_cache = streaming_cache_;
 }
 
+bool RequestManager::get_streaming_cache() {
+  return streaming_cache;
+}
+
 bool RequestManager::get_memory_occupancy() {
   return memory_occupancy;
 }
@@ -339,8 +343,8 @@ void RequestManager::set_spec_infer_old_version(bool spec_infer_old_version_) {
   spec_infer_old_version = spec_infer_old_version_;
 }
 
-void RequestManager::set_greedy_schedule(bool greedy_scheduler_) {
-  greedy_schedule = greedy_scheduler_;
+void RequestManager::set_greedy_schedule(bool greedy_schedule_) {
+  greedy_schedule = greedy_schedule_;
 }
 
 void RequestManager::set_equal_schedule(bool equal_schedule_) {
@@ -404,33 +408,52 @@ void RequestManager::register_tokenizer(ModelType type,
   this->model_type = type;
   this->bos_token_id = bos_token_id;
   this->eos_token_id = eos_token_id;
-  std::string tokenizer_folder =
-      (!path.empty() && path.back() != '/') ? path + '/' : path;
+  std::filesystem::path tokenizer_folder(path);
+
   if (model_type == ModelType::LLAMA) {
-    bool path_to_file = !path.empty() &&
-                        (path.size() >= strlen("tokenizer.model")) &&
-                        path.find("tokenizer.model") ==
-                            (path.size() - strlen("tokenizer.model"));
-    std::string tokenizer_filepath =
-        path_to_file ? path : tokenizer_folder + "tokenizer.model";
-    this->tokenizer_ =
-        Tokenizer::FromBlobSentencePiece(LoadBytesFromFile(tokenizer_filepath));
+    // try with tokenizer.json first
+    std::filesystem::path tokenizer_json_path;
+    if (std::filesystem::is_directory(tokenizer_folder)) {
+      tokenizer_json_path =
+          std::filesystem::path(tokenizer_folder) / "tokenizer.json";
+    } else {
+      tokenizer_json_path = tokenizer_folder;
+    }
+    if (std::filesystem::exists(tokenizer_json_path)) {
+      // load from tokenizer.json
+      this->tokenizer_ = Tokenizer::FromBlobJSON(
+          LoadBytesFromFile(tokenizer_json_path.string()));
+    } else {
+      // load from tokenizer.model
+      std::filesystem::path tokenizer_model_path;
+      if (std::filesystem::is_directory(tokenizer_folder)) {
+        tokenizer_model_path =
+            std::filesystem::path(tokenizer_folder) / "tokenizer.model";
+      } else {
+        tokenizer_model_path = tokenizer_folder;
+      }
+      if (!std::filesystem::exists(tokenizer_model_path)) {
+        std::cerr << "Failed to open file: " << tokenizer_model_path
+                  << std::endl;
+        assert(false);
+      }
+      old_llama_tokenizer = true;
+      this->tokenizer_ = Tokenizer::FromBlobSentencePiece(
+          LoadBytesFromFile(tokenizer_model_path.string()));
+    }
   } else if (model_type == ModelType::OPT) {
-    std::string vocab_file = tokenizer_folder + "vocab.json";
-    std::string merges_file = tokenizer_folder + "merges.txt";
-    std::string added_tokens_file =
-        tokenizer_folder + "special_tokens_map.json";
-    std::filesystem::path path1(vocab_file);
-    std::filesystem::path path2(merges_file);
-    std::filesystem::path path3(added_tokens_file);
-    assert(std::filesystem::exists(path1) &&
+    std::filesystem::path vocab_file = tokenizer_folder / "vocab.json";
+    std::filesystem::path merges_file = tokenizer_folder / "merges.txt";
+    std::filesystem::path added_tokens_file =
+        tokenizer_folder / "special_tokens_map.json";
+    assert(std::filesystem::exists(vocab_file) &&
            "Vocab file vocab.json does not exist at the specified path");
-    assert(std::filesystem::exists(path2) &&
+    assert(std::filesystem::exists(merges_file) &&
            "Merge file merges.txt does not exist at the specified path");
     // opt_tokenizer = new OptTokenizer(vocab_file, merges_file);
-    std::string vocab = LoadBytesFromFile(path1.string());
-    std::string merges = LoadBytesFromFile(path2.string());
-    std::string added_tokens = LoadBytesFromFile(path3.string());
+    std::string vocab = LoadBytesFromFile(vocab_file.string());
+    std::string merges = LoadBytesFromFile(merges_file.string());
+    std::string added_tokens = LoadBytesFromFile(added_tokens_file.string());
 
     this->tokenizer_ =
         Tokenizer::FromBlobByteLevelBPE(vocab, merges, added_tokens);
@@ -474,7 +497,9 @@ RequestManager::RequestGuid
   Request request;
   request.status = Request::PENDING;
   request.guid = next_available_guid++;
-  if (bos_token_id >= 0 && model_type != ModelType::FALCON) {
+  request.add_special_tokens = req.add_special_tokens;
+  if (bos_token_id >= 0 && request.add_special_tokens &&
+      model_type != ModelType::FALCON) {
     request.tokens.push_back(bos_token_id);
   }
   std::vector<int32_t> tokens = this->tokenizer_->Encode(req.prompt);
@@ -706,8 +731,9 @@ void RequestManager::request_complete_clean_up(int batch_index) {
   } else {
     eos_it = request.tokens.end();
   }
-  std::string output =
-      this->tokenizer_->Decode(std::vector<int>(bos_it, eos_it));
+  // std::string output =
+  //     this->tokenizer_->Decode(std::vector<int>(bos_it, eos_it));
+  std::string output = this->tokenizer_->Decode(request.tokens);
 
   {
     std::lock_guard<std::mutex> const lock(request_result_mutex);
@@ -757,7 +783,7 @@ void RequestManager::request_complete_clean_up(int batch_index) {
       *os << "SSM decoding steps: " << profile_info.ssm_decoding_steps
           << std::endl;
     }
-    *os << "<boq>" << output << "<eoq>" << std::endl << std::endl;
+    *os << output << std::endl << std::endl;
 
     if (!output_filepath.empty()) {
       output_file.close();
@@ -1348,11 +1374,9 @@ BatchConfig RequestManager::prepare_first_spec_batch_config() {
       new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
       if (streaming_cache) {
         new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
-            request.streaming_cache_info.global_2_cache_index(
-                committed_tokens[0].to_index);
+            request.ssm_cache_size;
         new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
-            request.streaming_cache_info.global_2_cache_index(
-                committed_tokens[0].to_index);
+            request.ssm_cache_size;
       } else {
         new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
             committed_tokens[0].to_index;
@@ -1369,11 +1393,9 @@ BatchConfig RequestManager::prepare_first_spec_batch_config() {
         new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
         if (streaming_cache) {
           new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
-              request.streaming_cache_info.global_2_cache_index(
-                  committed_tokens[committed_token_index].to_index);
+              request.ssm_cache_size + committed_token_index - 1;
           new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
-              request.streaming_cache_info.global_2_cache_index(
-                  committed_tokens[committed_token_index].to_index);
+              request.ssm_cache_size + committed_token_index - 1;
         } else {
           new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
               committed_tokens[committed_token_index].to_index;
@@ -1947,9 +1969,9 @@ BatchConfig::BitMask RequestManager::create_llm_bitmask(RequestGuid guid) {
 
   // Maintain other fields of llm_bitmask
   llm_bitmask.non_tree_cache_size = request.causal_mask.non_tree_cache_size;
-  // We don't need to set llm_bitmask.current_layer_size and
-  // llm_bitmask.tree_or_prompt_size here because they are not used in LLM
-  // verification.
+  llm_bitmask.tree_or_prompt_size = request.causal_mask.tree_or_prompt_size;
+  // We don't need to set llm_bitmask.current_layer_size here because they are
+  // not used in LLM verification.
   return llm_bitmask;
 }
 
@@ -2960,8 +2982,11 @@ void RequestManager::add_tokens_to_spec_token_tree(
       continue;
     }
 
-    int result_offset = request.first_token_offset_in_batch *
-                        BatchConfig::MAX_SPECULATIVE_TREE_BRANCHES;
+    // ssm_first_step only decode the last token (the root of the tree)
+    int result_offset =
+        (request.first_token_offset_in_batch +
+         (current_ssm_step == 1 ? (request.num_tokens_in_batch - 1) : 0)) *
+        BatchConfig::MAX_SPECULATIVE_TREE_BRANCHES;
     TokenTree &spec_token_tree = request.speculative_token_trees[0];
     std::vector<std::shared_ptr<TokenTreeNode>> &last_layer =
         spec_token_tree.tree_layers.back();
@@ -3040,8 +3065,11 @@ void RequestManager::add_tokens_to_spec_token_tree_old_version(
       continue;
     }
 
-    int result_offset = request.first_token_offset_in_batch *
-                        BatchConfig::MAX_SPECULATIVE_TREE_BRANCHES;
+    // ssm_first_step only decode the last token (the root of the tree)
+    int result_offset =
+        (request.first_token_offset_in_batch +
+         (current_ssm_step == 1 ? (request.num_tokens_in_batch - 1) : 0)) *
+        BatchConfig::MAX_SPECULATIVE_TREE_BRANCHES;
     TokenTree &spec_token_tree = request.speculative_token_trees[0];
     std::vector<std::shared_ptr<TokenTreeNode>> &last_layer =
         spec_token_tree.tree_layers.back();
@@ -3134,7 +3162,7 @@ void RequestManager::prune_token_tree() {
        spare_latency_2_request_index) {
     int request_index = spare_latency_request_index_pair.second;
     RequestGuid guid = guid_of_requests[request_index];
-    add_tokens_toward_slo(guid, budget);
+    add_tokens_toward_slo(guid, budget, spare_latency_2_request_index.size());
   }
 
   assert(budget >= 0);
@@ -3189,11 +3217,25 @@ void RequestManager::prune_token_tree_greedy() {
   }
 }
 
-void RequestManager::add_tokens_toward_slo(RequestGuid guid, int &budget) {
+void RequestManager::add_tokens_toward_slo(RequestGuid guid,
+                                           int &budget,
+                                           int num_req_with_slo) {
   Request &request = all_requests[guid];
-  double num_tokens_to_decode = (ssm_spec_latency_ms + llm_verify_latency_ms) *
-                                correction_factor /
-                                (baseline_latency_ms * request.get_slo_ratio());
+  double num_tokens_to_decode = 0.0;
+  double num_tokens_to_decode_per_step =
+      (ssm_spec_latency_ms + llm_verify_latency_ms) * correction_factor /
+      (baseline_latency_ms * request.get_slo_ratio());
+  bool attained =
+      request.decode_latency_ms <= get_request_expected_latency(request);
+
+  if (attained) {
+    num_tokens_to_decode = num_tokens_to_decode_per_step;
+  } else {
+    num_tokens_to_decode = num_tokens_to_decode_per_step +
+                           request.decode_latency_ms /
+                               (baseline_latency_ms * request.get_slo_ratio()) -
+                           request.decode_length();
+  }
 
   // The root is already included
   // In function add_root_to_spec_token_tree
@@ -3201,7 +3243,7 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid, int &budget) {
 
   // The max token that can be added to the token tree when fulfilling the SLO
   int max_token_toward_slo =
-      int(get_max_tokens_per_batch() / get_num_active_requests());
+      int(get_max_tokens_per_batch() / num_req_with_slo * 1.1);
 
   while (budget > 0 and max_token_toward_slo > 0 and
          current_added < num_tokens_to_decode) {
@@ -3383,7 +3425,7 @@ void RequestManager::add_tokens_toward_goodput_per_request(int budget,
     budget--;
   }
 
-  // Clear the priority queue in each requests
+  // Clear the priority queue in the request
   std::vector<std::pair<std::shared_ptr<TokenTreeNode>, double>>
       _prealloc_vector;
   _prealloc_vector.reserve(BatchConfig::MAX_SPEC_TREE_TOKEN_NUM);

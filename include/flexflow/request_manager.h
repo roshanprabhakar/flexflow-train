@@ -141,6 +141,7 @@ struct Request {
   int ssm_prefill_len = 0;
   int llm_prefill_len = 0;
   bool attained = true;
+  bool add_special_tokens = true;
 
   int first_token_offset_in_batch = 0;
   int num_tokens_in_batch = 0;
@@ -301,6 +302,7 @@ public:
   void set_correction_factor(double correction_factor);
   double get_correction_factor();
   void set_streaming_cache(bool streaming_cache);
+  bool get_streaming_cache();
   bool get_memory_occupancy();
   void set_memory_occupancy(bool memory_occupancy);
   void
@@ -425,6 +427,7 @@ private:
   ModelType model_type;
   int bos_token_id;
   int eos_token_id;
+  bool old_llama_tokenizer = false;
   std::string output_filepath;
   std::queue<Request> pending_request_queue;
   std::unordered_map<RequestGuid, Request> all_requests;
@@ -555,7 +558,9 @@ private:
   void prune_token_tree();
   void prune_token_tree_equal();
   void prune_token_tree_greedy();
-  void add_tokens_toward_slo(RequestGuid guid, int &budget);
+  void add_tokens_toward_slo(RequestGuid guid,
+                             int &budget,
+                             int num_req_with_slo);
   void add_tokens_toward_memory_occupancy(int budget);
   void add_tokens_toward_goodput(int budget);
   void add_tokens_toward_goodput_per_request(int budget, int request_index);

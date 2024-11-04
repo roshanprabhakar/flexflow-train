@@ -77,7 +77,7 @@ void FALCON::create_falcon_model(FFModel &ff,
           falcon_config.layer_norm_epsilon,
           true,
           DT_NONE,
-          std::string("layers_" + std::to_string(i) + "_input_layernorm")
+          std::string("layers." + std::to_string(i) + ".input_layernorm")
               .c_str());
     } else {
       ff.residual_layer_norm(
@@ -91,7 +91,7 @@ void FALCON::create_falcon_model(FFModel &ff,
           falcon_config.layer_norm_epsilon,
           true,
           DT_NONE,
-          std::string("layers_" + std::to_string(i) + "_input_layernorm")
+          std::string("layers." + std::to_string(i) + ".input_layernorm")
               .c_str());
       token = res_ln_outputs[0];
       att_norm = res_ln_outputs[1];
@@ -112,13 +112,13 @@ void FALCON::create_falcon_model(FFModel &ff,
             false,   /*add_zero_attn*/
             DT_NONE, /*data_type*/
             NULL,    /*kernel_initializer*/
-            true,    /*apply_rotary_embedding*/
-            false,   /*scaling query*/
-            1.0f,    /*scaling factor*/
-            true,    /*qk_prod_scaling*/
-            false,   /*position_bias*/
-            false,   /*streaming_cache*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            falcon_config.rotary_embedding_meta,
+            false, /*scaling query*/
+            1.0f,  /*scaling factor*/
+            true,  /*qk_prod_scaling*/
+            false, /*position_bias*/
+            false, /*streaming_cache*/
+            std::string("layers." + std::to_string(i) + ".self_attention")
                 .c_str() /*name*/
         );
         break;
@@ -138,12 +138,12 @@ void FALCON::create_falcon_model(FFModel &ff,
             false,   /*add_zero_attn*/
             DT_NONE, /*data_type*/
             nullptr, /*kernel_initializer*/
-            true,    /*apply_rotary_embedding*/
-            false,   /*scaling query*/
-            1.0f,    /*scaling factor*/
-            true,    /*qk_prod_scaling*/
-            false,   /*position_bias*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            falcon_config.rotary_embedding_meta,
+            false, /*scaling query*/
+            1.0f,  /*scaling factor*/
+            true,  /*qk_prod_scaling*/
+            false, /*position_bias*/
+            std::string("layers." + std::to_string(i) + ".self_attention")
                 .c_str() /*name*/
         );
         break;
@@ -163,13 +163,13 @@ void FALCON::create_falcon_model(FFModel &ff,
             false,   /*add_zero_attn*/
             DT_NONE, /*data_type*/
             nullptr, /*kernel_initializer*/
-            true,    /*apply_rotary_embedding*/
-            false,   /*scaling query*/
-            1.0f,    /*scaling factor*/
-            true,    /*qk_prod_scaling*/
-            false,   /*position_bias*/
-            false,   /*streaming_cache*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            falcon_config.rotary_embedding_meta,
+            false, /*scaling query*/
+            1.0f,  /*scaling factor*/
+            true,  /*qk_prod_scaling*/
+            false, /*position_bias*/
+            false, /*streaming_cache*/
+            std::string("layers." + std::to_string(i) + ".self_attention")
                 .c_str() /*name*/
         );
         break;
@@ -190,7 +190,7 @@ void FALCON::create_falcon_model(FFModel &ff,
         nullptr,
         REG_MODE_NONE,
         0.0f,
-        std::string("layers_" + std::to_string(i) + "_mlp_dense_h_to_4h")
+        std::string("layers." + std::to_string(i) + ".mlp.dense_h_to_4h")
             .c_str());
 
     dense_h_to_4h = ff.gelu(dense_h_to_4h);
@@ -206,7 +206,7 @@ void FALCON::create_falcon_model(FFModel &ff,
         nullptr,
         REG_MODE_NONE,
         0.0f,
-        std::string("layers_" + std::to_string(i) + "_mlp_dense_4h_to_h")
+        std::string("layers." + std::to_string(i) + ".mlp.dense_4h_to_h")
             .c_str());
   }
   // final normalization and linear
