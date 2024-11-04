@@ -2970,7 +2970,7 @@ void RequestManager::prune_token_tree() {
        spare_latency_2_request_index) {
     int request_index = spare_latency_request_index_pair.second;
     RequestGuid guid = guid_of_requests[request_index];
-    add_tokens_toward_slo(guid, budget);
+    add_tokens_toward_slo(guid, budget, spare_latency_2_request_index.size());
   }
 
   assert(budget >= 0);
@@ -3025,11 +3025,25 @@ void RequestManager::prune_token_tree_greedy() {
   }
 }
 
-void RequestManager::add_tokens_toward_slo(RequestGuid guid, int &budget) {
+void RequestManager::add_tokens_toward_slo(RequestGuid guid,
+                                           int &budget,
+                                           int num_req_with_slo) {
   Request &request = all_requests[guid];
-  double num_tokens_to_decode = (ssm_spec_latency_ms + llm_verify_latency_ms) *
-                                correction_factor /
-                                (baseline_latency_ms * request.get_slo_ratio());
+  double num_tokens_to_decode = 0.0;
+  double num_tokens_to_decode_per_step =
+      (ssm_spec_latency_ms + llm_verify_latency_ms) * correction_factor /
+      (baseline_latency_ms * request.get_slo_ratio());
+  bool attained =
+      request.decode_latency_ms <= get_request_expected_latency(request);
+
+  if (attained) {
+    num_tokens_to_decode = num_tokens_to_decode_per_step;
+  } else {
+    num_tokens_to_decode = num_tokens_to_decode_per_step +
+                           request.decode_latency_ms /
+                               (baseline_latency_ms * request.get_slo_ratio()) -
+                           request.decode_length();
+  }
 
   // The root is already included
   // In function add_root_to_spec_token_tree
@@ -3037,7 +3051,7 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid, int &budget) {
 
   // The max token that can be added to the token tree when fulfilling the SLO
   int max_token_toward_slo =
-      int(get_max_tokens_per_batch() / get_num_active_requests());
+      int(get_max_tokens_per_batch() / num_req_with_slo * 1.1);
 
   while (budget > 0 and max_token_toward_slo > 0 and
          current_added < num_tokens_to_decode) {
