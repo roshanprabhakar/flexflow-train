@@ -209,7 +209,7 @@ void FlexFlow::top_level_task(Task const *task,
   int max_tokens_per_prefilling_batch = -1;
   int max_sequence_length = 256;
   int max_output_length = 512;
-  int max_kv_cache_size = -1; //if -1, then use the default value
+  int max_kv_cache_size = -1; // if -1, then use the default value
   RequestManager::DecodingMode decoding_mode =
       RequestManager::INCREMENTAL_DECODING;
   int sampling_seed = 0;

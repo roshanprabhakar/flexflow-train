@@ -64,6 +64,11 @@ void LLAMA::create_llama_model(FFModel &ff,
 
   Tensor w2 = nullptr;
 
+  ff.set_num_transformer_layers(llama_config.num_hidden_layers);
+  ff.set_num_kv_heads(llama_config.num_key_value_heads);
+  ff.set_qkv_dim(llama_config.hidden_size / llama_config.num_attention_heads *
+                 2);
+  ff.set_size_dt(data_type_size(input->data_type));
   for (int i = 0; i < llama_config.num_hidden_layers; i++) {
     // set transformer layer id
     ff.set_transformer_layer_id(i);

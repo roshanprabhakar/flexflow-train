@@ -48,19 +48,19 @@ using flashinfer::PosEncodingMode;
 using flashinfer::QKVLayout;
 
 template <typename DT>
-__global__ void
-    update_qkv_in_batch_verify_kernel(DT *qkv_proj_array,
-                               half *qTmp_ptr,
-                               half *kvCache_ptr,
-                               int32_t *kv_indptr,
-                               int32_t *kv_page_indices,
-                               bool const *request_available,
-                               BatchConfig::PerTokenInfo const *tokenInfos,
-                               int const max_num_pages,
-                               int num_q_heads,
-                               int num_kv_heads,
-                               int head_dim,
-                               int num_new_tokens) {
+__global__ void update_qkv_in_batch_verify_kernel(
+    DT *qkv_proj_array,
+    half *qTmp_ptr,
+    half *kvCache_ptr,
+    int32_t *kv_indptr,
+    int32_t *kv_page_indices,
+    bool const *request_available,
+    BatchConfig::PerTokenInfo const *tokenInfos,
+    int const max_num_pages,
+    int num_q_heads,
+    int num_kv_heads,
+    int head_dim,
+    int num_new_tokens) {
   int const q_hidden_size = num_q_heads * head_dim;
   int const temp_kv_hidden_size = num_q_heads * head_dim; // temporary hard code
   int const kv_hidden_size = num_kv_heads * head_dim;
@@ -68,14 +68,12 @@ __global__ void
   int const token_idx = thread_idx / q_hidden_size;
   int const offset = thread_idx % q_hidden_size;
 
-
   if (token_idx >= num_new_tokens) {
     return;
   }
 
   int const req_idx = tokenInfos[token_idx].request_index;
   int token_abs_idx = tokenInfos[token_idx].abs_index_in_request;
-
 
   // calculate the compact request index in the easiest way
   // TODO: recheck
@@ -98,13 +96,12 @@ __global__ void
     int start = kv_indptr[req_idx_compact];
     int end = kv_indptr[req_idx_compact + 1] - 1;
     assert(start <= end && "Invalid kv_indptr");
-    assert(start + (token_abs_idx / kPagesize) <= end &&
-           "Invalid page index");
+    assert(start + (token_abs_idx / kPagesize) <= end && "Invalid page index");
     int page_idx = kv_page_indices[start + (token_abs_idx / kPagesize)];
     size_t to_k_idx = get_k_entry_offset_verify(
-           token_abs_idx, page_idx, num_kv_heads, head_dim),
+               token_abs_idx, page_idx, num_kv_heads, head_dim),
            to_v_idx = get_v_entry_offset_verify(
-           token_abs_idx, page_idx, num_kv_heads, head_dim);
+               token_abs_idx, page_idx, num_kv_heads, head_dim);
     // key and value cache should be stored interleaved
     int const stride = num_q_heads / num_kv_heads;
     int const kv_offset =
@@ -119,8 +116,8 @@ __global__ void
 
 template <typename DT>
 void update_qkv_in_batch_verify(IncMultiHeadSelfAttentionMeta const *m,
-                         BatchConfig const *bc,
-                         cudaStream_t stream) {
+                                BatchConfig const *bc,
+                                cudaStream_t stream) {
   // printf("entered update_qkv_in_batch_verify\n");
   int num_new_tokens = bc->num_active_tokens();
   if (num_new_tokens == 0) {
@@ -131,20 +128,21 @@ void update_qkv_in_batch_verify(IncMultiHeadSelfAttentionMeta const *m,
       round_up_pages(BatchConfig::max_sequence_length() +
                      BatchConfig::max_spec_tree_token_num());
   update_qkv_in_batch_verify_kernel<<<GET_BLOCKS(parallelism),
-                               min(CUDA_NUM_THREADS, parallelism),
-                               0,
-                               stream>>>(static_cast<DT *>(m->devQKVProjArray),
-                                         static_cast<half *>(m->queryTmp),
-                                         static_cast<half *>(m->kvCache),
-                                         m->handle.tree_verify_attention_metadata->kv_indptr,
-                                         m->handle.tree_verify_attention_metadata->kv_indices,
-                                         m->request_available,
-                                         m->token_infos,
-                                         max_num_pages,
-                                         m->num_q_heads,
-                                         m->num_kv_heads,
-                                         m->qk_dim,
-                                         num_new_tokens);
+                                      min(CUDA_NUM_THREADS, parallelism),
+                                      0,
+                                      stream>>>(
+      static_cast<DT *>(m->devQKVProjArray),
+      static_cast<half *>(m->queryTmp),
+      static_cast<half *>(m->kvCache),
+      m->handle.tree_verify_attention_metadata->kv_indptr,
+      m->handle.tree_verify_attention_metadata->kv_indices,
+      m->request_available,
+      m->token_infos,
+      max_num_pages,
+      m->num_q_heads,
+      m->num_kv_heads,
+      m->qk_dim,
+      num_new_tokens);
   // cudaStreamSynchronize(stream);
   // printf("exited update_qkv_in_batch_verify\n");
 }
@@ -187,16 +185,29 @@ __global__ void commit_tokens_kernel(
       // int const req_id = committedTokenInfos[i].request_index;
       // int const tok_id = committedTokenInfos[i].token_depth;
       int const page_to_idx = committedTokenInfos[i].token_depth / kPagesize;
-      int const page_from_idx = committedTokenInfos[i].index_in_kv_cache / kPagesize;
+      int const page_from_idx =
+          committedTokenInfos[i].index_in_kv_cache / kPagesize;
 
       size_t from_k_idx = get_k_entry_offset_verify(
-                  committedTokenInfos[i].index_in_kv_cache, page_from_idx, num_kv_heads, head_dim),
+                 committedTokenInfos[i].index_in_kv_cache,
+                 page_from_idx,
+                 num_kv_heads,
+                 head_dim),
              from_v_idx = get_v_entry_offset_verify(
-                  committedTokenInfos[i].index_in_kv_cache, page_from_idx, num_kv_heads, head_dim);
-      size_t to_k_idx = get_k_entry_offset_verify(
-                 committedTokenInfos[i].token_depth, page_to_idx, num_kv_heads, head_dim),
-             to_v_idx = get_v_entry_offset_verify(
-                 committedTokenInfos[i].token_depth, page_to_idx, num_kv_heads, head_dim);
+                 committedTokenInfos[i].index_in_kv_cache,
+                 page_from_idx,
+                 num_kv_heads,
+                 head_dim);
+      size_t to_k_idx =
+                 get_k_entry_offset_verify(committedTokenInfos[i].token_depth,
+                                           page_to_idx,
+                                           num_kv_heads,
+                                           head_dim),
+             to_v_idx =
+                 get_v_entry_offset_verify(committedTokenInfos[i].token_depth,
+                                           page_to_idx,
+                                           num_kv_heads,
+                                           head_dim);
 
       kCache_ptr[to_k_idx + offset] = kCache_ptr[from_k_idx + offset];
       kCache_ptr[to_v_idx + offset] = kCache_ptr[from_v_idx + offset];
@@ -220,16 +231,17 @@ void commit_tokens(TreeIncMultiHeadSelfAttentionMeta const *m,
   commit_tokens_kernel<<<GET_BLOCKS(parallelism),
                          min(CUDA_NUM_THREADS, parallelism),
                          0,
-                         stream>>>(static_cast<half *>(m->kvCache),
-                                   m->handle.tree_verify_attention_metadata->kv_indptr,
-                                   m->handle.tree_verify_attention_metadata->kv_indices,
-                                   m->committed_token_infos,
-                                   m->request_available,
-                                   num_requests,
-                                   m->num_kv_heads,
-                                   m->qk_dim,
-                                   m->num_tokens_to_commit,
-                                   max_num_pages);
+                         stream>>>(
+      static_cast<half *>(m->kvCache),
+      m->handle.tree_verify_attention_metadata->kv_indptr,
+      m->handle.tree_verify_attention_metadata->kv_indices,
+      m->committed_token_infos,
+      m->request_available,
+      num_requests,
+      m->num_kv_heads,
+      m->qk_dim,
+      m->num_tokens_to_commit,
+      max_num_pages);
   //   cudaEventRecord(t_end, stream);
   //   checkCUDA(cudaEventSynchronize(t_end));
   //   float elapsed = 0;
@@ -611,7 +623,8 @@ void inference_kernel(TreeIncMultiHeadSelfAttentionMeta *m,
   // }
   // cudaError_t err = cudaDeviceSynchronize();
   // if (err != cudaSuccess) {
-  //     std::cerr << "Kernel launch failed with error: " << cudaGetErrorString(err) << std::endl;
+  //     std::cerr << "Kernel launch failed with error: " <<
+  //     cudaGetErrorString(err) << std::endl;
   // }
 }
 

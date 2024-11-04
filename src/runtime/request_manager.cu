@@ -94,29 +94,37 @@ void prepare_inference_params_kernel_h(BatchConfig const *batch_config,
   qk_indptr_h[0] = 0;
   int q_lens = 0, qk_lens = 0;
   int indices_offset = 0, indices_lens = 0;
-  for (int req_idx = 0, indptr_idx = 0; req_idx < batch_config->max_requests_per_batch(); req_idx++) {
+  for (int req_idx = 0, indptr_idx = 0;
+       req_idx < batch_config->max_requests_per_batch();
+       req_idx++) {
     if (batch_config->request_available[req_idx]) {
       int q_len = batch_config->requestsInfo[req_idx].num_tokens_in_batch;
-      int kv_len = batch_config->requestsInfo[req_idx].num_tokens_in_batch +
-                  batch_config->requestsInfo[req_idx].first_token_index_in_request;
-      
+      int kv_len =
+          batch_config->requestsInfo[req_idx].num_tokens_in_batch +
+          batch_config->requestsInfo[req_idx].first_token_index_in_request;
+
       q_lens += q_len;
       qk_lens += (q_len * kv_len + 7) / 8;
       indices_offset = indices_lens;
       indices_lens += (kv_len + kPagesize - 1) / kPagesize;
       q_indptr_h[indptr_idx + 1] = q_indptr_h[indptr_idx] + q_len;
-      kv_indptr_h[indptr_idx + 1] = batch_config->requestsInfo[req_idx].num_kv_pages + kv_indptr_h[indptr_idx];
+      kv_indptr_h[indptr_idx + 1] =
+          batch_config->requestsInfo[req_idx].num_kv_pages +
+          kv_indptr_h[indptr_idx];
       assert(kv_indptr_h[indptr_idx] >= 0);
 
-      assert(batch_config->requestsInfo[req_idx].num_kv_pages == (kv_len + kPagesize - 1) / kPagesize);
+      assert(batch_config->requestsInfo[req_idx].num_kv_pages ==
+             (kv_len + kPagesize - 1) / kPagesize);
       assert(batch_config->requestsInfo[req_idx].kv_last_page_len <= kPagesize);
-      std::vector<int32_t> kv_indices = pm -> get_block_table_indices(batch_config->requestsInfo[req_idx].request_guid);
+      std::vector<int32_t> kv_indices = pm->get_block_table_indices(
+          batch_config->requestsInfo[req_idx].request_guid);
       assert(kv_indices.size() == (kv_len + kPagesize - 1) / kPagesize);
       for (int i = indices_offset; i < indices_lens; i++) {
         kv_indices_h[i] = kv_indices[i - indices_offset];
       }
       qk_indptr_h[indptr_idx + 1] = qk_lens;
-      kv_last_page_len_h[indptr_idx] = batch_config->requestsInfo[req_idx].kv_last_page_len;
+      kv_last_page_len_h[indptr_idx] =
+          batch_config->requestsInfo[req_idx].kv_last_page_len;
       indptr_idx++;
     }
   }
@@ -127,11 +135,12 @@ void prepare_inference_params_kernel_h(BatchConfig const *batch_config,
                             sizeof(int32_t) * batch_size * max_num_pages,
                             cudaMemcpyHostToDevice,
                             stream));
-  checkCUDA(cudaMemcpyAsync(handle.tree_verify_attention_metadata->kv_last_page_len,
-                            kv_last_page_len_h,
-                            sizeof(int32_t) * batch_size,
-                            cudaMemcpyHostToDevice,
-                            stream));
+  checkCUDA(
+      cudaMemcpyAsync(handle.tree_verify_attention_metadata->kv_last_page_len,
+                      kv_last_page_len_h,
+                      sizeof(int32_t) * batch_size,
+                      cudaMemcpyHostToDevice,
+                      stream));
   checkCUDA(cudaMemcpyAsync(handle.tree_verify_attention_metadata->q_indptr,
                             q_indptr_h,
                             sizeof(int32_t) * (batch_size + 1),
@@ -675,8 +684,10 @@ void RequestManager::load_batch_config_task(
     }
   } else if (batch_config->get_mode() == TREE_VERIFY_MODE) {
     PageManager *pm = PageManager::get_page_manager();
-    static int32_t q_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1], kv_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1];
-    static int32_t kv_indices_h[BatchConfig::MAX_NUM_REQUESTS * BatchConfig::MAX_NUM_TOKENS];
+    static int32_t q_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1],
+        kv_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1];
+    static int32_t kv_indices_h[BatchConfig::MAX_NUM_REQUESTS *
+                                BatchConfig::MAX_NUM_TOKENS];
     static int32_t qk_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1];
     static int32_t kv_last_page_len_h[BatchConfig::MAX_NUM_REQUESTS];
 

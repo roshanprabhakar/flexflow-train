@@ -15,20 +15,25 @@ namespace Kernels {
 namespace IncMultiHeadAttention {
 
 // kv layout: [num_pages, 2, page_size, num_kv_heads, head_dim]
-__device__ __forceinline__ size_t get_k_entry_offset_verify(int const token_idx,
-                                                     int const page_idx,
-                                                     int const num_heads,
-                                                     int const head_dim) {
-  size_t index = ((page_idx) * kPagesize * 2 + (token_idx % kPagesize)) * head_dim * num_heads;
+__device__ __forceinline__ size_t
+    get_k_entry_offset_verify(int const token_idx,
+                              int const page_idx,
+                              int const num_heads,
+                              int const head_dim) {
+  size_t index = ((page_idx)*kPagesize * 2 + (token_idx % kPagesize)) *
+                 head_dim * num_heads;
   return index;
 }
 
 // kv layout: [num_pages, 2, page_size, num_kv_heads, head_dim]
-__device__ __forceinline__ size_t get_v_entry_offset_verify(int const token_idx,
-                                                     int const page_idx,
-                                                     int const num_heads,
-                                                     int const head_dim) {
-  size_t index = ((page_idx) * kPagesize * 2 + kPagesize + (token_idx % kPagesize)) * head_dim * num_heads;
+__device__ __forceinline__ size_t
+    get_v_entry_offset_verify(int const token_idx,
+                              int const page_idx,
+                              int const num_heads,
+                              int const head_dim) {
+  size_t index =
+      ((page_idx)*kPagesize * 2 + kPagesize + (token_idx % kPagesize)) *
+      head_dim * num_heads;
   return index;
 }
 
