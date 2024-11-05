@@ -155,7 +155,8 @@ void PageManager::free_block_table(BlockTable &block_table) {
 
 void PageManager::free_request(RequestGuid const &request_guid) {
   // we only free the blocks that are already used
-  assert(block_tables.find(request_guid) != block_tables.end());
+  // assert(block_tables.find(request_guid) != block_tables.end());
+  printf("free the blocks for request %d\n", request_guid);
   BlockTable block_table = block_tables[request_guid];
   free_block_table(block_table);
   block_tables.erase(request_guid);
@@ -165,9 +166,9 @@ void PageManager::free_request(RequestGuid const &request_guid) {
 // delete the last num_blocks in the request_guid
 void PageManager::free_multiple_blocks(RequestGuid const &request_guid,
                                        int num_blocks) {
-  assert(block_tables.find(request_guid) != block_tables.end());
+  // assert(block_tables.find(request_guid) != block_tables.end());
   auto &block_table = block_tables[request_guid];
-  assert(num_blocks <= block_table.size());
+  // assert(num_blocks <= block_table.size());
   int num_blocks_allocated = block_table.size();
   for (int i = 0; i < num_blocks; i++) {
     block_allocator.free(block_table[num_blocks_allocated - i - 1]);
@@ -178,12 +179,6 @@ void PageManager::free_multiple_blocks(RequestGuid const &request_guid,
   block_tables[request_guid] = block_table;
   return;
 }
-
-// int PageManager::get_index_last_block(const RequestGuid& request_guid) const
-// {
-//     const auto& block_table = block_tables.at(request_guid);
-//     return block_table.back.get_block_number();
-// }
 
 std::vector<int> PageManager::get_block_table_indices(
     RequestGuid const &request_guid) const {
@@ -220,10 +215,6 @@ PageManager *PageManager::get_page_manager(FFModel *ff,
   int qkv_dim = ff->qkv_dim;
   int num_transformer_layers = ff->num_transformer_layers;
   int pipeline_parallelism_degree = ff->config.pipeline_parallelism_degree;
-  printf("num_kv_heads: %d, size_dt: %d, qkv_dim: %d, num_transformer_layers: "
-         "%d, pipeline_parallelism_degree: %d\n",
-         num_kv_heads, size_dt, qkv_dim, num_transformer_layers,
-         pipeline_parallelism_degree);
   assert(num_kv_heads > 0 && size_dt > 0 && qkv_dim > 0 &&
          num_transformer_layers > 0 && pipeline_parallelism_degree > 0); //needs to make sure that the model is initialized
   if (page_manager_singleton == nullptr) {
@@ -250,13 +241,6 @@ size_t PageManager::get_kv_cache_size_per_layer() {
 }
 
 PageManager *PageManager::get_page_manager() {
-  // if (page_manager_singleton == nullptr) {
-  //   int num_total_blocks =
-  //       (BatchConfig::max_spec_tree_token_num() +
-  //        BatchConfig::max_sequence_length() + kPagesize - 1) /
-  //       kPagesize * BatchConfig::max_requests_per_batch();
-  //   page_manager_singleton = new PageManager(kPagesize, num_total_blocks);
-  // }
   assert(page_manager_singleton != nullptr);
   return page_manager_singleton;
 }

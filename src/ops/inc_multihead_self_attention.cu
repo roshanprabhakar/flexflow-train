@@ -509,8 +509,8 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
                             BatchConfig::max_requests_per_batch() *
                             max_num_pages * kPagesize;
         }else{
-          key_cache_size = total_kv_cache_size_per_layer / 2;
-          value_cache_size = total_kv_cache_size_per_layer / 2;
+          key_cache_size = total_kv_cache_size_per_layer / 2 / size_of_dt;
+          value_cache_size = total_kv_cache_size_per_layer / 2 / size_of_dt;
         }
         break;
       }
