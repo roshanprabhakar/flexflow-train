@@ -1306,6 +1306,10 @@ BatchConfig RequestManager::prepare_decoding_batch() {
     bc.tokensInfo[bc.num_tokens].abs_index_in_request = request.llm_cache_size;
     bc.tokensInfo[bc.num_tokens].abs_depth_in_request = request.llm_cache_size;
     bc.tokensInfo[bc.num_tokens].token_id = request.tokens.back();
+    // append the token here
+    int idx_to_physical = append_token_to_block(request, request.tokens.back(), true);
+    bc.requestsInfo[request_index].num_kv_pages = get_num_blocks_allocated(request);
+    bc.requestsInfo[request_index].kv_last_page_len = get_len_last_block(request);
 
     bc.num_tokens++;
 
@@ -1608,8 +1612,6 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
       int idx_to_physical =
           append_token_to_block(request, committed_token.token_id, true);
       int idx_from_logical = committed_token.from_index;
-      // assert(idx_from_logical >= 0);
-      // assert(idx_from_logical / kPagesize < block_table_before_commit.size());
       int idx_from_physical =
           block_table_before_commit[idx_from_logical / kPagesize] * kPagesize +
           committed_token.from_index % kPagesize;
@@ -1662,10 +1664,8 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
     // page attention information
     new_bc.requestsInfo[request_index].num_kv_pages =
         get_num_blocks_allocated(request);
-    // assert(new_bc.requestsInfo[request_index].num_kv_pages > 0);
     new_bc.requestsInfo[request_index].kv_last_page_len =
         get_len_last_block(request);
-    // assert(new_bc.requestsInfo[request_index].kv_last_page_len > 0);
     new_bc.requestsInfo[request_index].request_guid = request.guid;
   }
 

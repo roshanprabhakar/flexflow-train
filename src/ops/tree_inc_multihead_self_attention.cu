@@ -143,8 +143,6 @@ void update_qkv_in_batch_verify(IncMultiHeadSelfAttentionMeta const *m,
       m->num_kv_heads,
       m->qk_dim,
       num_new_tokens);
-  // cudaStreamSynchronize(stream);
-  // printf("exited update_qkv_in_batch_verify\n");
 }
 
 __global__ void commit_tokens_kernel(

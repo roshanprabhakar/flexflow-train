@@ -498,6 +498,7 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
     PageManager *pm = PageManager::get_page_manager();
     size_t total_kv_cache_size_per_layer = pm->get_kv_cache_size_per_layer();
     switch (infer_mode) {
+      case INC_DECODING_MODE:
       case TREE_VERIFY_MODE: {
         query_tmp_size = num_q_heads * qk_dim * max_tokens_per_batch;
         // a K-ary tree max node is (k^n - 1) / 2
@@ -515,7 +516,6 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
         break;
       }
       case TREE_SEARCH_MODE:
-      case INC_DECODING_MODE:
         query_tmp_size = num_q_heads * qk_dim * max_tokens_per_batch;
         // a K-ary tree max node is (k^n - 1) / 2
         key_cache_size = num_kv_heads * qk_dim *

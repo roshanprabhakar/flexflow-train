@@ -437,6 +437,13 @@ void RequestManager::load_batch_config_task(
 
   // load attention metadata
   if (batch_config->get_mode() == INC_DECODING_MODE) {
+    PageManager *pm = PageManager::get_page_manager();
+    static int32_t q_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1],
+        kv_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1];
+    static int32_t kv_indices_h[BatchConfig::MAX_NUM_REQUESTS *
+                                BatchConfig::MAX_NUM_TOKENS];
+    static int32_t qk_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1];
+    static int32_t kv_last_page_len_h[BatchConfig::MAX_NUM_REQUESTS];
     if (handle.incr_attention_metadata->enabled()) {
       // calculate the attention meta data
       {
@@ -453,46 +460,43 @@ void RequestManager::load_batch_config_task(
             round_up_pages(BatchConfig::max_sequence_length() +
                            BatchConfig::max_spec_tree_token_num());
 
-        int parallelism = batch_size;
-        prepare_inference_params_kernel<<<GET_BLOCKS(parallelism),
-                                          min(CUDA_NUM_THREADS, parallelism),
-                                          0,
-                                          stream>>>(
-            batch_size,
-            request_infos,
-            request_available,
-            max_num_pages,
-            handle.incr_attention_metadata->q_indptr,
-            handle.incr_attention_metadata->kv_indptr,
-            handle.incr_attention_metadata->kv_indices,
-            handle.incr_attention_metadata->kv_last_page_len,
-            handle.incr_attention_metadata->qk_indptr);
+        // int parallelism = batch_size;
+        prepare_inference_params_kernel_h(batch_config,
+                                          pm,
+                                          handle,
+                                          stream,
+                                          max_num_pages,
+                                          q_indptr_h,
+                                          kv_indptr_h,
+                                          kv_indices_h,
+                                          kv_last_page_len_h,
+                                          qk_indptr_h);
       }
 
       // prepare attention forward handler
       {
         int batch_size = batch_config->num_active_requests();
-        static int32_t q_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1],
-            kv_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1],
-            kv_last_page_len_h[BatchConfig::MAX_NUM_REQUESTS];
-        q_indptr_h[0] = 0;
-        kv_indptr_h[0] = 0;
-        for (int req_idx = 0, indptr_idx = 0;
-             req_idx < batch_config->max_requests_per_batch();
-             req_idx++) {
-          if (batch_config->request_available[req_idx]) {
-            int q_len = batch_config->requestsInfo[req_idx].num_tokens_in_batch;
-            int kv_len =
-                batch_config->requestsInfo[req_idx].num_tokens_in_batch +
-                batch_config->requestsInfo[req_idx]
-                    .first_token_index_in_request;
-            q_indptr_h[indptr_idx + 1] = q_indptr_h[indptr_idx] + q_len;
-            kv_indptr_h[indptr_idx + 1] =
-                kv_indptr_h[indptr_idx] + round_up_pages(kv_len);
-            kv_last_page_len_h[indptr_idx] = (kv_len - 1) % kPagesize + 1;
-            indptr_idx++;
-          }
-        }
+        // static int32_t q_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1],
+        //     kv_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1],
+        //     kv_last_page_len_h[BatchConfig::MAX_NUM_REQUESTS];
+        // q_indptr_h[0] = 0;
+        // kv_indptr_h[0] = 0;
+        // for (int req_idx = 0, indptr_idx = 0;
+        //      req_idx < batch_config->max_requests_per_batch();
+        //      req_idx++) {
+        //   if (batch_config->request_available[req_idx]) {
+        //     int q_len = batch_config->requestsInfo[req_idx].num_tokens_in_batch;
+        //     int kv_len =
+        //         batch_config->requestsInfo[req_idx].num_tokens_in_batch +
+        //         batch_config->requestsInfo[req_idx]
+        //             .first_token_index_in_request;
+        //     q_indptr_h[indptr_idx + 1] = q_indptr_h[indptr_idx] + q_len;
+        //     kv_indptr_h[indptr_idx + 1] =
+        //         kv_indptr_h[indptr_idx] + round_up_pages(kv_len);
+        //     kv_last_page_len_h[indptr_idx] = (kv_len - 1) % kPagesize + 1;
+        //     indptr_idx++;
+        //   }
+        // }
 
         if (!batch_config->prompt_phase) {
           BatchDecodeHandler *handler = nullptr;
@@ -690,7 +694,6 @@ void RequestManager::load_batch_config_task(
                                 BatchConfig::MAX_NUM_TOKENS];
     static int32_t qk_indptr_h[BatchConfig::MAX_NUM_REQUESTS + 1];
     static int32_t kv_last_page_len_h[BatchConfig::MAX_NUM_REQUESTS];
-
     if (handle.tree_verify_attention_metadata->enabled()) {
       // calculate the attention meta data
       {
