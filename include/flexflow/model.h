@@ -1147,7 +1147,9 @@ public:
   size_t current_transformer_layer_id;
   // positional embedding start offset
   int num_transformer_layers;
-  int num_kv_heads, qkv_dim, size_dt;
+  int num_kv_heads;
+  int qkv_dim;
+  int size_dt;
   int position_offset;
   FFConfig config;
   FFIterationConfig iter_config;

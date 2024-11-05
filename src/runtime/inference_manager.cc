@@ -501,12 +501,13 @@ void FFModel::set_num_kv_heads(int num_heads) {
   num_kv_heads = num_heads;
 }
 
-void FFModel::set_qkv_dim(int qkv_dim) {
-  qkv_dim = qkv_dim;
+void FFModel::set_qkv_dim(int qkv) {
+  qkv_dim = qkv;
 }
 
-void FFModel::set_size_dt(int size_dt) {
-  size_dt = size_dt;
+void FFModel::set_size_dt(int dt) {
+  printf("Setting size_dt to %d\n", dt);
+  size_dt = dt;
 }
 
 void FFModel::set_position_offset(int offset) {

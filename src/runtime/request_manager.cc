@@ -2526,6 +2526,8 @@ void RequestManager::background_serving_task(
   FFModel *llm = *(FFModel **)task->args;
   printf("start background serving task and llm has %d num_transfor_layers\n",
          llm->num_transformer_layers);
+  printf("qkv dim: %d, num_heads: %d\n",
+         llm->qkv_dim, llm->num_kv_heads);
   {
     // Update FFModel's lg_hlr and lg_ctx to the current
     // task's runtime and ctx, since all future legion tasks are

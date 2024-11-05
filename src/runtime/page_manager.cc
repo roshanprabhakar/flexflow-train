@@ -220,6 +220,13 @@ PageManager *PageManager::get_page_manager(FFModel *ff,
   int qkv_dim = ff->qkv_dim;
   int num_transformer_layers = ff->num_transformer_layers;
   int pipeline_parallelism_degree = ff->config.pipeline_parallelism_degree;
+  printf("num_kv_heads: %d, size_dt: %d, qkv_dim: %d, num_transformer_layers: "
+         "%d, pipeline_parallelism_degree: %d\n",
+         num_kv_heads, size_dt, qkv_dim, num_transformer_layers,
+         pipeline_parallelism_degree);
+  assert(num_kv_heads > 0 && size_dt > 0 && qkv_dim > 0 &&
+         num_transformer_layers > 0 && pipeline_parallelism_degree > 0); //needs to make sure that the model is initialized
+  printf("page manager singleton is initialized\n");
   if (page_manager_singleton == nullptr) {
     int num_total_blocks = 0;
     if (total_kv_cache_size == -1) {
@@ -237,13 +244,14 @@ PageManager *PageManager::get_page_manager(FFModel *ff,
 }
 
 PageManager *PageManager::get_page_manager() {
-  if (page_manager_singleton == nullptr) {
-    int num_total_blocks =
-        (BatchConfig::max_spec_tree_token_num() +
-         BatchConfig::max_sequence_length() + kPagesize - 1) /
-        kPagesize * BatchConfig::max_requests_per_batch();
-    page_manager_singleton = new PageManager(kPagesize, num_total_blocks);
-  }
+  // if (page_manager_singleton == nullptr) {
+  //   int num_total_blocks =
+  //       (BatchConfig::max_spec_tree_token_num() +
+  //        BatchConfig::max_sequence_length() + kPagesize - 1) /
+  //       kPagesize * BatchConfig::max_requests_per_batch();
+  //   page_manager_singleton = new PageManager(kPagesize, num_total_blocks);
+  // }
+  assert(page_manager_singleton != nullptr);
   return page_manager_singleton;
 }
 
