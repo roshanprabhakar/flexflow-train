@@ -15,6 +15,7 @@
 #if defined(FF_USE_CUDA) || defined(FF_USE_HIP_CUDA)
 #include "cuComplex.h"
 #endif
+#include "flexflow/page_manager.h"
 #include "flashinfer/decode_attention_decl.cuh"
 #include "flashinfer/prefill_attention_decl.cuh"
 #include "flexflow/ffconst_utils.h"
@@ -494,12 +495,13 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
     size_t max_num_pages =
         round_up_pages(BatchConfig::max_sequence_length() +
                        BatchConfig::max_spec_tree_token_num());
-    int total_kv_cache_size = BatchConfig::max_kv_cache_size();
+    PageManager *pm = PageManager::get_page_manager();
+    size_t total_kv_cache_size_per_layer = pm->get_kv_cache_size_per_layer();
     switch (infer_mode) {
       case TREE_VERIFY_MODE: {
         query_tmp_size = num_q_heads * qk_dim * max_tokens_per_batch;
         // a K-ary tree max node is (k^n - 1) / 2
-        if (total_kv_cache_size == -1){
+        if (total_kv_cache_size_per_layer == 0){
           key_cache_size = num_kv_heads * qk_dim *
                           BatchConfig::max_requests_per_batch() * max_num_pages *
                           kPagesize;
@@ -507,28 +509,9 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
                             BatchConfig::max_requests_per_batch() *
                             max_num_pages * kPagesize;
         }else{
-          key_cache_size = total_kv_cache_size / 2;
-          value_cache_size = total_kv_cache_size / 2;
+          key_cache_size = total_kv_cache_size_per_layer / 2;
+          value_cache_size = total_kv_cache_size_per_layer / 2;
         }
-        // if (streaming_cache) {
-        //   size_t max_post_pos_enc_pages =
-        //       round_up_pages(BatchConfig::MAX_STREAMING_POS -
-        //                      BatchConfig::get_max_tree_depth() +
-        //                      max(max_tokens_per_batch,
-        //                          BatchConfig::max_spec_tree_token_num()));
-        //   key_cache_size = num_kv_heads * qk_dim *
-        //                    BatchConfig::max_requests_per_batch() *
-        //                    max_post_pos_enc_pages * kPagesize;
-        //   value_cache_size = num_kv_heads * v_dim *
-        //                      BatchConfig::max_requests_per_batch() *
-        //                      max_post_pos_enc_pages * kPagesize;
-        //   streaming_pre_pos_enc_size =
-        //       num_kv_heads * (qk_dim + v_dim) *
-        //       BatchConfig::max_requests_per_batch() *
-        //       round_up_pages(BatchConfig::MAX_STREAMING_POS -
-        //                      BatchConfig::get_max_tree_depth()) *
-        //       kPagesize;
-        // }
         break;
       }
       case TREE_SEARCH_MODE:

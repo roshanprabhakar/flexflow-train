@@ -213,11 +213,11 @@ int RequestManager::get_max_output_length() {
   return max_output_length;
 }
 
-void RequestManager::set_max_kv_cache_size(int max_kv_cache_size) {
+void RequestManager::set_max_kv_cache_size(size_t max_kv_cache_size) {
   this->max_kv_cache_size = max_kv_cache_size;
 }
 
-int RequestManager::get_max_kv_cache_size() {
+size_t RequestManager::get_max_kv_cache_size() {
   return max_kv_cache_size;
 }
 
@@ -703,9 +703,6 @@ void RequestManager::request_update_attainment(int batch_index, bool attained) {
 
 void RequestManager::request_complete_clean_up(int batch_index) {
   RequestGuid guid = guid_of_requests[batch_index];
-  if (profiling_requests[guid].finish_time != 0) {
-    printf("some request has been completed!!\n");
-  }
 
   profiling_requests[guid].finish_time =
       Realm::Clock::current_time_in_microseconds();
@@ -2105,20 +2102,6 @@ void RequestManager::reset_block_table(Request &request) {
   return;
 }
 
-// debug function
-void RequestManager::print_num_tokens(Request &request) {
-  PageManager *page_manager = PageManager::get_page_manager();
-  std::vector<int> block_table_indices =
-      page_manager->get_block_table_indices(request.guid);
-  printf("number of blocks: %d", request.blocks.size());
-  printf(" number of pages allocated: %d", block_table_indices.size());
-  printf(" last page length: %d", request.blocks.back().get_num_tokens());
-  printf(" last page spec tokens: %d",
-         request.blocks.back().get_num_spec_tokens());
-  printf(" last page commit tokens: %d\n",
-         request.blocks.back().get_num_commit_tokens());
-}
-
 /* --------- Bitmask Related Functions --------- */
 void RequestManager::gumbel_conditioned_on_max(
     double target_max, std::vector<std::pair<double, int>> &logits) {
@@ -2524,10 +2507,6 @@ void RequestManager::background_serving_task(
     Runtime *runtime) {
   RequestManager *rm = RequestManager::get_request_manager();
   FFModel *llm = *(FFModel **)task->args;
-  printf("start background serving task and llm has %d num_transfor_layers\n",
-         llm->num_transformer_layers);
-  printf("qkv dim: %d, num_heads: %d\n",
-         llm->qkv_dim, llm->num_kv_heads);
   {
     // Update FFModel's lg_hlr and lg_ctx to the current
     // task's runtime and ctx, since all future legion tasks are
@@ -2543,6 +2522,8 @@ void RequestManager::background_serving_task(
     }
   }
   // page attention: initalize the page manager here
+  int kv_cache_size = rm->get_max_kv_cache_size();
+  printf("KV cache size: %d\n", kv_cache_size);
   PageManager::get_page_manager(llm, rm->get_max_kv_cache_size());
   if (rm->decoding_mode == INCREMENTAL_DECODING) {
     // No SSMs: perform incremental decoding

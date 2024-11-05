@@ -68,7 +68,7 @@ void parse_input_args(char **argv,
                       int &max_tokens_per_prefilling_batch,
                       int &max_sequence_length,
                       int &max_output_length,
-                      int &max_kv_cache_size,
+                      size_t &max_kv_cache_size,
                       int &max_tree_width,
                       int &max_tree_depth,
                       int &expansion_degree,
@@ -390,7 +390,7 @@ void FlexFlow::top_level_task(Task const *task,
   int max_tokens_per_prefilling_batch = -1;
   int max_sequence_length = 512;
   int max_output_length = 512;
-  int max_kv_cache_size = -1; // if -1, then use the default value
+  size_t max_kv_cache_size = 0; // if 0, then use the default value
   int expansion_degree = 3;
   int max_tree_depth = 8;
   int max_tree_width = 16;

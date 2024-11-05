@@ -118,7 +118,7 @@ public:
 
 private:
   int block_size;
-  int num_total_blocks;
+  size_t num_total_blocks;
   std::deque<PhysicalTokenBlock> free_blocks;
 };
 
@@ -133,10 +133,11 @@ public:
   // Get the singleton instance of the PageManager as it will be shared in
   // multiple places
   static PageManager *get_page_manager();
-  static PageManager *get_page_manager(FFModel *ff, int kv_cache_size);
+  static PageManager *get_page_manager(FFModel *ff, size_t kv_cache_size);
+  size_t get_kv_cache_size_per_layer();
   using BlockTable = std::vector<PhysicalTokenBlock>;
   using RequestGuid = BatchConfig::RequestGuid;
-  PageManager(int block_size, int num_total_blocks);
+  PageManager(int block_size, size_t num_total_blocks);
   int allocate_one_block(RequestGuid const &request_guid);
   void free_request(RequestGuid const &request_guid);
   // used for the case that we want to free the last num_blocks that stores spec
@@ -148,8 +149,7 @@ public:
   void free_block_table(BlockTable &block_table);
 
 private:
-  int num_transformer_layers;
-  int total_kv_cache_size;
+  size_t kv_cache_size_per_layer;
   int block_size;       // the size of the block
   int num_total_blocks; // the total number of blocks
   BlockAllocator block_allocator;

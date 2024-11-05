@@ -130,7 +130,7 @@ int BlockAllocator::get_num_free_blocks() const {
   return free_blocks.size();
 }
 
-PageManager::PageManager(int block_size, int num_total_blocks)
+PageManager::PageManager(int block_size, size_t num_total_blocks)
     : block_size(block_size), num_total_blocks(num_total_blocks),
       block_allocator(block_size, num_total_blocks) {}
 
@@ -214,7 +214,7 @@ int PageManager::get_num_allocated_blocks(
 }
 
 PageManager *PageManager::get_page_manager(FFModel *ff,
-                                           int total_kv_cache_size) {
+                                           size_t total_kv_cache_size) {
   int num_kv_heads = ff->num_kv_heads;
   int size_dt = ff->size_dt;
   int qkv_dim = ff->qkv_dim;
@@ -226,21 +226,27 @@ PageManager *PageManager::get_page_manager(FFModel *ff,
          pipeline_parallelism_degree);
   assert(num_kv_heads > 0 && size_dt > 0 && qkv_dim > 0 &&
          num_transformer_layers > 0 && pipeline_parallelism_degree > 0); //needs to make sure that the model is initialized
-  printf("page manager singleton is initialized\n");
   if (page_manager_singleton == nullptr) {
-    int num_total_blocks = 0;
-    if (total_kv_cache_size == -1) {
+    size_t num_total_blocks = 0;
+    if (total_kv_cache_size == 0) {
       num_total_blocks = (BatchConfig::max_spec_tree_token_num() +
                           BatchConfig::max_sequence_length() + kPagesize - 1) /
                          kPagesize * BatchConfig::max_requests_per_batch();
     } else {
       num_total_blocks =
           total_kv_cache_size * 1024 * 1024 / size_dt / qkv_dim / num_kv_heads /
-          (num_transformer_layers / pipeline_parallelism_degree) / 2;
+          num_transformer_layers / kPagesize;
     }
+    printf("page manager singleton is initialized with %d blocks\n",
+           num_total_blocks);
     page_manager_singleton = new PageManager(kPagesize, num_total_blocks);
+    page_manager_singleton->kv_cache_size_per_layer = total_kv_cache_size * 1024 * 1024 / num_transformer_layers;
   }
   return page_manager_singleton;
+}
+
+size_t PageManager::get_kv_cache_size_per_layer() {
+  return kv_cache_size_per_layer;
 }
 
 PageManager *PageManager::get_page_manager() {
