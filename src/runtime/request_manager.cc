@@ -1310,6 +1310,9 @@ BatchConfig RequestManager::prepare_decoding_batch() {
     int idx_to_physical = append_token_to_block(request, request.tokens.back(), true);
     bc.requestsInfo[request_index].num_kv_pages = get_num_blocks_allocated(request);
     bc.requestsInfo[request_index].kv_last_page_len = get_len_last_block(request);
+    bc.requestsInfo[request_index].request_guid = request.guid;
+    printf("Request %d, token %d, idx_to_physical %d\n", request.guid, request.tokens.back(), idx_to_physical);
+    printf("Request %d, num_kv_pages %d, kv_last_page_len %d\n", request.guid, bc.requestsInfo[request_index].num_kv_pages, bc.requestsInfo[request_index].kv_last_page_len);
 
     bc.num_tokens++;
 
@@ -2521,7 +2524,6 @@ void RequestManager::background_serving_task(
   }
   // page attention: initalize the page manager here
   int kv_cache_size = rm->get_max_kv_cache_size();
-  printf("KV cache size: %d\n", kv_cache_size);
   PageManager::get_page_manager(llm, rm->get_max_kv_cache_size());
   if (rm->decoding_mode == INCREMENTAL_DECODING) {
     // No SSMs: perform incremental decoding
@@ -2738,6 +2740,10 @@ void RequestManager::terminate_background_server_at_exit() {
 
 void RequestManager::terminate_background_server() {
   if (is_background_server_serving()) {
+    printf("profiling llm step times size: %ld\n",
+           profiling.llm_step_times.size());
+    printf("profiling requests per step size: %ld\n",
+           profiling.requests_per_step.size());
     assert(profiling.llm_step_times.size() ==
            profiling.requests_per_step.size());
     // Write the last profiling statistics to output file

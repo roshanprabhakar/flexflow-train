@@ -521,7 +521,7 @@ void update_qkv_in_batch(IncMultiHeadSelfAttentionMeta const *m,
   int const max_num_pages =
       round_up_pages(BatchConfig::max_sequence_length() +
                      BatchConfig::max_spec_tree_token_num());
-  update_qkv_in_batch_verify_kernel<<<GET_BLOCKS(parallelism),
+  update_qkv_in_batch_kernel<<<GET_BLOCKS(parallelism),
                                       min(CUDA_NUM_THREADS, parallelism),
                                       0,
                                       stream>>>(
