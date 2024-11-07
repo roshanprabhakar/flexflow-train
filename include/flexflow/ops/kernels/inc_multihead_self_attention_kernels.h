@@ -112,6 +112,7 @@ void update_qkv_in_batch(IncMultiHeadSelfAttentionMeta const *m,
                          BatchConfig const *bc,
                          cudaStream_t stream);
 
+template <typename DT>
 void update_qkv_in_batch_verify(IncMultiHeadSelfAttentionMeta const *m,
                                 BatchConfig const *bc,
                                 cudaStream_t stream);
