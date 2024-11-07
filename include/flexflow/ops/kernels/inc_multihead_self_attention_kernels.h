@@ -115,7 +115,7 @@ void update_qkv_in_batch(IncMultiHeadSelfAttentionMeta const *m,
 template <typename DT>
 void update_qkv_in_batch_verify(IncMultiHeadSelfAttentionMeta const *m,
                                 BatchConfig const *bc,
-                                cudaStream_t stream);
+                                cudaStream_t stream, bool is_spec = true);
 
 // [For the tokens in streaming cache]
 // Convert the out-of-order cache to in-order relative position.
