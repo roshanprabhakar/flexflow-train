@@ -1311,8 +1311,6 @@ BatchConfig RequestManager::prepare_decoding_batch() {
     bc.requestsInfo[request_index].num_kv_pages = get_num_blocks_allocated(request);
     bc.requestsInfo[request_index].kv_last_page_len = get_len_last_block(request);
     bc.requestsInfo[request_index].request_guid = request.guid;
-    printf("Request %d, token %d, idx_to_physical %d\n", request.guid, request.tokens.back(), idx_to_physical);
-    printf("Request %d, num_kv_pages %d, kv_last_page_len %d\n", request.guid, bc.requestsInfo[request_index].num_kv_pages, bc.requestsInfo[request_index].kv_last_page_len);
 
     bc.num_tokens++;
 

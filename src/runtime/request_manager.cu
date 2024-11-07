@@ -79,7 +79,7 @@ void RequestManager::load_tokens_task(
 
 void prepare_inference_params_kernel_h(BatchConfig const *batch_config,
                                        PageManager *pm,
-                                       FFHandler handle,
+                                       AttentionMetaData *attention_metadata,
                                        cudaStream_t stream,
                                        uint32_t const max_num_pages,
                                        int32_t *q_indptr_h,
@@ -130,28 +130,28 @@ void prepare_inference_params_kernel_h(BatchConfig const *batch_config,
   }
 
   // do the copy
-  checkCUDA(cudaMemcpyAsync(handle.tree_verify_attention_metadata->kv_indices,
+  checkCUDA(cudaMemcpyAsync(attention_metadata->kv_indices,
                             kv_indices_h,
                             sizeof(int32_t) * batch_size * max_num_pages,
                             cudaMemcpyHostToDevice,
                             stream));
   checkCUDA(
-      cudaMemcpyAsync(handle.tree_verify_attention_metadata->kv_last_page_len,
+      cudaMemcpyAsync(attention_metadata->kv_last_page_len,
                       kv_last_page_len_h,
                       sizeof(int32_t) * batch_size,
                       cudaMemcpyHostToDevice,
                       stream));
-  checkCUDA(cudaMemcpyAsync(handle.tree_verify_attention_metadata->q_indptr,
+  checkCUDA(cudaMemcpyAsync(attention_metadata->q_indptr,
                             q_indptr_h,
                             sizeof(int32_t) * (batch_size + 1),
                             cudaMemcpyHostToDevice,
                             stream));
-  checkCUDA(cudaMemcpyAsync(handle.tree_verify_attention_metadata->kv_indptr,
+  checkCUDA(cudaMemcpyAsync(attention_metadata->kv_indptr,
                             kv_indptr_h,
                             sizeof(int32_t) * (batch_size + 1),
                             cudaMemcpyHostToDevice,
                             stream));
-  checkCUDA(cudaMemcpyAsync(handle.tree_verify_attention_metadata->qk_indptr,
+  checkCUDA(cudaMemcpyAsync(attention_metadata->qk_indptr,
                             qk_indptr_h,
                             sizeof(int32_t) * (batch_size + 1),
                             cudaMemcpyHostToDevice,
@@ -463,7 +463,7 @@ void RequestManager::load_batch_config_task(
         // int parallelism = batch_size;
         prepare_inference_params_kernel_h(batch_config,
                                           pm,
-                                          handle,
+                                          handle.incr_attention_metadata,
                                           stream,
                                           max_num_pages,
                                           q_indptr_h,
@@ -726,7 +726,7 @@ void RequestManager::load_batch_config_task(
         // int parallelism = batch_size;
         prepare_inference_params_kernel_h(batch_config,
                                           pm,
-                                          handle,
+                                          handle.tree_verify_attention_metadata,
                                           stream,
                                           max_num_pages,
                                           q_indptr_h,
