@@ -3243,21 +3243,17 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid,
                                            int &budget,
                                            int num_req_with_slo) {
   Request &request = all_requests[guid];
-  double num_tokens_to_decode = 0.0;
   double num_tokens_to_decode_per_step =
       (ssm_spec_latency_ms + llm_verify_latency_ms) * correction_factor /
       (baseline_latency_ms * request.get_slo_ratio());
-  bool attained =
-      request.decode_latency_ms <= get_request_expected_latency(request);
+  double expected_num_tokens_decoded =
+      request.decode_latency_ms /
+      (baseline_latency_ms * request.get_slo_ratio());
 
-  if (attained) {
-    num_tokens_to_decode = num_tokens_to_decode_per_step;
-  } else {
-    num_tokens_to_decode = num_tokens_to_decode_per_step +
-                           request.decode_latency_ms /
-                               (baseline_latency_ms * request.get_slo_ratio()) -
-                           request.decode_length();
-  }
+  double num_tokens_to_decode =
+      max(1.0,
+          num_tokens_to_decode_per_step + expected_num_tokens_decoded -
+              request.decode_length());
 
   // The root is already included
   // In function add_root_to_spec_token_tree
@@ -3265,7 +3261,7 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid,
 
   // The max token that can be added to the token tree when fulfilling the SLO
   int max_token_toward_slo =
-      int(get_max_tokens_per_batch() / num_req_with_slo * 1.1);
+      int(get_max_tokens_per_batch() / num_available_requests);
 
   while (budget > 0 and max_token_toward_slo > 0 and
          current_added < num_tokens_to_decode) {
