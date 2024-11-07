@@ -51,7 +51,7 @@ void parse_input_args(char **argv,
                       int &max_tokens_per_prefilling_batch,
                       int &max_sequence_length,
                       int &max_output_length,
-                      int &max_kv_cache_size,
+                      size_t &max_kv_cache_size,
                       int &sampling_seed,
                       bool &streaming_cache,
                       bool &slo_attainment_early_termination,
@@ -209,7 +209,7 @@ void FlexFlow::top_level_task(Task const *task,
   int max_tokens_per_prefilling_batch = -1;
   int max_sequence_length = 256;
   int max_output_length = 512;
-  int max_kv_cache_size = -1; // if -1, then use the default value
+  size_t max_kv_cache_size = 0; // if -1, then use the default value
   RequestManager::DecodingMode decoding_mode =
       RequestManager::INCREMENTAL_DECODING;
   int sampling_seed = 0;
