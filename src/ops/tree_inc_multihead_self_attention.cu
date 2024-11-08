@@ -79,8 +79,6 @@ __global__ void commit_tokens_kernel(
         continue;
       }
 
-      // int const req_id = committedTokenInfos[i].request_index;
-      // int const tok_id = committedTokenInfos[i].token_depth;
       int const page_to_idx = committedTokenInfos[i].token_depth / kPagesize;
       int const page_from_idx =
           committedTokenInfos[i].index_in_kv_cache / kPagesize;
