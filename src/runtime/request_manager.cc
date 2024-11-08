@@ -20,9 +20,6 @@
 #include <bitset>
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
-#include <exception>
-#include <execinfo.h>
 #include <filesystem>
 #include <future>
 #include <iomanip>
@@ -40,13 +37,6 @@ using namespace Legion;
 using tokenizers::Tokenizer;
 
 Legion::Logger log_req_mgr("RequestManager");
-
-void printStackTrace() {
-  void *array[10];
-  size_t size = backtrace(array, 10); // Get stack frames
-  backtrace_symbols_fd(
-      array, size, STDERR_FILENO); // Print stack trace to stderr
-}
 
 bool operator<(std::shared_ptr<TokenTreeNode> const &lhs,
                std::shared_ptr<TokenTreeNode> const &rhs) {
@@ -131,7 +121,7 @@ RequestManager::RequestManager()
   max_spec_tree_token_num = -1;
   max_sequence_length = -1;
   max_output_length = -1;
-  max_kv_cache_size = -1;
+  max_kv_cache_size = 0;
   max_tree_depth = -1;
   max_tree_width = -1;
   k = -1;
@@ -2017,9 +2007,6 @@ int RequestManager::idx_logical_to_physical(Request &request, int idx_logical) {
   PageManager *page_manager = PageManager::get_page_manager();
   std::vector<int> block_table_indices =
       page_manager->get_block_table_indices(request.guid);
-  if (request.blocks.size() != block_table_indices.size()) {
-    // assert(request.blocks.size() == block_table_indices.size());
-  }
   return block_table_indices[idx_logical / kPagesize] * kPagesize +
          idx_logical % kPagesize;
 }
@@ -2028,9 +2015,6 @@ int RequestManager::idx_logical_to_physical(Request &request, int idx_logical) {
 void RequestManager::_append_block_to_request(Request &request,
                                               bool is_commit) {
   PageManager *page_manager = PageManager::get_page_manager();
-  // assert(request.page_last_committed <
-  // static_cast<int>(request.blocks.size())); assert(request.blocks.size() ==
-  //        page_manager->get_block_table_indices(request.guid).size());
   // Append the logical block to the request
   // page attention: in this function we need to remember the last logical block
   // number that still contains committed tokens
@@ -2039,14 +2023,10 @@ void RequestManager::_append_block_to_request(Request &request,
   page_manager->allocate_one_block(request.guid);
   std::vector<int> block_table_indices =
       page_manager->get_block_table_indices(request.guid);
-  // assert(request.blocks.size() ==
-  //        page_manager->get_block_table_indices(request.guid).size());
   // update page_id_commit
   if (is_commit) {
     request.page_last_committed++;
     int size_blocks = request.blocks.size();
-    // assert(request.page_last_committed <
-    //        static_cast<int>(request.blocks.size()));
   }
 }
 
@@ -2060,14 +2040,10 @@ int RequestManager::append_token_to_block(Request &request,
   if (request.blocks.empty() || request.blocks.back().is_full()) {
     // Append a new logical block
     _append_block_to_request(request, is_commit);
-    // assert(request.blocks.size() ==
-    //        page_manager->get_block_table_indices(request.guid).size());
     // also allocate one physical page
   }
   // insert token to both logical block and physical block
   request.blocks.back().append_tokens({token}, is_commit);
-  // assert(request.blocks.size() ==
-  //        page_manager->get_block_table_indices(request.guid).size());
   int idx_logical = get_idx_last_logical_token(request);
   assert(idx_logical >= 0);
   int idx_physical = idx_logical_to_physical(request, idx_logical);
@@ -2079,12 +2055,9 @@ void RequestManager::reset_block_table(Request &request) {
   // get the indices of original physical block table for request
   PageManager *page_manager = PageManager::get_page_manager();
   assert(request.page_last_committed < static_cast<int>(request.blocks.size()));
-  // assert(request.blocks.size() ==
-  //        page_manager->get_block_table_indices(request.guid).size());
   std::vector<int> block_table_indices =
       page_manager->get_block_table_indices(request.guid);
   // reset the block table according to the request's page_last_commit
-  // assert(block_table_indices.size() > request.page_last_committed);
   page_manager->free_multiple_blocks(request.guid,
                                      block_table_indices.size() -
                                          request.page_last_committed - 1);
@@ -2098,9 +2071,6 @@ void RequestManager::reset_block_table(Request &request) {
   // the indices of block table should be the same as the number of blocks
   std::vector<int> block_table =
       page_manager->get_block_table_indices(request.guid);
-
-  // assert(request.blocks.size() ==
-  //        page_manager->get_block_table_indices(request.guid).size());
   return;
 }
 
@@ -2888,8 +2858,6 @@ void RequestManager::terminate_background_server() {
     }
     generated_tokens_per_step += ")";
     str += generated_tokens_per_step;
-
-    printf("there are %d requests disabled\n", profiling.num_disabled);
 
     std::string mean_generated_tokens_per_step =
         "\n mean_generated_tokens_per_step( ";
