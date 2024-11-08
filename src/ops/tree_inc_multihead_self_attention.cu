@@ -521,11 +521,6 @@ void inference_kernel(TreeIncMultiHeadSelfAttentionMeta *m,
 
   //   delete[] temp_output;
   // }
-  // cudaError_t err = cudaDeviceSynchronize();
-  // if (err != cudaSuccess) {
-  //     std::cerr << "Kernel launch failed with error: " <<
-  //     cudaGetErrorString(err) << std::endl;
-  // }
 }
 
 } // namespace TreeIncMultiHeadAttention
