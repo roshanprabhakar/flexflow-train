@@ -1307,9 +1307,12 @@ BatchConfig RequestManager::prepare_decoding_batch() {
     bc.tokensInfo[bc.num_tokens].abs_depth_in_request = request.llm_cache_size;
     bc.tokensInfo[bc.num_tokens].token_id = request.tokens.back();
     // append the token here
-    int idx_to_physical = append_token_to_block(request, request.tokens.back(), true);
-    bc.requestsInfo[request_index].num_kv_pages = get_num_blocks_allocated(request);
-    bc.requestsInfo[request_index].kv_last_page_len = get_len_last_block(request);
+    int idx_to_physical =
+        append_token_to_block(request, request.tokens.back(), true);
+    bc.requestsInfo[request_index].num_kv_pages =
+        get_num_blocks_allocated(request);
+    bc.requestsInfo[request_index].kv_last_page_len =
+        get_len_last_block(request);
     bc.requestsInfo[request_index].request_guid = request.guid;
 
     bc.num_tokens++;
@@ -2025,8 +2028,8 @@ int RequestManager::idx_logical_to_physical(Request &request, int idx_logical) {
 void RequestManager::_append_block_to_request(Request &request,
                                               bool is_commit) {
   PageManager *page_manager = PageManager::get_page_manager();
-  // assert(request.page_last_committed < static_cast<int>(request.blocks.size()));
-  // assert(request.blocks.size() ==
+  // assert(request.page_last_committed <
+  // static_cast<int>(request.blocks.size())); assert(request.blocks.size() ==
   //        page_manager->get_block_table_indices(request.guid).size());
   // Append the logical block to the request
   // page attention: in this function we need to remember the last logical block
