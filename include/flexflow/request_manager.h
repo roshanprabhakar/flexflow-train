@@ -490,8 +490,6 @@ private:
     std::vector<int> generated_tokens_per_step;
     // To calculate the E2E time of serving
     long long server_start_time = 0;
-    // added for seeing how many things are disabled
-    int num_disabled = 0;
   };
 
   ProfileInfo profiling;
