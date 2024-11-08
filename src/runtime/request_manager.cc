@@ -2740,14 +2740,6 @@ void RequestManager::terminate_background_server() {
            std::to_string(total_tokens / (total_time / 1e6)) + ")";
 
     double average_latency_per_request = 0;
-    for (auto const &profiling_info : profiling_requests) {
-      int request_id = profiling_info.first;
-      Request &request = all_requests[request_id];
-      if (request.status != Request::COMPLETED) {
-        continue;
-      }
-    }
-
     std::string latency_per_request_ms = "\n latency_per_request_ms( ";
     for (auto const &profiling_info : profiling_requests) {
       double latency_ms = (profiling_info.second.finish_time -
