@@ -64,11 +64,10 @@ void LLAMA::create_llama_model(FFModel &ff,
 
   Tensor w2 = nullptr;
 
-  printf("we are in llama model\n");
+  //metadata that needs to be sent to page manager in order to calculate the kv cache per layer
   ff.set_num_transformer_layers(llama_config.num_hidden_layers);
   ff.set_num_kv_heads(llama_config.num_key_value_heads);
   int qkv_dim = llama_config.hidden_size / llama_config.num_attention_heads * 2;
-  printf("qkv_dim: %d\n", qkv_dim);
   ff.set_qkv_dim(qkv_dim);
   ff.set_size_dt(data_type_size(input->data_type));
   for (int i = 0; i < llama_config.num_hidden_layers; i++) {
@@ -296,7 +295,6 @@ void LLAMA::create_llama_model(FFModel &ff,
 
   InferenceManager *im = InferenceManager::get_inference_manager();
   im->register_model_weights_loader(&ff, fileloader);
-  printf("llama qkv dim in the end: %d\n", ff.qkv_dim);
 }
 
 }; // namespace FlexFlow
