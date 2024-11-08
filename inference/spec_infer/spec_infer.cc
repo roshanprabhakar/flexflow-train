@@ -88,7 +88,6 @@ void parse_input_args(char **argv,
                       bool &add_special_tokens) {
   for (int i = 1; i < argc; i++) {
     // llm model name
-    printf("argv[i]: %s\n", argv[i]);
     if (!strcmp(argv[i], "-llm-model")) {
       model_names.llm_model_name = std::string(argv[++i]);
       for (char &c : model_names.llm_model_name) {
@@ -242,7 +241,6 @@ void parse_input_args(char **argv,
   wordexp(paths.cache_folder_path.c_str(), &p, 0);
   paths.cache_folder_path = p.we_wordv[0];
   wordfree(&p);
-  printf("argv parsed end\n");
 }
 
 void get_model_meta(FilePaths &file_paths,
@@ -414,7 +412,6 @@ void FlexFlow::top_level_task(Task const *task,
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
   char **argv = command_args.argv;
   int argc = command_args.argc;
-  printf("begin parsing input args\n");
   parse_input_args(argv,
                    argc,
                    file_paths,
@@ -528,9 +525,6 @@ void FlexFlow::top_level_task(Task const *task,
   } else {
     assert(false && "Invalid LLM model type passed (or no type was passed).");
   }
-
-  printf("after creating llm model we have tree model qkv_dim: %d\n",
-         tree_model.qkv_dim);
 
   // Create SSM models
   int num_ssms = model_metadata.ssm_model_types.size();
