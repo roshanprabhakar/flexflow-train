@@ -1174,7 +1174,6 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
         get_num_blocks_allocated(*request);
     if (bc.requestsInfo[request_index].num_kv_pages == 0) {
       // turn this request into not available for one round
-      profiling.num_disabled++;
       bc.request_available[request_index] = false;
     }
     bc.requestsInfo[request_index].kv_last_page_len =

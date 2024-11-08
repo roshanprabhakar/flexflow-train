@@ -64,7 +64,8 @@ void LLAMA::create_llama_model(FFModel &ff,
 
   Tensor w2 = nullptr;
 
-  //metadata that needs to be sent to page manager in order to calculate the kv cache per layer
+  // metadata that needs to be sent to page manager in order to calculate the kv
+  // cache per layer
   ff.set_num_transformer_layers(llama_config.num_hidden_layers);
   ff.set_num_kv_heads(llama_config.num_key_value_heads);
   int qkv_dim = llama_config.hidden_size / llama_config.num_attention_heads * 2;
