@@ -2466,7 +2466,6 @@ void RequestManager::start_background_server(FFModel *model) {
   {
     std::set_terminate([]() {
       RequestManager::terminate_background_server_at_exit();
-      printStackTrace();
       std::abort();
     });
   }
@@ -2711,10 +2710,6 @@ void RequestManager::terminate_background_server_at_exit() {
 
 void RequestManager::terminate_background_server() {
   if (is_background_server_serving()) {
-    printf("profiling llm step times size: %ld\n",
-           profiling.llm_step_times.size());
-    printf("profiling requests per step size: %ld\n",
-           profiling.requests_per_step.size());
     assert(profiling.llm_step_times.size() ==
            profiling.requests_per_step.size());
     // Write the last profiling statistics to output file
