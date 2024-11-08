@@ -115,8 +115,6 @@ void BlockAllocator::free(PhysicalTokenBlock &block) {
   }
   block.decr_ref_count();
   if (block.ref_count == 0) {
-    // printf("put block number: %d back to free_blocks\n",
-    // block.get_block_number());
     free_blocks.push_back(block);
   } else {
     // in current implementation this should not be the case
@@ -155,8 +153,6 @@ void PageManager::free_block_table(BlockTable &block_table) {
 
 void PageManager::free_request(RequestGuid const &request_guid) {
   // we only free the blocks that are already used
-  // assert(block_tables.find(request_guid) != block_tables.end());
-  printf("free the blocks for request %d\n", request_guid);
   BlockTable block_table = block_tables[request_guid];
   free_block_table(block_table);
   block_tables.erase(request_guid);
