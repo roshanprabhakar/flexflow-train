@@ -93,7 +93,7 @@ void parse_input_args(char **argv,
                       bool &verbose,
                       int &max_sequence_length,
                       int &max_output_length,
-                      int &max_kv_cache_size,
+                      size_t &max_kv_cache_size,
                       double &scaling_factor) {
   for (int i = 1; i < argc; i++) {
     // llm model name
@@ -320,7 +320,7 @@ void FlexFlow::top_level_task(Task const *task,
   bool verbose = false;
   int max_sequence_length = 256;
   int max_output_length = 512;
-  int max_kv_cache_size = -1;
+  size_t max_kv_cache_size = 0;
   double scaling_factor = 1.0;
 
   int max_requests_per_batch = 8;
