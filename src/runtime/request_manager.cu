@@ -460,7 +460,6 @@ void RequestManager::load_batch_config_task(
             round_up_pages(BatchConfig::max_sequence_length() +
                            BatchConfig::max_spec_tree_token_num());
 
-        // int parallelism = batch_size;
         prepare_inference_params_kernel_h(batch_config,
                                           pm,
                                           handle.incr_attention_metadata,

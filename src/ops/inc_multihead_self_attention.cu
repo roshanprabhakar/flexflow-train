@@ -275,7 +275,7 @@ void inference_kernel(IncMultiHeadSelfAttentionMeta *m,
     apply_pos_encoding_to_tokens_in_batch(
         m, bc, static_cast<DT *>(m->devQKVProjArray), stream);
     // Move the batch qkv values to where took by attention
-    update_qkv_in_batch_verify<DT>(m, bc, stream, false);
+    update_qkv_in_batch<DT>(m, bc, stream, false);
   }
 
   // phase 4: Attention computation

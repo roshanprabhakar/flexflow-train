@@ -514,7 +514,7 @@ void update_qkv_in_batch(IncMultiHeadSelfAttentionMeta const *m,
 }
 
 template <typename DT>
-__global__ void update_qkv_in_batch_verify_kernel(
+__global__ void update_qkv_in_batch_paged_kernel(
     DT *qkv_proj_array,
     half *qTmp_ptr,
     half *kvCache_ptr,
@@ -580,7 +580,7 @@ __global__ void update_qkv_in_batch_verify_kernel(
 }
 
 template <typename DT>
-void update_qkv_in_batch_verify(IncMultiHeadSelfAttentionMeta const *m,
+void update_qkv_in_batch(IncMultiHeadSelfAttentionMeta const *m,
                                 BatchConfig const *bc,
                                 cudaStream_t stream, bool is_spec) {
   // printf("entered update_qkv_in_batch_verify\n");
@@ -593,7 +593,7 @@ void update_qkv_in_batch_verify(IncMultiHeadSelfAttentionMeta const *m,
                                : m->handle.incr_attention_metadata->kv_indptr;
   int32_t *kv_indices = is_spec ? m->handle.tree_verify_attention_metadata->kv_indices
                                 : m->handle.incr_attention_metadata->kv_indices;
-  update_qkv_in_batch_verify_kernel<<<GET_BLOCKS(parallelism),
+  update_qkv_in_batch_paged_kernel<<<GET_BLOCKS(parallelism),
                                       min(CUDA_NUM_THREADS, parallelism),
                                       0,
                                       stream>>>(
@@ -1040,12 +1040,12 @@ template void Kernels::IncMultiHeadAttention::update_qkv_in_batch<half>(
     BatchConfig const *bc,
     cudaStream_t stream);
 
-template void Kernels::IncMultiHeadAttention::update_qkv_in_batch_verify<float>(
+template void Kernels::IncMultiHeadAttention::update_qkv_in_batch<float>(
     IncMultiHeadSelfAttentionMeta const *m,
     BatchConfig const *bc,
     cudaStream_t stream, bool is_spec);
 
-template void Kernels::IncMultiHeadAttention::update_qkv_in_batch_verify<half>(
+template void Kernels::IncMultiHeadAttention::update_qkv_in_batch<half>(
     IncMultiHeadSelfAttentionMeta const *m,
     BatchConfig const *bc,
     cudaStream_t stream, bool is_spec);
