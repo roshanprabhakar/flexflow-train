@@ -2740,8 +2740,6 @@ void RequestManager::terminate_background_server() {
            std::to_string(total_tokens / (total_time / 1e6)) + ")";
 
     double average_latency_per_request = 0;
-
-    // information dump
     for (auto const &profiling_info : profiling_requests) {
       int request_id = profiling_info.first;
       Request &request = all_requests[request_id];
