@@ -292,9 +292,7 @@ void FFMapper::select_task_options(MapperContext const ctx,
     output.initial_proc = all_cpus[0];
     return;
   }
-  if ((task.task_id == LOAD_FLOAT_WEIGHT_TASK_ID) ||
-      (task.task_id == LOAD_HALF_WEIGHT_TASK_ID) ||
-      (task.task_id == LOAD_QUANT_WEIGHT_TASK_ID)) {
+  if (task.task_id == LOAD_WEIGHT_TASK_ID) {
     output.initial_proc = all_cpus[0];
     return;
   }
