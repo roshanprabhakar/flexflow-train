@@ -2347,7 +2347,7 @@ void RequestManager::serve_decoding(FFModel *llm) {
   assert(im->model_weights_loaders.find(llm) !=
          im->model_weights_loaders.end());
   // Load model weights
-  im->model_weights_loaders[llm]->load_weights(llm);
+  im->model_weights_loaders[llm]->load_weights_parallel(llm, ctx, runtime);
   // init operators
   im->init_operators_inference(llm);
   // Legion futures for inc_decoding and spec_infer
@@ -2401,7 +2401,7 @@ void RequestManager::serve_spec_infer(FFModel *llm) {
     assert(im->model_weights_loaders.find(llm) !=
            im->model_weights_loaders.end());
     // Load model weights
-    im->model_weights_loaders[llm]->load_weights(llm);
+    im->model_weights_loaders[llm]->load_weights_parallel(llm, ctx, runtime);
     // init operators
     im->init_operators_inference(llm);
   }
@@ -2412,7 +2412,7 @@ void RequestManager::serve_spec_infer(FFModel *llm) {
     assert(im->model_weights_loaders.find(ssm) !=
            im->model_weights_loaders.end());
     // Load model weights
-    im->model_weights_loaders[ssm]->load_weights(ssm);
+    im->model_weights_loaders[ssm]->load_weights_parallel(ssm, ctx, runtime);
     // init operators
     im->init_operators_inference(ssm);
   }
