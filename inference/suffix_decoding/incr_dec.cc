@@ -153,10 +153,12 @@ void FlexFlow::top_level_task(Task const *task,
   int max_tokens_per_batch = 128;
   int max_sequence_length = 512;
   int max_output_length = 512;
+  int num_warmup_requests = 0;
+  double warmup_delay = 15.0;
   RequestManager::DecodingMode decoding_mode =
       RequestManager::INCREMENTAL_DECODING;
   int sampling_seed = 0;
-  double request_per_second = 1.0;
+  double request_per_second = -1.0;
   bool add_special_tokens = false;
   std::string target_partition = "FEATURE_EXTRACTION";
 
@@ -350,18 +352,29 @@ void FlexFlow::top_level_task(Task const *task,
     // Iterate through eval_entries
     std::vector<GenerationRequest> requests;
     std::vector<double> timestamps, ratios;
+    if (partition.contains("num_warmup_requests")) {
+      num_warmup_requests = partition["num_warmup_requests"];
+    }
     for (auto &entry : partition["eval_entries"]) {
       std::string text = entry["prompt"];
       int max_new_tokens_ = entry["response_length"];
-      // printf("Prompt[%d]: %s\n", total_num_requests, text.c_str());
-      GenerationRequest inference_req(text, -1.0, 0, add_special_tokens);
-      // inference_req.prompt = text;
-      // inference_req.slo_ratio = -1.0;
-      // inference_req.emission_time_ms = 0;
-      // // inference_req.max_new_tokens = max_new_tokens_;
-      // inference_req.add_special_tokens = false;
+
+      bool is_warmup_request = total_num_requests < num_warmup_requests;
+      double request_delay =
+          1000.0 * (request_per_second > 0 ? (1.0 / request_per_second) : 0);
+      double emission_time_ms =
+          is_warmup_request
+              ? 0.0
+              : (warmup_delay +
+                 request_delay * (total_num_requests - num_warmup_requests));
+
+      GenerationRequest inference_req(text,             // prompt
+                                      -1.0,             // slo_ratio
+                                      emission_time_ms, // emission_time_ms
+                                      add_special_tokens);
+
       requests.push_back(inference_req);
-      timestamps.push_back(0);
+      timestamps.push_back(emission_time_ms);
       ratios.push_back(1.0);
       total_num_requests++;
 
@@ -402,9 +415,9 @@ void FlexFlow::top_level_task(Task const *task,
   // terminate the request manager by stopping the background thread
   rm->terminate_background_server();
 
-  std::string header =
-      "llm,partition,max_requests_per_batch,max_tokens_per_batch,request_guid,"
-      "request_step_idx,timestamp,num_generated_tokens";
+  std::string header = "llm,partition,max_requests_per_batch,max_tokens_per_"
+                       "batch,is_warmup_request,request_guid,"
+                       "request_step_idx,timestamp,num_generated_tokens";
   // csv filepath
   // create csv filepath and add header if it doesn't exist
 
@@ -434,6 +447,9 @@ void FlexFlow::top_level_task(Task const *task,
     file << target_partition + ",";
     file << std::to_string(max_requests_per_batch) + ",";
     file << std::to_string(max_tokens_per_batch) + ",";
+    bool is_warmup_request =
+        (info.request_guid - 1000000) < num_warmup_requests;
+    file << std::to_string(is_warmup_request) + ",";
     file << info.request_guid << "," << info.request_step_idx << ","
          << info.timestamp << "," << info.num_generated_tokens << "\n";
   }
