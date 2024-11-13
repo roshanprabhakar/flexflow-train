@@ -18,18 +18,18 @@ ZSIZE=200000
 CSIZE=100000
 
 # comment these lines in for debugging
-model_name=meta-llama/Llama-3.1-8B-Instruct
-NGPUS=8
-FSIZE=36000
-ZSIZE=60000
-CSIZE=160000
+# model_name=meta-llama/Llama-3.1-8B-Instruct
+# NGPUS=8
+# FSIZE=36000
+# ZSIZE=30000
+# CSIZE=100000
 ######################################
 
 small_model_names=(
-    Zhuominc/Llama-3-330M
+    # Zhuominc/Llama-3-330M
     # meta-llama/Llama-3.2-1B-Instruct
     # meta-llama/Llama-3.2-3B-Instruct
-    # meta-llama/Llama-3.1-8B-Instruct
+    meta-llama/Llama-3.1-8B-Instruct
 )
 
 MAX_SEQ_LEN=7000
@@ -38,9 +38,9 @@ max_tree_depth=8
 expansion_degree=3
 
 batch_sizes=(
-    # 16
+    16
     # 4
-    8
+    # 8
 )
 
 dataset_name="sharegpt"
@@ -69,6 +69,8 @@ for i in "${!small_model_names[@]}"; do
     time ./inference/suffix_decoding/specinfer \
         -ll:gpu $NGPUS -ll:cpu $NCPUS -ll:util $NCPUS \
         -tensor-parallelism-degree $NGPUS \
+        -ssm-tp-degree $NGPUS \
+        --log-instance-creation \
         -ll:fsize $FSIZE -ll:zsize $ZSIZE -ll:csize $CSIZE \
         --fusion \
         --max-sequence-length $MAX_SEQ_LEN \
