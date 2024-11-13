@@ -5,8 +5,8 @@ set -e
 # Cd into directory holding this script
 cd "${BASH_SOURCE[0]%/*}/../build"
 
-export BUILD_TYPE=Debug
-../config/config.linux
+# export BUILD_TYPE=Debug
+# ../config/config.linux
 make -j install
 reset
 
