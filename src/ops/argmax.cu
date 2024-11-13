@@ -200,7 +200,7 @@ ArgMaxMeta::ArgMaxMeta(FFHandler handler,
         stream));
   }
 
-  gpu_mem_allocator.create_legion_instance(reserveInst, temp_storage_bytes, "ArgMax Init Task");
+  gpu_mem_allocator.create_legion_instance(reserveInst, temp_storage_bytes, "ArgMaxMeta");
   d_temp_storage =
       gpu_mem_allocator.allocate_instance_untyped(temp_storage_bytes);
 }
