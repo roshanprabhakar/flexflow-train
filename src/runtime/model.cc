@@ -4106,6 +4106,7 @@ struct DefaultConfig {
   static int const epochs = 1;
   // const static int iterations = 1;
   static int const batchSize = 64;
+  static bool const log_instance_creation = false;
   static bool const profiling = false;
   static bool const benchmarking = false;
   static bool const inference_debugging = false;
@@ -4143,6 +4144,7 @@ FFConfig::FFConfig() {
   // iterations = DefaultConfig::iterations;
   batchSize = DefaultConfig::batchSize;
   profiling = DefaultConfig::profiling;
+  log_instance_creation = DefaultConfig::log_instance_creation;
   benchmarking = DefaultConfig::benchmarking;
   inference_debugging = DefaultConfig::inference_debugging;
   learningRate = DefaultConfig::learningRate;
@@ -4328,6 +4330,10 @@ void FFConfig::parse_args(char **argv, int argc) {
     }
     if (!strcmp(argv[i], "-ll:cpu")) {
       cpusPerNode = atoi(argv[++i]);
+      continue;
+    }
+    if ((!strcmp(argv[i], "--log-instance-creation"))) {
+      log_instance_creation = true;
       continue;
     }
     if (!strcmp(argv[i], "--profiling")) {
@@ -4547,7 +4553,6 @@ void register_flexflow_internal_tasks(Runtime *runtime,
           registrar);
     }
   }
-#endif
   // ElementUnary task
   {
     TaskVariantRegistrar registrar(ELEMENTUNARY_INIT_TASK_ID,

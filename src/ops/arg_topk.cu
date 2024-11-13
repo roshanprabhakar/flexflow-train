@@ -229,7 +229,7 @@ ArgTopKMeta::ArgTopKMeta(FFHandler handler,
     : OpMeta(handler, op) {
   max_input_size = BatchConfig::MAX_NUM_TOKENS * 32000; // TODO: use vocab_size
   gpu_mem_allocator.create_legion_instance(reserveInst,
-                                           sizeof(half) * max_input_size);
+                                           sizeof(half) * max_input_size, "ArgTopK Init Task");
   half_precision_output = gpu_mem_allocator.allocate_instance_untyped(
       sizeof(half) * max_input_size);
 }

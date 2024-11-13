@@ -29,7 +29,7 @@ AllReduceMeta::AllReduceMeta(FFHandler handle,
                      tensorrt_llm::MAX_RANKS_PER_NODE;
   gpu_mem_allocator.create_legion_instance(
       reserveInst,
-      sizeof(void *) * (handle.num_devices + 1) + barrier_ptr_size * 2);
+      sizeof(void *) * (handle.num_devices + 1) + barrier_ptr_size * 2, "AllReduceMeta");
   allgather_src = gpu_mem_allocator.allocate_instance_untyped(sizeof(void *));
   allgather_dst = gpu_mem_allocator.allocate_instance_untyped(
       sizeof(void *) * handle.num_devices);

@@ -45,7 +45,7 @@ public:
                        std::vector<Legion::PhysicalRegion> const &regions,
                        Legion::Context ctx,
                        Legion::Runtime *runtime);
-  void load_weights_parallel(FFModel *ff, Context ctx, Runtime *runtime);
+  void load_weights_parallel(FFModel *ff, Legion::Context ctx, Legion::Runtime *runtime);
 
   void load_positions(FFModel *ff,
                       Tensor pt,

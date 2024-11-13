@@ -124,10 +124,11 @@ def build_trace(model_name: str, num_entries: int, seed: int):
             add_generation_prompt=True,
             tokenize=False,
         )
-        partition.eval_entries.append(prompt)
         response = dataset[i][1]
         prompt_length = len(tokenizer(prompt)["input_ids"])
         response_length = len(tokenizer(response)["input_ids"])
+        new_entry = TraceEntry(prompt, response, prompt_length, response_length)
+        partition.eval_entries.append(new_entry)
         trace_metadata.max_prompt_length = max(trace_metadata.max_prompt_length, prompt_length)
         trace_metadata.min_prompt_length = min(trace_metadata.min_prompt_length, prompt_length)
         trace_metadata.avg_prompt_length += prompt_length

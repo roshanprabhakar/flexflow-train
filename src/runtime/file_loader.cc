@@ -813,10 +813,6 @@ void FileDataLoader::load_weights_parallel(FFModel *ff,
         continue;
       }
 
-      if (l->op_type == OP_LORA) {
-        continue;
-      }
-
       if (weight->data_type != DT_FLOAT && weight->data_type != DT_HALF &&
           weight->data_type != DT_INT4 && weight->data_type != DT_INT8) {
         assert(false && "Unsupported data type");

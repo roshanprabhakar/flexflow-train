@@ -435,11 +435,11 @@ bool RequestManager::SharedTokenTreeNodePtrDoubleRequestGuidLess ::operator()(
 
 void RequestManager::register_tokenizer(ModelType type,
                                         int bos_token_id,
-                                        int eos_token_id,
+                                        std::vector<int> eos_token_ids,
                                         std::string const &path) {
   this->model_type = type;
   this->bos_token_id = bos_token_id;
-  this->eos_token_id = eos_token_id;
+  this->eos_token_ids = eos_token_ids;
   std::filesystem::path tokenizer_folder(path);
 
   if (model_type == ModelType::LLAMA) {
@@ -857,10 +857,7 @@ void RequestManager::request_complete_clean_up(int batch_index) {
     request_generation_results[guid].output_tokens = request.tokens;
     assert(isPrefixAndRemove(request_generation_results[guid].input_tokens,
                              request_generation_results[guid].output_tokens));
-    if (request_generation_results[guid].output_tokens.size() > 0 &&
-        request_generation_results[guid].output_tokens
-                [request_generation_results[guid].output_tokens.size() - 1] ==
-            this->eos_token_id &&
+    if (request_generation_results[guid].output_tokens.size() > 0 && is_eos_token(request_generation_results[guid].output_tokens[request_generation_results[guid].output_tokens.size() - 1]) &&
         !request.add_special_tokens) {
       request_generation_results[guid].output_tokens.pop_back();
     }
@@ -1095,7 +1092,7 @@ bool RequestManager::update_llm_prefill_results(InferenceResult const &result) {
         request->tokens.push_back(
             result.token_ids[num_tokens + request->num_tokens_in_batch - 1]);
 
-        if (request->tokens.back() == eos_token_id) {
+        if (is_eos_token(request->tokens.back())) {
           request_complete_clean_up(request->batch_index);
         } else {
           // Temporarily offload request from the batch
@@ -1176,7 +1173,7 @@ bool RequestManager::update_llm_decode_results(InferenceResult const &result) {
     new_profile_info.num_generated_tokens = 1;
     new_profiling_info.push_back(new_profile_info);
 
-    if (request.tokens.back() == eos_token_id or
+    if (is_eos_token(request.tokens.back()) or
         request.decode_length() >= get_max_output_length() or
         request.tokens.size() >= get_max_sequence_length()) {
       request_update_attainment(request_index, attained);
@@ -2009,6 +2006,15 @@ int get_tree_size(Request const &request) {
   return size;
 }
 
+bool RequestManager::is_eos_token(TokenId token_id) {
+  for (int eos_token : eos_token_ids) {
+    if (token_id == eos_token) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool RequestManager::update_llm_verify_results(
     InferenceResult const &llm_verify_result) {
   // We may have two types of InferenceResults, one is the results from
@@ -2092,7 +2098,7 @@ bool RequestManager::update_llm_verify_results(
     // metainfo stored in the RequestManager. Otherwise, update its bitmask.
     bool eos_token_found = false;
     for (auto const &committed_token : request.committed_tokens) {
-      if (committed_token.token_id == eos_token_id) {
+      if (is_eos_token(committed_token.token_id)) {
         eos_token_found = true;
         break;
       }
@@ -2186,7 +2192,7 @@ bool RequestManager::update_llm_suffix_decoding_results(
     // metainfo stored in the RequestManager. Otherwise, update its bitmask.
     bool eos_token_found = false;
     for (auto const &committed_token : request.committed_tokens) {
-      if (committed_token.token_id == eos_token_id) {
+      if (is_eos_token(committed_token.token_id)) {
         eos_token_found = true;
         break;
       }
@@ -2715,7 +2721,7 @@ void RequestManager::get_verify_results_greedy(
             last_accepted_token_index = current_token_index;
             last_accepted_token_index_in_layer = current_token_index_in_layer;
             committed_token_index++;
-            if (node_ptr->id == eos_token_id) {
+            if (is_eos_token(node_ptr->id)) {
               found_eos = true;
             }
           }
@@ -2864,7 +2870,7 @@ void RequestManager::get_verify_results_suffix_decoding(
         request.tokens.push_back(current_token);
         committed_token_index++;
         last_accepted_token_idx=i;
-        if (current_token == eos_token_id) {
+        if (is_eos_token(current_token)) {
           found_eos = true;
           break;
         }
@@ -3163,7 +3169,7 @@ void RequestManager::serve_spec_infer_sync(FFModel *llm) {
     assert(im->model_weights_loaders.find(llm) !=
            im->model_weights_loaders.end());
     // Load model weights
-    im->model_weights_loaders[llm]->load_weights(llm);
+    im->model_weights_loaders[llm]->load_weights_parallel(llm, ctx, runtime);
     // init operators
     im->init_operators_inference(llm);
   }
@@ -3174,7 +3180,7 @@ void RequestManager::serve_spec_infer_sync(FFModel *llm) {
     assert(im->model_weights_loaders.find(ssm) !=
            im->model_weights_loaders.end());
     // Load model weights
-    im->model_weights_loaders[ssm]->load_weights(ssm);
+    im->model_weights_loaders[ssm]->load_weights_parallel(ssm, ctx, runtime);
     // init operators
     im->init_operators_inference(ssm);
   }

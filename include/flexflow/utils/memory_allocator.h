@@ -23,7 +23,7 @@ namespace FlexFlow {
 class MemoryAllocator {
 public:
   MemoryAllocator(Legion::Memory memory);
-  void create_legion_instance(Realm::RegionInstance &inst, size_t size);
+  void create_legion_instance(Realm::RegionInstance &inst, size_t size, const char *task_name=NULL);
   void register_reserved_work_space(void *base, size_t size);
   inline void *allocate_reserved_untyped(size_t datalen) {
     void *ptr = static_cast<char *>(reserved_ptr) + reserved_allocated_size;
@@ -60,6 +60,7 @@ public:
   void *instance_ptr;
   size_t reserved_total_size, reserved_allocated_size;
   size_t instance_total_size, instance_allocated_size;
+  bool log_instance_creation;
 };
 
 }; // namespace FlexFlow
