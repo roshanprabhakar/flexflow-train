@@ -2904,7 +2904,8 @@ void FFModel::deserialize_graph_optimal_view(
       }
       case OP_SPEC_INC_MULTIHEAD_SELF_ATTENTION: {
         assert(num_inputs == 1);
-        int embed_dim, num_q_heads, k_dim, v_dim, num_kv_heads, tensor_parallelism_degree;
+        int embed_dim, num_q_heads, k_dim, v_dim, num_kv_heads,
+            tensor_parallelism_degree;
         float dropout, scaling_factor;
         bool qkv_bias, final_bias, add_zero_attn, apply_rotary_embedding,
             scaling_query, qk_prod_scaling, position_bias, streaming_cache;

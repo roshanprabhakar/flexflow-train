@@ -385,7 +385,8 @@ void FlexFlow::top_level_task(Task const *task,
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
-  assert(ssm_tp_degree >=1 && ssm_tp_degree <= ffconfig.numNodes * ffconfig.workersPerNode);
+  assert(ssm_tp_degree >= 1 &&
+         ssm_tp_degree <= ffconfig.numNodes * ffconfig.workersPerNode);
 
   std::ifstream input_file(file_paths.trace_file_path);
   assert(input_file.good() && "Prompt file does not exist.");
@@ -509,9 +510,9 @@ void FlexFlow::top_level_task(Task const *task,
   std::cout << "SSM TP Degree: " << ssm_tp_degree << std::endl;
   // bm_config.data_parallelism_degree = bm_config.tensor_parallelism_degree =
   //     bm_config.pipeline_parallelism_degree = 1;
-    bm_config.data_parallelism_degree = 1;
-    bm_config.tensor_parallelism_degree = ssm_tp_degree;
-    bm_config.pipeline_parallelism_degree = 1;
+  bm_config.data_parallelism_degree = 1;
+  bm_config.tensor_parallelism_degree = ssm_tp_degree;
+  bm_config.pipeline_parallelism_degree = 1;
   for (int ssm_id = 0; ssm_id < num_ssms; ssm_id++) {
     FFModel beam_model(bm_config);
     ssm_models.push_back(beam_model);
@@ -617,8 +618,8 @@ void FlexFlow::top_level_task(Task const *task,
     /* // get profliling results
     std::unordered_map<RequestGuid, RequestProfileInfo> profiling_results =
         rm->get_requests_profiling();
-    std::unordered_map<RequestGuid, GenerationResult> request_generation_results =
-        rm->get_request_generation_results();
+    std::unordered_map<RequestGuid, GenerationResult> request_generation_results
+    = rm->get_request_generation_results();
     // save profiling results to csv file
     std::string header =
         "llm,ssm,batch_size,tokens_per_batch,total_time_ms,throughput_tokens_per_"
@@ -648,10 +649,9 @@ void FlexFlow::top_level_task(Task const *task,
       double prefilling_time_ms = 0.0;
       if (profile_info.start_decoding_time != 0) {
         prefilling_time_ms =
-            (profile_info.start_decoding_time - profile_info.start_time) / 1000.0;
-      } else {
-        prefilling_time_ms =
-            (profile_info.finish_time - profile_info.start_time) / 1000.0;
+            (profile_info.start_decoding_time - profile_info.start_time) /
+    1000.0; } else { prefilling_time_ms = (profile_info.finish_time -
+    profile_info.start_time) / 1000.0;
       }
       mean_llm_ttft += prefilling_time_ms;
       // LLM tpot
@@ -678,7 +678,8 @@ void FlexFlow::top_level_task(Task const *task,
     for (int num_tokens : profile_info.generated_tokens_per_step) {
       total_tokens += num_tokens;
     }
-    double throughput_tokens_per_sec = (double)total_tokens / (total_time / 1e6);
+    double throughput_tokens_per_sec = (double)total_tokens / (total_time /
+    1e6);
     // mean generated tokens per step
     double mean_generated_tokens_per_step =
         (double)std::accumulate(profile_info.generated_tokens_per_step.begin(),
@@ -742,10 +743,14 @@ void FlexFlow::top_level_task(Task const *task,
     file.close(); */
   }
 
-  std::string header = "llm,ssm,partition,expansion_degree,max_tree_depth,max_tree_width,max_requests_per_batch,max_tokens_per_batch,request_guid,request_step_idx,timestamp,speculation_start_timestamp,speculation_end_timestamp,num_speculated_tokens,num_accepted_tokens,num_generated_tokens";  
+  std::string header =
+      "llm,ssm,partition,expansion_degree,max_tree_depth,max_tree_width,max_"
+      "requests_per_batch,max_tokens_per_batch,request_guid,request_step_idx,"
+      "timestamp,speculation_start_timestamp,speculation_end_timestamp,num_"
+      "speculated_tokens,num_accepted_tokens,num_generated_tokens";
   // csv filepath
   // create csv filepath and add header if it doesn't exist
-  
+
   bool csv_file_exists = std::filesystem::exists(file_paths.csv_file_path);
   if (!csv_file_exists) {
     // Create new file and write header
@@ -765,9 +770,9 @@ void FlexFlow::top_level_task(Task const *task,
     std::cerr << "Failed to open file: " << file_paths.csv_file_path
               << std::endl;
   }
-  
+
   std::vector<NewProfileInfo> new_profiling_info = rm->get_new_profiling_info();
-  for (const auto& info : new_profiling_info) {
+  for (auto const &info : new_profiling_info) {
     file << model_metadata.model_names.llm_model_name + ",";
     file << model_metadata.model_names.ssm_model_names[0] + ",";
     file << target_partition + ",";
@@ -775,15 +780,12 @@ void FlexFlow::top_level_task(Task const *task,
     file << std::to_string(max_tree_depth) + ",";
     file << std::to_string(max_tree_width) + ",";
     file << std::to_string(max_requests_per_batch) + ",";
-    file <<  std::to_string(max_tokens_per_batch) + ",";
-    file << info.request_guid << "," 
-          << info.request_step_idx << ","
-          << info.timestamp << ","
-          << info.speculation_start_timestamp << ","
-          << info.speculation_end_timestamp << ","
-          << info.num_speculated_tokens << ","
-          << info.num_accepted_tokens << ","
-          << info.num_generated_tokens << "\n";
+    file << std::to_string(max_tokens_per_batch) + ",";
+    file << info.request_guid << "," << info.request_step_idx << ","
+         << info.timestamp << "," << info.speculation_start_timestamp << ","
+         << info.speculation_end_timestamp << "," << info.num_speculated_tokens
+         << "," << info.num_accepted_tokens << "," << info.num_generated_tokens
+         << "\n";
   }
   file.close();
 

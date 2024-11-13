@@ -251,7 +251,7 @@ std::ostream &operator<<(std::ostream &os, InferenceResult const &ir) {
   os << "InferenceResult {\n"
      << "  num_token_ids: " << ir.num_token_ids << "\n"
      << "  num_gumbel_logits: " << ir.num_gumbel_logits << "\n"
-      << "  token_ids: [";
+     << "  token_ids: [";
   for (int i = 0; i < ir.num_token_ids; i++) {
     os << ir.token_ids[i];
     if (i < ir.num_token_ids - 1) {

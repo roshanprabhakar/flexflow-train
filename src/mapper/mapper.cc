@@ -655,7 +655,8 @@ void FFMapper::map_task(MapperContext const ctx,
                                &footprint)) {
       // if (log_instance_creation) {
       //   for (size_t idx = 0; idx < created_instances.size(); idx++) {
-      //     log_ff_mapper.print("Instance[%zu]: memory: " IDFMT "	proc: " IDFMT
+      //     log_ff_mapper.print("Instance[%zu]: memory: " IDFMT "	proc: "
+      //     IDFMT
       //                         "	size: %zu	task: %s",
       //                         idx,
       //                         created_instances[idx].memory.id,
@@ -691,15 +692,16 @@ void FFMapper::map_task(MapperContext const ctx,
       clog.memory = target_mem;
       clog.processor = task.target_proc;
       created_instances.push_back(clog);
-      log_ff_mapper.print("Created Instance[%lu]: memory_kind: %s memory_id: %llx	proc: " IDFMT
-                            "	size: %zu	(capacity %lu) task: %s",
-                            created_instances.size() - 1,
-                            Legion::Mapping::Utilities::to_string(clog.memory.kind()),
-                            clog.memory.id,
-                            clog.processor.id,
-                            clog.size,
-                            clog.memory.capacity(),
-                            clog.task_name.c_str());
+      log_ff_mapper.print(
+          "Created Instance[%lu]: memory_kind: %s memory_id: %llx	"
+          "proc: " IDFMT "	size: %zu	(capacity %lu) task: %s",
+          created_instances.size() - 1,
+          Legion::Mapping::Utilities::to_string(clog.memory.kind()),
+          clog.memory.id,
+          clog.processor.id,
+          clog.size,
+          clog.memory.capacity(),
+          clog.task_name.c_str());
     }
   } // for idx
 }

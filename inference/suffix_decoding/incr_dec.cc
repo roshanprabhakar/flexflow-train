@@ -227,8 +227,7 @@ void FlexFlow::top_level_task(Task const *task,
               << max_sequence_length << ")." << std::endl;
     assert(false);
   }
-  
-  
+
   // Get model configs
   std::string config_filepath = join_path(
       {file_paths.cache_folder_path, "configs", llm_model_name, "config.json"});
@@ -285,7 +284,6 @@ void FlexFlow::top_level_task(Task const *task,
 
   assert(model_type != ModelType::UNKNOWN &&
          "Invalid LLM model type passed (or no type was passed).");
-
 
   // set request manager properties
   srand(sampling_seed);
@@ -404,10 +402,12 @@ void FlexFlow::top_level_task(Task const *task,
   // terminate the request manager by stopping the background thread
   rm->terminate_background_server();
 
-  std::string header = "llm,partition,max_requests_per_batch,max_tokens_per_batch,request_guid,request_step_idx,timestamp,num_generated_tokens";  
+  std::string header =
+      "llm,partition,max_requests_per_batch,max_tokens_per_batch,request_guid,"
+      "request_step_idx,timestamp,num_generated_tokens";
   // csv filepath
   // create csv filepath and add header if it doesn't exist
-  
+
   bool csv_file_exists = std::filesystem::exists(file_paths.csv_file_path);
   if (!csv_file_exists) {
     // Create new file and write header
@@ -427,17 +427,15 @@ void FlexFlow::top_level_task(Task const *task,
     std::cerr << "Failed to open file: " << file_paths.csv_file_path
               << std::endl;
   }
-  
+
   std::vector<NewProfileInfo> new_profiling_info = rm->get_new_profiling_info();
-  for (const auto& info : new_profiling_info) {
+  for (auto const &info : new_profiling_info) {
     file << llm_model_name + ",";
     file << target_partition + ",";
     file << std::to_string(max_requests_per_batch) + ",";
-    file <<  std::to_string(max_tokens_per_batch) + ",";
-    file << info.request_guid << "," 
-          << info.request_step_idx << ","
-          << info.timestamp << ","
-          << info.num_generated_tokens << "\n";
+    file << std::to_string(max_tokens_per_batch) + ",";
+    file << info.request_guid << "," << info.request_step_idx << ","
+         << info.timestamp << "," << info.num_generated_tokens << "\n";
   }
   file.close();
 

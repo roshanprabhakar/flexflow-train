@@ -247,32 +247,32 @@ void get_model_meta(FilePaths &file_paths,
          "Invalid LLM model type passed (or no type was passed).");
 }
 
-std::string vectorToString(const std::vector<double>& vec, int precision = 4) {
+std::string vectorToString(std::vector<double> const &vec, int precision = 4) {
   std::ostringstream oss;
   oss << std::fixed << std::setprecision(precision) << "\"[";
-  
+
   for (size_t i = 0; i < vec.size(); ++i) {
     oss << vec[i];
     if (i < vec.size() - 1) {
       oss << ",";
     }
   }
-  
+
   oss << "]\"";
   return oss.str();
 }
 
-std::string vectorToStringInt(const std::vector<int>& vec) {
+std::string vectorToStringInt(std::vector<int> const &vec) {
   std::ostringstream oss;
   oss << "\"[";
-  
+
   for (size_t i = 0; i < vec.size(); ++i) {
     oss << vec[i];
     if (i < vec.size() - 1) {
       oss << ",";
     }
   }
-  
+
   oss << "]\"";
   return oss.str();
 }
@@ -530,7 +530,7 @@ void FlexFlow::top_level_task(Task const *task,
     double mean_e2e_latency = 0;
     double mean_llm_ttft = 0;
     double mean_llm_tpot = 0;
-    
+
     std::vector<double> mean_speculated_tokens_per_req;
     std::vector<double> mean_accepted_candidate_length_per_req;
     std::vector<double> mean_acceptance_rate_per_req;
@@ -541,21 +541,26 @@ void FlexFlow::top_level_task(Task const *task,
     double mean_acceptance_rate = 0;
     double mean_prefix_length = 0;
 
-    std::ofstream file_debug("/home/yak/goliaro/FlexFlow/inference/output/accepted_tokens.csv");
+    std::ofstream
+  file_debug("/home/yak/goliaro/FlexFlow/inference/output/accepted_tokens.csv");
     if (!file_debug.is_open()) {
-      std::cerr << "Failed to open file: " << "/home/yak/goliaro/FlexFlow/inference/output/accepted_tokens.csv"
+      std::cerr << "Failed to open file: " <<
+  "/home/yak/goliaro/FlexFlow/inference/output/accepted_tokens.csv"
                 << std::endl;
       assert(false);
     }
     file_debug<< "accepted tokens per step (one line per request)" << std::endl;
 
-    std::ofstream file_debug2("/home/yak/goliaro/FlexFlow/inference/output/generated_tokens.csv");
+    std::ofstream
+  file_debug2("/home/yak/goliaro/FlexFlow/inference/output/generated_tokens.csv");
     if (!file_debug2.is_open()) {
-      std::cerr << "Failed to open file: " << "/home/yak/goliaro/FlexFlow/inference/output/generated_tokens.csv"
+      std::cerr << "Failed to open file: " <<
+  "/home/yak/goliaro/FlexFlow/inference/output/generated_tokens.csv"
                 << std::endl;
       assert(false);
     }
-    file_debug2<< "generated tokens per step (one line per request)" << std::endl;
+    file_debug2<< "generated tokens per step (one line per request)" <<
+  std::endl;
 
     for (auto &profiling_result : profiling_results) {
       RequestGuid guid = profiling_result.first;
@@ -563,57 +568,62 @@ void FlexFlow::top_level_task(Task const *task,
       GenerationResult &result = request_generation_results[guid];
       mean_decoding_steps += req_profile_info.llm_decoding_steps;
       mean_output_length += result.output_tokens.size();
-      mean_e2e_latency += (double)(req_profile_info.finish_time - req_profile_info.start_time)/1000.0;
+      mean_e2e_latency += (double)(req_profile_info.finish_time -
+  req_profile_info.start_time)/1000.0;
       // LLM ttft
       double prefilling_time_ms = 0.0;
       if (req_profile_info.start_decoding_time != 0) {
         prefilling_time_ms =
-            (req_profile_info.start_decoding_time - req_profile_info.start_time) /
-            1000.0;
-      } else {
-        prefilling_time_ms =
-            (req_profile_info.finish_time - req_profile_info.start_time) / 1000.0;
+            (req_profile_info.start_decoding_time - req_profile_info.start_time)
+  / 1000.0; } else { prefilling_time_ms = (req_profile_info.finish_time -
+  req_profile_info.start_time) / 1000.0;
       }
       mean_llm_ttft += prefilling_time_ms;
       // LLM tpot
       double per_token_time_ms = 0;
       if (req_profile_info.start_decoding_time != 0) {
         per_token_time_ms =
-            (req_profile_info.finish_time - req_profile_info.start_decoding_time) /
-            1000.0 / result.output_tokens.size();
+            (req_profile_info.finish_time -
+  req_profile_info.start_decoding_time) / 1000.0 / result.output_tokens.size();
       }
       mean_llm_tpot += per_token_time_ms;
 
       // Suffix decoding stuff
-      double mean_spec_size_req = (double)std::accumulate(req_profile_info.speculated_size_per_step.begin(),
+      double mean_spec_size_req =
+  (double)std::accumulate(req_profile_info.speculated_size_per_step.begin(),
                                                           req_profile_info.speculated_size_per_step.end(),
                                                         0);
-      double mean_accepted_candidate_len_req = (double)std::accumulate(req_profile_info.accepted_tokens_per_step.begin(),
+      double mean_accepted_candidate_len_req =
+  (double)std::accumulate(req_profile_info.accepted_tokens_per_step.begin(),
                                                           req_profile_info.accepted_tokens_per_step.end(),
                                                         0);
       mean_prefix_length_per_req.push_back((double)std::accumulate(req_profile_info.prefix_length_per_step.begin(),
                                                           req_profile_info.prefix_length_per_step.end(),
-                                                        0) / req_profile_info.prefix_length_per_step.size());
-      double mean_acceptance_rate_req = mean_accepted_candidate_len_req/mean_spec_size_req;
-      
+                                                        0) /
+  req_profile_info.prefix_length_per_step.size()); double
+  mean_acceptance_rate_req = mean_accepted_candidate_len_req/mean_spec_size_req;
+
       mean_spec_size_req /= req_profile_info.speculated_size_per_step.size();
-      mean_accepted_candidate_len_req /= req_profile_info.accepted_tokens_per_step.size();
-    
+      mean_accepted_candidate_len_req /=
+  req_profile_info.accepted_tokens_per_step.size();
+
       mean_speculated_tokens_per_req.push_back( mean_spec_size_req );
-      mean_accepted_candidate_length_per_req.push_back( mean_accepted_candidate_len_req );
+      mean_accepted_candidate_length_per_req.push_back(
+  mean_accepted_candidate_len_req );
       mean_acceptance_rate_per_req.push_back(mean_acceptance_rate_req);
       mean_speculated_tokens += mean_spec_size_req;
       mean_accepted_candidate_length += mean_accepted_candidate_len_req;
       mean_acceptance_rate += mean_acceptance_rate_req;
       mean_prefix_length += mean_prefix_length_per_req.back();
 
-      file_debug << vectorToStringInt(req_profile_info.accepted_tokens_per_step) << std::endl;
-      file_debug2 << vectorToStringInt(req_profile_info.generated_tokens_per_step__) << std::endl;
+      file_debug << vectorToStringInt(req_profile_info.accepted_tokens_per_step)
+  << std::endl; file_debug2 <<
+  vectorToStringInt(req_profile_info.generated_tokens_per_step__) << std::endl;
 
     }
 
     file_debug.close();
-    
+
     mean_decoding_steps /= profiling_results.size();
     mean_output_length /= profiling_results.size();
     mean_e2e_latency /= profiling_results.size();
@@ -645,11 +655,12 @@ void FlexFlow::top_level_task(Task const *task,
                                 profile_info.requests_per_step.end(),
                                 0);
     mean_generated_tokens_per_step /= total_request_steps;
-    double mean_tree_operation_time_per_step = 
+    double mean_tree_operation_time_per_step =
         (double)std::accumulate(profile_info.tree_operation_step_times.begin(),
                                 profile_info.tree_operation_step_times.end(),
                                 0);
-    mean_tree_operation_time_per_step /= profile_info.tree_operation_step_times.size();
+    mean_tree_operation_time_per_step /=
+  profile_info.tree_operation_step_times.size();
 
     // add all metrics to csv
     row += model_metadata.llm_model_name + ",";
@@ -719,10 +730,14 @@ void FlexFlow::top_level_task(Task const *task,
   }
   */
 
-  std::string header = "llm,partition,max_tree_depth,online_tree_update,matching_strategy,max_requests_per_batch,max_tokens_per_batch,request_guid,request_step_idx,timestamp,num_speculated_tokens,num_accepted_tokens,prefix_length,speculation_score,num_generated_tokens";  
+  std::string header =
+      "llm,partition,max_tree_depth,online_tree_update,matching_strategy,max_"
+      "requests_per_batch,max_tokens_per_batch,request_guid,request_step_idx,"
+      "timestamp,num_speculated_tokens,num_accepted_tokens,prefix_length,"
+      "speculation_score,num_generated_tokens";
   // csv filepath
   // create csv filepath and add header if it doesn't exist
-  
+
   bool csv_file_exists = std::filesystem::exists(file_paths.csv_file_path);
   if (!csv_file_exists) {
     // Create new file and write header
@@ -742,24 +757,20 @@ void FlexFlow::top_level_task(Task const *task,
     std::cerr << "Failed to open file: " << file_paths.csv_file_path
               << std::endl;
   }
-  
+
   std::vector<NewProfileInfo> new_profiling_info = rm->get_new_profiling_info();
-  for (const auto& info : new_profiling_info) {
+  for (auto const &info : new_profiling_info) {
     file << model_metadata.llm_model_name + ",";
     file << target_partition + ",";
     file << std::to_string(max_tree_depth) + ",";
     file << std::to_string(online_tree_update) + ",";
     file << matching_strategy + ",";
     file << std::to_string(max_requests_per_batch) + ",";
-    file <<  std::to_string(max_tokens_per_batch) + ",";
-    file << info.request_guid << "," 
-          << info.request_step_idx << ","
-          << info.timestamp << ","
-          << info.num_speculated_tokens << ","
-          << info.num_accepted_tokens << ","
-          << info.prefix_length << ","
-          << info.speculation_score << ","
-          << info.num_generated_tokens << "\n";
+    file << std::to_string(max_tokens_per_batch) + ",";
+    file << info.request_guid << "," << info.request_step_idx << ","
+         << info.timestamp << "," << info.num_speculated_tokens << ","
+         << info.num_accepted_tokens << "," << info.prefix_length << ","
+         << info.speculation_score << "," << info.num_generated_tokens << "\n";
   }
   file.close();
 
