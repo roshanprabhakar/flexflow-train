@@ -21,6 +21,7 @@ class TraceEntry:
 class TracePartition:
     partition_name: str
     model_name: str
+    num_warmup_requests: int
     training_entries: List[TraceEntry]
     eval_entries: List[TraceEntry]
 
@@ -73,7 +74,33 @@ def download_and_cache_file(url: str, filename: Optional[str] = None):
 
     return filename
 
-def build_trace(model_name: str, num_entries: int, seed: int):
+def get_warmup_entries(model_name: str, num_warmup_requests: int) -> List[TraceEntry]:
+    """
+    Get a list of warmup entries for a model.
+    
+    Args:
+    model_name (str): The name of the model.
+    num_warmup_requests (int): The number of warmup requests to generate.
+    
+    Returns:
+    List[TraceEntry]: A list of warmup entries.
+    """
+    warmup_entries = []
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    for i in range(num_warmup_requests):
+        prompt = "Hello, how are you?"
+        prompt = tokenizer.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            add_generation_prompt=True,
+            tokenize=False,
+        )
+        response = "I'm doing well, thank you for asking."
+        prompt_length = len(tokenizer(prompt)["input_ids"])
+        response_length = len(tokenizer(response)["input_ids"])
+        warmup_entries.append(TraceEntry(prompt, response, prompt_length, response_length))
+    return warmup_entries
+
+def build_trace(model_name: str, num_entries: int, num_warmup_requests: int, seed: int):
     # Download sharegpt if necessary
     dataset_path = download_and_cache_file(SHAREGPT_URL)
 
@@ -99,6 +126,7 @@ def build_trace(model_name: str, num_entries: int, seed: int):
     partition = TracePartition(
         partition_name="all",
         model_name=model_name,
+        num_warmup_requests=num_warmup_requests,
         training_entries=[],
         eval_entries=[],
     )
@@ -112,6 +140,8 @@ def build_trace(model_name: str, num_entries: int, seed: int):
         avg_response_length=0,
         max_total_length=0,
     )
+
+    partition.eval_entries += get_warmup_entries(model_name, num_warmup_requests)
     
     for i in tqdm(range(len(dataset))):
         if len(partition.eval_entries) == num_entries:
@@ -138,6 +168,7 @@ def build_trace(model_name: str, num_entries: int, seed: int):
         trace_metadata.max_total_length = max(trace_metadata.max_total_length, prompt_length + response_length)
     trace_metadata.avg_prompt_length /= len(partition.eval_entries)
     trace_metadata.avg_response_length /= len(partition.eval_entries)
+    trace_metadata.avg_entries_per_partition = len(partition.eval_entries)
 
     trace.partitions.append(partition)
     trace.metadata = trace_metadata
@@ -165,7 +196,11 @@ if __name__ == "__main__":
     # Change directory to that holding this script
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    trace = build_trace("meta-llama/Llama-3.1-70B-Instruct", 250, 42)
+    num_entries=125
+    num_warmup_requests=8
+    seed=42
+
+    trace = build_trace("meta-llama/Llama-3.1-70B-Instruct", num_entries, num_warmup_requests, seed)
     print(trace.metadata)
     # Save prompts list to a json file
     save_trace(trace, "sharegpt.json")

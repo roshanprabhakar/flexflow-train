@@ -74,7 +74,7 @@ void parse_input_args(char **argv,
                       int &max_tree_depth,
                       int &expansion_degree,
                       bool &do_sample,
-                      double &request_per_second,
+                      int &request_per_second,
                       bool &add_special_tokens,
                       std::string &target_partition) {
   for (int i = 1; i < argc; i++) {
@@ -168,7 +168,7 @@ void parse_input_args(char **argv,
       continue;
     }
     if (!strcmp(argv[i], "--request-per-second")) {
-      request_per_second = std::stod(argv[++i]);
+      request_per_second = std::stoi(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--add-special-tokens")) {
@@ -354,7 +354,7 @@ void FlexFlow::top_level_task(Task const *task,
       RequestManager::SPECULATIVE_DECODING;
   bool do_sample = false;
   int sampling_seed = 0;
-  double request_per_second = -1.0;
+  int request_per_second = -1;
   int num_warmup_requests = 0;
   double warmup_delay = 15.0;
   bool add_special_tokens = false;
@@ -573,7 +573,7 @@ void FlexFlow::top_level_task(Task const *task,
 
       bool is_warmup_request = total_num_requests < num_warmup_requests;
       double request_delay =
-          1000.0 * (request_per_second > 0 ? (1.0 / request_per_second) : 0);
+          1000.0 * (request_per_second > 0 ? (1.0 / (double)request_per_second) : 0);
       double emission_time_ms =
           is_warmup_request
               ? 0.0
@@ -628,7 +628,7 @@ void FlexFlow::top_level_task(Task const *task,
 
   std::string header =
       "llm,ssm,partition,expansion_degree,max_tree_depth,max_tree_width,max_"
-      "requests_per_batch,max_tokens_per_batch,is_warmup_request,request_guid,"
+      "requests_per_batch,max_tokens_per_batch,request_per_second,is_warmup_request,request_guid,"
       "request_step_idx,"
       "timestamp,speculation_start_timestamp,speculation_end_timestamp,num_"
       "speculated_tokens,num_accepted_tokens,num_generated_tokens";
@@ -665,6 +665,7 @@ void FlexFlow::top_level_task(Task const *task,
     file << std::to_string(max_tree_width) + ",";
     file << std::to_string(max_requests_per_batch) + ",";
     file << std::to_string(max_tokens_per_batch) + ",";
+    file << std::to_string(request_per_second) + ",";
     bool is_warmup_request =
         (info.request_guid - 1000000) < num_warmup_requests;
     file << std::to_string(is_warmup_request) + ",";
