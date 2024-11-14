@@ -57,7 +57,10 @@ partition_name="all"
 export LEGION_BACKTRACE=1
 
 # python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='meta-llama/Llama-3.1-70B-Instruct', allow_patterns='*.safetensors', max_workers=30)"
-# python ../inference/utils/download_hf_model.py --half-precision-only $model_name
+python ../inference/utils/download_hf_model.py --half-precision-only $model_name
+for small_model_name in "${small_model_names[@]}"; do
+    python ../inference/utils/download_hf_model.py --half-precision-only $small_model_name
+done
 
 for k in "${!request_per_second_values[@]}"; do
 for j in "${!batch_sizes[@]}"; do

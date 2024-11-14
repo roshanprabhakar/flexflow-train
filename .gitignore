@@ -193,3 +193,5 @@ tests/inference/python_test_configs/*.json
 
 core.*
 *.out
+sharegpt.json
+wildchat.json

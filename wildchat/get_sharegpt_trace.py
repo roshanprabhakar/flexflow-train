@@ -196,7 +196,7 @@ if __name__ == "__main__":
     # Change directory to that holding this script
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    num_entries=125
+    num_entries=10
     num_warmup_requests=8
     seed=42
 
