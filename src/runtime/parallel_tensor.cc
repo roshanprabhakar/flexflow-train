@@ -685,7 +685,7 @@ template <typename T>
 bool ParallelTensorBase::set_tensor(FFModel const *ff,
                                     std::vector<int> const &dim_sizes,
                                     T const *data) {
-  Context ctx = ff->config.lg_ctx;
+  Context ctx = Legion::Runtime::get_context();
   Runtime *runtime = ff->config.lg_hlr;
   // TODO: check data type matches
   // TODO: Currently we use a task launch, change to index launch for NCCL
@@ -760,7 +760,7 @@ template <typename T>
 bool ParallelTensorBase::get_tensor(FFModel const *ff,
                                     T *data,
                                     bool get_gradients) {
-  Context ctx = ff->config.lg_ctx;
+  Context ctx = Legion::Runtime::get_context();
   Runtime *runtime = ff->config.lg_hlr;
   LogicalRegion weight_lr = LogicalRegion::NO_REGION;
   if (sync_type == ParameterSyncType::PS) {

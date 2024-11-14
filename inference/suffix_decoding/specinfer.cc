@@ -573,7 +573,8 @@ void FlexFlow::top_level_task(Task const *task,
 
       bool is_warmup_request = total_num_requests < num_warmup_requests;
       double request_delay =
-          1000.0 * (request_per_second > 0 ? (1.0 / (double)request_per_second) : 0);
+          1000.0 *
+          (request_per_second > 0 ? (1.0 / (double)request_per_second) : 0);
       double emission_time_ms =
           is_warmup_request
               ? 0.0
@@ -628,7 +629,8 @@ void FlexFlow::top_level_task(Task const *task,
 
   std::string header =
       "llm,ssm,partition,expansion_degree,max_tree_depth,max_tree_width,max_"
-      "requests_per_batch,max_tokens_per_batch,request_per_second,is_warmup_request,request_guid,"
+      "requests_per_batch,max_tokens_per_batch,request_per_second,is_warmup_"
+      "request,request_guid,"
       "request_step_idx,"
       "timestamp,speculation_start_timestamp,speculation_end_timestamp,num_"
       "speculated_tokens,num_accepted_tokens,num_generated_tokens";
