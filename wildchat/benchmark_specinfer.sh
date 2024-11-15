@@ -7,8 +7,9 @@ cd "${BASH_SOURCE[0]%/*}/../build"
 
 # export BUILD_TYPE=Debug
 # ../config/config.linux
-make -j install
-reset
+make -j
+source ./set_python_envs.sh
+# reset
 
 model_name=meta-llama/Llama-3.1-70B-Instruct
 NGPUS=8
