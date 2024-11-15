@@ -542,7 +542,6 @@ private:
   // cache of the small model.
   BatchConfig prepare_first_spec_batch_config();
   BatchConfig prepare_verify_batch_config();
-  BatchConfig prepare_verify_batch_config_sd();
 
   // LLM result verification
   void get_verify_results_greedy(InferenceResult const &llm_verify_result);
