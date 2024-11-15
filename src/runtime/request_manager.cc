@@ -2390,7 +2390,6 @@ void RequestManager::get_verify_results_greedy(
         1; // check if this has already been incremented
     new_profile_info.num_speculated_tokens = get_tree_size(request);
     new_profile_info.num_accepted_tokens = accepted_tokens;
-    new_profile_info.prefix_length = -1;
     new_profile_info.speculation_score = -1.0;
     new_profile_info.num_generated_tokens = nb_generated_tokens;
     new_profile_info.speculation_start_timestamp =

@@ -915,37 +915,6 @@ void FileDataLoader::load_weights_parallel(FFModel *ff,
     f.get_void_result();
   }
 }
-#endif
-
-void FileDataLoader::load_float_weight_task(
-    Legion::Task const *task,
-    std::vector<Legion::PhysicalRegion> const &regions,
-    Legion::Context ctx,
-    Legion::Runtime *runtime) {
-  WeightLoadTaskArgs const *args = (WeightLoadTaskArgs const *)task->args;
-  args->loader->load_single_weight_tensor<float>(
-      args->ff, args->layer, args->weight_idx);
-}
-
-void FileDataLoader::load_half_weight_task(
-    Legion::Task const *task,
-    std::vector<Legion::PhysicalRegion> const &regions,
-    Legion::Context ctx,
-    Legion::Runtime *runtime) {
-  WeightLoadTaskArgs const *args = (WeightLoadTaskArgs const *)task->args;
-  args->loader->load_single_weight_tensor<half>(
-      args->ff, args->layer, args->weight_idx);
-}
-
-void FileDataLoader::load_quant_weight_task(
-    Legion::Task const *task,
-    std::vector<Legion::PhysicalRegion> const &regions,
-    Legion::Context ctx,
-    Legion::Runtime *runtime) {
-  WeightLoadTaskArgs const *args = (WeightLoadTaskArgs const *)task->args;
-  args->loader->load_quantization_weight(
-      args->ff, args->layer, args->weight_idx);
-}
 
 void FileDataLoader::load_weights_parallel(FFModel *ff,
                                            Context ctx,
