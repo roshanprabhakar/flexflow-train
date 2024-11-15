@@ -220,7 +220,13 @@ class LLM:
                 )
             # Download model from HuggingFace, or load it from the local folder
             hf_model = AutoModelForCausalLM.from_pretrained(
-                self.model_name, trust_remote_code=True
+                self.model_name,
+                trust_remote_code=True,
+                torch_dtype=(
+                    torch.float32
+                    if self.data_type == DataType.DT_FLOAT
+                    else torch.float16
+                ),
             )
             # Print log message to notify user download of model has finished
             if not os.path.exists(self.model_name) or os.path.isdir(self.model_name):

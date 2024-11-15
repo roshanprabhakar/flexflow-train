@@ -52,12 +52,13 @@ public:
   void commit_cache(int len);
   void reset_cache();
   int global_2_cache_index(int global_index);
+  int cache_2_global_index(int cache_index);
 
 public:
   int sink_cache_size, window_cache_size;
   // the meta info of the window cache, commit_len helps to determine if we fill
   // up the window.
-  int window_back, commit_len;
+  int window_back, commit_len, total_len;
 };
 
 class BatchConfig {
@@ -76,6 +77,7 @@ public:
   static int max_spec_tree_token_num();
   static int max_sequence_length();
   static int max_output_length();
+  static bool streaming_cache();
   static int get_max_tree_depth();
   friend std::ostream &operator<<(std::ostream &os, BatchConfig const &bc);
   void print() const;
@@ -87,7 +89,7 @@ public:
   // These maximum values are used for copying BatchConfig
   // across workers
   inline static int const MAX_NUM_REQUESTS = 64;
-  inline static int const MAX_NUM_TOKENS = 2048;
+  inline static int const MAX_NUM_TOKENS = 1024;
   inline static int const MAX_SPECULATIVE_TREE_BRANCHES = 8;
   inline static int const MAX_TREE_DEPTH = 8;
   inline static int const MAX_TREE_WIDTH = 16;

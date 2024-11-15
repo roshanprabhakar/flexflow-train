@@ -60,7 +60,7 @@ void LLAMA::create_llama_model(FFModel &ff,
                               use_full_precision ? DT_FLOAT : DT_HALF,
                               NULL,
                               embed_init,
-                              "tok_embeddings");
+                              "embed_tokens");
 
   Tensor w2 = nullptr;
 
@@ -77,7 +77,7 @@ void LLAMA::create_llama_model(FFModel &ff,
           llama_config.rms_norm_eps,
           llama_config.hidden_size,
           DT_NONE,
-          std::string("layers_" + std::to_string(i) + "_attention_norm")
+          std::string("layers." + std::to_string(i) + ".input_layernorm")
               .c_str());
     } else {
       ff.residual_rms_norm(
@@ -87,7 +87,7 @@ void LLAMA::create_llama_model(FFModel &ff,
           llama_config.rms_norm_eps,
           llama_config.hidden_size,
           DT_NONE,
-          std::string("layers_" + std::to_string(i) + "_attention_norm")
+          std::string("layers." + std::to_string(i) + ".input_layernorm")
               .c_str());
       token = token_att_norm[0];
       att_norm = token_att_norm[1];
@@ -115,7 +115,7 @@ void LLAMA::create_llama_model(FFModel &ff,
             true,  /*qk_prod_scaling*/
             false, /*position_bias*/
             streaming_cache,
-            std::string("layers_" + std::to_string(i) + "_attention")
+            std::string("layers." + std::to_string(i) + ".self_attn")
                 .c_str() /*name*/
         );
         break;
@@ -139,7 +139,7 @@ void LLAMA::create_llama_model(FFModel &ff,
             1.0f,  /*scaling factor*/
             true,  /*qk_prod_scaling*/
             false, /*position_bias*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            std::string("layers." + std::to_string(i) + ".self_attn")
                 .c_str() /*name*/
         );
         break;
@@ -164,7 +164,7 @@ void LLAMA::create_llama_model(FFModel &ff,
             true,            /*qk_prod_scaling*/
             false,           /*position_bias*/
             streaming_cache, /*streaming_cache*/
-            std::string("layers_" + std::to_string(i) + "_attention")
+            std::string("layers." + std::to_string(i) + ".self_attn")
                 .c_str() /*name*/
         );
         break;
@@ -183,54 +183,52 @@ void LLAMA::create_llama_model(FFModel &ff,
         llama_config.rms_norm_eps,
         llama_config.hidden_size,
         DT_NONE,
-        std::string("layers_" + std::to_string(i) + "_ffn_norm").c_str());
+        std::string("layers." + std::to_string(i) + ".post_attention_layernorm")
+            .c_str());
     token = token_ff_norm[0];
     Tensor ff_norm = token_ff_norm[1];
 
-    Tensor w1 =
-        ff.dense(ff_norm,
-                 llama_config.intermediate_size,
-                 AC_MODE_NONE,
-                 false,
-                 DT_NONE,
-                 nullptr,
-                 nullptr,
-                 nullptr,
-                 REG_MODE_NONE,
-                 0.0f,
-                 std::string("layers_" + std::to_string(i) + "_feed_forward_w1")
-                     .c_str());
+    Tensor w1 = ff.dense(
+        ff_norm,
+        llama_config.intermediate_size,
+        AC_MODE_NONE,
+        false,
+        DT_NONE,
+        nullptr,
+        nullptr,
+        nullptr,
+        REG_MODE_NONE,
+        0.0f,
+        std::string("layers." + std::to_string(i) + ".mlp.gate_proj").c_str());
 
-    Tensor w3 =
-        ff.dense(ff_norm,
-                 llama_config.intermediate_size,
-                 AC_MODE_NONE,
-                 false,
-                 DT_NONE,
-                 nullptr,
-                 nullptr,
-                 nullptr,
-                 REG_MODE_NONE,
-                 0.0f,
-                 std::string("layers_" + std::to_string(i) + "_feed_forward_w3")
-                     .c_str());
+    Tensor w3 = ff.dense(
+        ff_norm,
+        llama_config.intermediate_size,
+        AC_MODE_NONE,
+        false,
+        DT_NONE,
+        nullptr,
+        nullptr,
+        nullptr,
+        REG_MODE_NONE,
+        0.0f,
+        std::string("layers." + std::to_string(i) + ".mlp.up_proj").c_str());
 
     Tensor multi =
         ff.sigmoid_silu_multi(w1, w3, llama_config.intermediate_size);
 
-    w2 =
-        ff.dense(multi,
-                 llama_config.hidden_size,
-                 AC_MODE_NONE,
-                 false,
-                 DT_NONE,
-                 nullptr,
-                 nullptr,
-                 nullptr,
-                 REG_MODE_NONE,
-                 0.0f,
-                 std::string("layers_" + std::to_string(i) + "_feed_forward_w2")
-                     .c_str());
+    w2 = ff.dense(
+        multi,
+        llama_config.hidden_size,
+        AC_MODE_NONE,
+        false,
+        DT_NONE,
+        nullptr,
+        nullptr,
+        nullptr,
+        REG_MODE_NONE,
+        0.0f,
+        std::string("layers." + std::to_string(i) + ".mlp.down_proj").c_str());
   }
   // final normalization and linear
   Tensor final_rms_norm_output[2] = {nullptr, nullptr};
@@ -252,7 +250,7 @@ void LLAMA::create_llama_model(FFModel &ff,
                           nullptr,
                           REG_MODE_NONE,
                           0.0f,
-                          "output");
+                          "lm_head");
 
   Tensor output;
   if (mode == TREE_SEARCH_MODE) {

@@ -365,6 +365,12 @@ __global__ void apply_pos_encoding_to_streaming_proj_kernel(
     int const max_num_pages,
     int num_kv_heads,
     int head_dim,
+    float rope_theta,
+    bool llama3_rope,
+    float factor,
+    float low_freq_factor,
+    float high_freq_factor,
+    int original_max_position_embeddings,
     StreamingCacheInfo const *streaming_cache_infos,
     uint32_t const max_num_requests) {
   int const kv_hidden_size = num_kv_heads * head_dim;
@@ -397,7 +403,27 @@ __global__ void apply_pos_encoding_to_streaming_proj_kernel(
   // Apply the rotary position encoding.
   cuFloatComplex cii = {kv_cache[real_part_idx], kv_cache[complex_part_idx]};
   size_t pos = token_idx;
-  float freq = pos * (1.0 / pow(10000.0, (float)2 * offset_in_head / head_dim));
+  float freq = pos * (1.0 / pow(rope_theta, (float)2 * offset_in_head / head_dim));
+
+  if (llama3_rope) {
+    float pi = CUDART_PI_F;
+    float wavelen = 2 * pi / freq;
+    float low_freq_wavelen =
+        original_max_position_embeddings / low_freq_factor;
+    float high_freq_wavelen =
+        original_max_position_embeddings / high_freq_factor;
+    if (wavelen < high_freq_wavelen) {
+    } else if (wavelen > low_freq_wavelen) {
+      freq = freq / factor;
+    } else {
+      assert(low_freq_wavelen != high_freq_wavelen);
+      float smooth =
+          (original_max_position_embeddings / wavelen - low_freq_factor) /
+          (high_freq_factor - low_freq_factor);
+      freq = ((1 - smooth) * freq / factor + smooth * freq);
+    }
+  }
+
   cuFloatComplex complex_pos = {cos(freq), sin(freq)};
   cii = cuCmulf(cii, complex_pos);
   kv_cache[real_part_idx] = cii.x;
@@ -410,6 +436,10 @@ void apply_pos_encoding_to_streaming_proj(
     BatchConfig const *bc,
     cudaStream_t stream) {
   assert(m->streaming_cache);
+  // apply rotary embedding if needed
+  if (!m->rotary_embedding_meta->apply_rotary_embedding) {
+    return;
+  }  
   int const kv_hidden_size = m->num_kv_heads * m->qk_dim;
   int num_tokens = 0;
   for (int req_idx = 0; req_idx < BatchConfig::max_requests_per_batch();
@@ -426,6 +456,7 @@ void apply_pos_encoding_to_streaming_proj(
   int const max_num_pages = round_up_pages(
       BatchConfig::MAX_STREAMING_POS - BatchConfig::get_max_tree_depth() +
       BatchConfig::max_spec_tree_token_num());
+  bool llama3_rope = (m->rotary_embedding_meta->rope_type == "llama3");
   apply_pos_encoding_to_streaming_proj_kernel<<<GET_BLOCKS(parallelism),
                                                 min(CUDA_NUM_THREADS,
                                                     parallelism),
@@ -437,6 +468,12 @@ void apply_pos_encoding_to_streaming_proj(
       max_num_pages,
       m->num_kv_heads,
       m->qk_dim,
+      m->rotary_embedding_meta->rope_theta,
+      llama3_rope,
+      m->rotary_embedding_meta->factor,
+      m->rotary_embedding_meta->low_freq_factor,
+      m->rotary_embedding_meta->high_freq_factor,
+      m->rotary_embedding_meta->original_max_position_embeddings,
       m->streaming_cache_infos,
       bc->max_requests_per_batch());
 }

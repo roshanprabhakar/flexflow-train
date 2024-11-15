@@ -350,6 +350,7 @@ public:
   void set_correction_factor(double correction_factor);
   double get_correction_factor();
   void set_streaming_cache(bool streaming_cache);
+  bool get_streaming_cache();
   bool get_memory_occupancy();
   void set_memory_occupancy(bool memory_occupancy);
   void
@@ -602,7 +603,9 @@ private:
   void prune_token_tree();
   void prune_token_tree_equal();
   void prune_token_tree_greedy();
-  void add_tokens_toward_slo(RequestGuid guid, int &budget);
+  void add_tokens_toward_slo(RequestGuid guid,
+                             int &budget,
+                             int num_req_with_slo);
   void add_tokens_toward_memory_occupancy(int budget);
   void add_tokens_toward_goodput(int budget);
   void add_tokens_toward_goodput_per_request(int budget, int request_index);

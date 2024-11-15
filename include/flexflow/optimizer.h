@@ -20,7 +20,8 @@
 #include "legion.h"
 
 namespace FlexFlow {
-
+using Legion::Context;
+using Legion::Runtime;
 class FFModel;
 class OpMeta;
 

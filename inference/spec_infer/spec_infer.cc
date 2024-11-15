@@ -77,9 +77,9 @@ void parse_input_args(char **argv,
                       int &sampling_seed,
                       bool &streaming_cache,
                       bool &slo_attainment_early_termination,
-                      int &baseline_latency_ms,
-                      int &ssm_spec_latency_ms,
-                      int &llm_verify_latency_ms,
+                      double &baseline_latency_ms,
+                      double &ssm_spec_latency_ms,
+                      double &llm_verify_latency_ms,
                       double &request_per_second,
                       bool &spec_infer_old_version,
                       bool &greedy_schedule,
@@ -191,15 +191,15 @@ void parse_input_args(char **argv,
       continue;
     }
     if (!strcmp(argv[i], "--baseline-latency-ms")) {
-      baseline_latency_ms = std::stoi(argv[++i]);
+      baseline_latency_ms = std::stod(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--ssm-spec-latency-ms")) {
-      ssm_spec_latency_ms = std::stoi(argv[++i]);
+      ssm_spec_latency_ms = std::stod(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--llm-verify-latency-ms")) {
-      llm_verify_latency_ms = std::stoi(argv[++i]);
+      llm_verify_latency_ms = std::stod(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--request-per-second")) {
@@ -407,9 +407,9 @@ void FlexFlow::top_level_task(Task const *task,
   int sampling_seed = 0;
   bool streaming_cache = false;
   bool slo_attainment_early_termination = false;
-  int baseline_latency_ms = 50;
-  int ssm_spec_latency_ms = 20;
-  int llm_verify_latency_ms = 50;
+  double baseline_latency_ms = 50;
+  double ssm_spec_latency_ms = 20;
+  double llm_verify_latency_ms = 50;
   double request_per_second = 1.0;
   bool spec_infer_old_version = false;
   bool greedy_schedule = false;

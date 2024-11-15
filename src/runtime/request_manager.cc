@@ -357,6 +357,10 @@ void RequestManager::set_streaming_cache(bool streaming_cache_) {
   streaming_cache = streaming_cache_;
 }
 
+bool RequestManager::get_streaming_cache() {
+  return streaming_cache;
+}
+
 bool RequestManager::get_memory_occupancy() {
   return memory_occupancy;
 }
@@ -1557,11 +1561,9 @@ BatchConfig RequestManager::prepare_first_spec_batch_config() {
       new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
       if (streaming_cache) {
         new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
-            request.streaming_cache_info.global_2_cache_index(
-                committed_tokens[0].to_index);
+            request.ssm_cache_size;
         new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
-            request.streaming_cache_info.global_2_cache_index(
-                committed_tokens[0].to_index);
+            request.ssm_cache_size;
       } else {
         new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
             committed_tokens[0].to_index;
@@ -1578,11 +1580,9 @@ BatchConfig RequestManager::prepare_first_spec_batch_config() {
         new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
         if (streaming_cache) {
           new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
-              request.streaming_cache_info.global_2_cache_index(
-                  committed_tokens[committed_token_index].to_index);
+              request.ssm_cache_size + committed_token_index - 1;
           new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
-              request.streaming_cache_info.global_2_cache_index(
-                  committed_tokens[committed_token_index].to_index);
+              request.ssm_cache_size + committed_token_index - 1;
         } else {
           new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
               committed_tokens[committed_token_index].to_index;
@@ -2470,9 +2470,9 @@ BatchConfig::BitMask RequestManager::create_llm_bitmask(RequestGuid guid) {
 
   // Maintain other fields of llm_bitmask
   llm_bitmask.non_tree_cache_size = request.causal_mask.non_tree_cache_size;
-  // We don't need to set llm_bitmask.current_layer_size and
-  // llm_bitmask.tree_or_prompt_size here because they are not used in LLM
-  // verification.
+  llm_bitmask.tree_or_prompt_size = request.causal_mask.tree_or_prompt_size;
+  // We don't need to set llm_bitmask.current_layer_size here because they are
+  // not used in LLM verification.
   return llm_bitmask;
 }
 
@@ -3773,7 +3773,7 @@ void RequestManager::prune_token_tree() {
        spare_latency_2_request_index) {
     int request_index = spare_latency_request_index_pair.second;
     RequestGuid guid = guid_of_requests[request_index];
-    add_tokens_toward_slo(guid, budget);
+    add_tokens_toward_slo(guid, budget, spare_latency_2_request_index.size());
   }
 
   assert(budget >= 0);
@@ -3828,11 +3828,21 @@ void RequestManager::prune_token_tree_greedy() {
   }
 }
 
-void RequestManager::add_tokens_toward_slo(RequestGuid guid, int &budget) {
+void RequestManager::add_tokens_toward_slo(RequestGuid guid,
+                                           int &budget,
+                                           int num_req_with_slo) {
   Request &request = all_requests[guid];
-  double num_tokens_to_decode = (ssm_spec_latency_ms + llm_verify_latency_ms) *
-                                correction_factor /
-                                (baseline_latency_ms * request.get_slo_ratio());
+  double num_tokens_to_decode_per_step =
+      (ssm_spec_latency_ms + llm_verify_latency_ms) * correction_factor /
+      (baseline_latency_ms * request.get_slo_ratio());
+  double expected_num_tokens_decoded =
+      request.decode_latency_ms /
+      (baseline_latency_ms * request.get_slo_ratio());
+
+  double num_tokens_to_decode =
+      max(1.0,
+          num_tokens_to_decode_per_step + expected_num_tokens_decoded -
+              request.decode_length());
 
   // The root is already included
   // In function add_root_to_spec_token_tree
@@ -3840,7 +3850,7 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid, int &budget) {
 
   // The max token that can be added to the token tree when fulfilling the SLO
   int max_token_toward_slo =
-      int(get_max_tokens_per_batch() / get_num_active_requests());
+      int(get_max_tokens_per_batch() / num_available_requests);
 
   while (budget > 0 and max_token_toward_slo > 0 and
          current_added < num_tokens_to_decode) {
