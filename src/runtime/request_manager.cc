@@ -204,48 +204,8 @@ int RequestManager::get_max_output_length() {
 }
 
 void RequestManager::set_decoding_mode(DecodingMode mode) {
-  assert(mode == INCREMENTAL_DECODING || mode == SPECULATIVE_DECODING ||
-         mode == SUFFIX_DECODING);
+  assert(mode == INCREMENTAL_DECODING || mode == SPECULATIVE_DECODING);
   decoding_mode = mode;
-}
-
-int RequestManager::get_suffix_tree_max_depth() {
-  assert(suffix_tree_max_depth > 0);
-  return suffix_tree_max_depth;
-}
-
-void RequestManager::set_suffix_tree_max_depth(int max_depth) {
-  assert(max_depth > 0);
-  assert(suffix_tree_max_depth == -1);
-  assert(decoding_mode == SUFFIX_DECODING);
-  suffix_tree_max_depth = max_depth;
-}
-
-MatchingStrategy RequestManager::get_suffix_tree_matching_strategy() {
-  return suffix_tree_matching_strategy;
-}
-
-void RequestManager::set_suffix_tree_matching_strategy(
-    MatchingStrategy strategy) {
-  suffix_tree_matching_strategy = strategy;
-}
-
-float RequestManager::get_suffix_tree_max_spec_factor() {
-  assert(suffix_tree_max_spec_factor > 0.0);
-  return suffix_tree_max_spec_factor;
-}
-
-void RequestManager::set_suffix_tree_max_spec_factor(float factor) {
-  assert(factor > 0.0);
-  suffix_tree_max_spec_factor = factor;
-}
-
-bool RequestManager::get_suffix_tree_online_tree_update() {
-  return suffix_tree_online_tree_update;
-}
-
-void RequestManager::set_suffix_tree_online_tree_update(bool online_update) {
-  suffix_tree_online_tree_update = online_update;
 }
 
 void RequestManager::set_verbose(bool verbose_) {
@@ -528,50 +488,6 @@ size_t RequestManager::get_num_ssms() {
   return ssm_models.size();
 }
 
-void RequestManager::init_suffix_tree(std::string const &trace_filepath,
-                                      std::string const &partition_name) {
-  // print an error if the suffix tree is already initialized or if the
-  // trace_filepath does not exist
-  if (suffix_tree != nullptr) {
-    std::cerr << "Suffix tree is already initialized." << std::endl;
-    assert(false);
-  }
-  if (suffix_tree_max_depth <= 0) {
-    std::cerr << "Invalid max depth for suffix tree: " << suffix_tree_max_depth
-              << std::endl;
-    assert(false);
-  }
-  if (!std::filesystem::exists(trace_filepath)) {
-    std::cerr << "Trace file does not exist: " << trace_filepath << std::endl;
-    assert(false);
-  }
-  Trace trace = load_trace(trace_filepath);
-  // find the partition with the given name
-  TracePartition partition;
-  for (auto const &p : trace.partitions) {
-    if (p.partition_name == partition_name) {
-      partition = p;
-      break;
-    }
-  }
-  // print an error if the partition with the given name is not found
-  if (partition.partition_name.empty()) {
-    std::cerr << "Partition with name " << partition_name
-              << " not found in the trace." << std::endl;
-    assert(false);
-  }
-  // print an error if the tokenizer is not initialized
-  if (this->tokenizer_ == nullptr) {
-    std::cerr << "Tokenizer is not initialized." << std::endl;
-    assert(false);
-  }
-  std::vector<std::vector<int>> training_dataset;
-  for (auto const &entry : partition.training_entries) {
-    std::vector<int> encoded = this->tokenizer_->Encode(entry.response);
-    training_dataset.push_back(encoded);
-  }
-  suffix_tree = new SuffixTree(training_dataset, suffix_tree_max_depth);
-}
 
 RequestManager::RequestGuid
     RequestManager::register_new_request(GenerationRequest const &req) {
@@ -823,25 +739,7 @@ bool isPrefixAndRemove(std::vector<int> const &prefix, std::vector<int> &vec) {
   return false;
 }
 
-void RequestManager::insert_completed_request_into_suffix_tree(
-    int batch_index) {
-  assert(suffix_tree != nullptr);
-  assert(suffix_tree_online_tree_update == true);
-  long long int start_time = Realm::Clock::current_time_in_microseconds();
-  RequestGuid guid = guid_of_requests[batch_index];
-  Request &request = all_requests[guid];
-  std::vector<int> output_tokens = std::vector<int>(
-      request.tokens.end() - request.decode_length(), request.tokens.end());
-  assert(output_tokens.size() == request.decode_length());
-  if (output_tokens.size() > 0) {
-    suffix_tree->insert(output_tokens);
-  }
-  long long int end_time = Realm::Clock::current_time_in_microseconds();
-  assert(profiling.tree_operation_step_times.size() > 0);
-  profiling
-      .tree_operation_step_times[profiling.tree_operation_step_times.size() -
-                                 1] += ((double)(end_time - start_time) * 1e-3);
-}
+
 void RequestManager::request_complete_clean_up(int batch_index) {
   RequestGuid guid = guid_of_requests[batch_index];
   profiling_requests[guid].finish_time =
@@ -992,8 +890,7 @@ void RequestManager::update_inference_results(InferenceResult const &result) {
 
   switch (request_manager_status) {
     case PREFILLING:
-      if (decoding_mode == INCREMENTAL_DECODING ||
-          decoding_mode == SUFFIX_DECODING) {
+      if (decoding_mode == INCREMENTAL_DECODING) {
         // This indicates that the prefilling of the requests finishes
         bool all_prefilled = update_llm_prefill_results(result);
         // Check if there are more empty slots
@@ -1051,9 +948,7 @@ void RequestManager::update_inference_results(InferenceResult const &result) {
       }
       break;
     case DECODING: {
-      bool request_completed = (decoding_mode == INCREMENTAL_DECODING)
-                                   ? update_llm_decode_results(result)
-                                   : update_llm_suffix_decoding_results(result);
+      bool request_completed = update_llm_decode_results(result);
       if (load_pending_request_to_batch()) {
         request_manager_status = PREFILLING;
       } else {
@@ -1117,18 +1012,6 @@ bool RequestManager::update_llm_prefill_results(InferenceResult const &result) {
           // Temporarily offload request from the batch
           request_offload_from_batch(request->batch_index);
           prefilled_requests.push(request);
-
-          if (decoding_mode == SUFFIX_DECODING) {
-            // create prompt tree
-            assert(request->prompt_tree == nullptr &&
-                   "Prompt tree was already initialized");
-            assert(this->suffix_tree_max_depth > 0 &&
-                   "Invalid max depth for suffix tree");
-            assert(request->tokens.size() > 0 &&
-                   "Attempting to create prompt tree for empty request");
-            request->prompt_tree =
-                new SuffixTree({request->tokens}, this->suffix_tree_max_depth);
-          }
 
           if (decoding_mode == SPECULATIVE_DECODING) {
             // Add the last token to the token tree
@@ -1248,8 +1131,7 @@ BatchConfig RequestManager::prepare_next_batch() {
   }
   switch (request_manager_status) {
     case PREFILLING:
-      if (decoding_mode == INCREMENTAL_DECODING ||
-          decoding_mode == SUFFIX_DECODING) {
+      if (decoding_mode == INCREMENTAL_DECODING) {
         return prepare_llm_prefilling_batch();
       } else if (decoding_mode == SPECULATIVE_DECODING) {
         if (prefill_model == SSM) {
@@ -1269,13 +1151,7 @@ BatchConfig RequestManager::prepare_next_batch() {
       }
       break;
     case DECODING:
-      if (decoding_mode == INCREMENTAL_DECODING) {
-        return prepare_decoding_batch();
-      } else if (decoding_mode == SUFFIX_DECODING) {
-        return prepare_suffix_decoding_batch_config();
-      } else {
-        assert(false && "Invalid inference mode.");
-      }
+      return prepare_decoding_batch();
     case SSM_SPEC:
       if (current_ssm_step == 0) {
         return prepare_first_spec_batch_config();
@@ -1309,8 +1185,7 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
   BatchConfig bc;
   if (decoding_mode == INCREMENTAL_DECODING) {
     bc.inference_mode = InferenceMode::INC_DECODING_MODE;
-  } else if (decoding_mode == SPECULATIVE_DECODING ||
-             decoding_mode == SUFFIX_DECODING) {
+  } else if (decoding_mode == SPECULATIVE_DECODING) {
     bc.inference_mode = InferenceMode::TREE_VERIFY_MODE;
   }
   bc.prompt_phase = true;
@@ -1359,8 +1234,7 @@ BatchConfig RequestManager::prepare_llm_prefilling_batch() {
     // because in that case we start the timer in the ssm prefilling Step idx
     // -2: enqueueing; step idx -1: prefilling begins, step idx 0: prefilling
     // finished
-    if (decoding_mode == INCREMENTAL_DECODING ||
-        decoding_mode == SUFFIX_DECODING) {
+    if (decoding_mode == INCREMENTAL_DECODING) {
       NewProfileInfo new_profile_info;
       new_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
       new_profile_info.request_guid = request->guid;
@@ -1835,218 +1709,6 @@ BatchConfig RequestManager::prepare_verify_batch_config() {
   return new_bc;
 }
 
-void RequestManager::populate_best_suffix_tree_candidates(Request &request) {
-
-  long long int start_time = Realm::Clock::current_time_in_microseconds();
-
-  request.suffix_decoding_best_token_ids.clear();
-  request.suffix_decoding_best_parents.clear();
-  request.suffix_decoding_best_score = 0.0;
-  request.suffix_decoding_best_prefix_length = 0;
-
-  int max_prefix_length = std::min(static_cast<int>(request.tokens.size()),
-                                   this->get_suffix_tree_max_depth());
-  if (max_prefix_length == 0) {
-    return;
-  }
-
-  std::vector<int> best_prefix;
-
-  // Get best candidate from the suffix tree
-  for (int length = 1; length <= max_prefix_length; length++) {
-    std::vector<int> prefix(request.tokens.end() - length,
-                            request.tokens.end());
-
-    // Try prompt tree
-    auto [p_token_ids, p_parents, p_score] =
-        request.prompt_tree->find_best_path_or_tree(
-            prefix,
-            this->get_suffix_tree_matching_strategy(),
-            this->get_suffix_tree_max_spec_factor());
-    if (p_score > request.suffix_decoding_best_score) {
-      request.suffix_decoding_best_token_ids = p_token_ids;
-      request.suffix_decoding_best_parents = p_parents;
-      request.suffix_decoding_best_prefix_length = length;
-      request.suffix_decoding_best_score = p_score;
-      best_prefix = prefix;
-    }
-
-    // Try suffix tree
-    auto [s_token_ids, s_parents, s_score] =
-        suffix_tree->find_best_path_or_tree(
-            prefix,
-            this->get_suffix_tree_matching_strategy(),
-            this->get_suffix_tree_max_spec_factor());
-    if (s_score > request.suffix_decoding_best_score) {
-      request.suffix_decoding_best_token_ids = s_token_ids;
-      request.suffix_decoding_best_parents = s_parents;
-      request.suffix_decoding_best_prefix_length = length;
-      request.suffix_decoding_best_score = s_score;
-      best_prefix = prefix;
-    }
-  }
-  profiling_requests[request.guid].prefix_length_per_step.push_back(
-      request.suffix_decoding_best_prefix_length);
-
-  if (verbose) {
-    std::cout << "Populated best suffix tree candidates for request "
-              << request.guid << " with score "
-              << request.suffix_decoding_best_score << std::endl;
-    std::cout << "Best prefix length: "
-              << request.suffix_decoding_best_prefix_length << std::endl;
-    std::cout << "Best prefix: ";
-    for (auto const &token : best_prefix) {
-      std::cout << token << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "Best token ids: ";
-    for (auto const &id : request.suffix_decoding_best_token_ids) {
-      std::cout << id << " ";
-    }
-    std::cout << std::endl;
-    std::cout << "Best parents: ";
-    for (auto const &parent : request.suffix_decoding_best_parents) {
-      std::cout << parent << " ";
-    }
-    std::cout << std::endl;
-  }
-}
-
-BatchConfig RequestManager::prepare_suffix_decoding_batch_config() {
-  if (verbose) {
-    std::cout << "\n############### prepare_suffix_decoding_batch_config "
-                 "###############\n";
-  }
-  // This method does the following:
-  // 1. Commit the verified tokens in the last iteration through the
-  // BatchConfig. We can do this request by request.
-  // The information of the committed tokens is stored in
-  // Request.llm_committed_tokens. Put the information of the committed tokens
-  // into BatchConfig.committed_tokens.
-  // 2. Load the tokens on the token tree that are not yet pruned to
-  // BatchConfig.tokensInfo. Be careful with the abs_depth etc.
-  // (skip the pruned tokens).
-  // 3. Create the causal mask for the large model based on the small model
-  // causal mask (call create_llm_bitmask()).
-  // 4. Maintain BatchConfig::RequestsInfo and all other fields of
-  // BatchConfig.
-  // Please refer to the implementation of prepare_next_spec_batch_config()
-  // for more details.
-  BatchConfig new_bc;
-  new_bc.inference_mode = InferenceMode::TREE_VERIFY_MODE;
-  std::copy(std::begin(request_available),
-            std::end(request_available),
-            std::begin(new_bc.request_available));
-  new_bc.num_available_requests = num_available_requests;
-
-  long long int start_time = Realm::Clock::current_time_in_microseconds();
-  for (int request_index = 0; request_index < get_max_requests_per_batch();
-       ++request_index) {
-    if (!request_available[request_index]) {
-      continue;
-    }
-    int guid = guid_of_requests[request_index];
-    Request &request = all_requests[guid];
-    assert(request.status == Request::RUNNING);
-
-    // 1. Maintain requestsInfo
-    new_bc.requestsInfo[request_index].first_token_index_in_request =
-        request.tokens.size() - 1; // Exclude the last token
-    new_bc.requestsInfo[request_index].first_token_offset_in_batch =
-        new_bc.num_tokens;
-    new_bc.requestsInfo[request_index].num_tokens_in_batch = 0;
-
-    // Put the information of the committed tokens into
-    // BatchConfig.committed_tokens.
-    // Note here, we shouldn't put the last token in request.committed_tokens
-    // into new_bc. Because the LLM don't have that token's KV cache.
-    std::vector<Request::CommittedToken> &committed_tokens =
-        request.committed_tokens;
-    for (int committed_token_index = 0;
-         committed_token_index < (int)committed_tokens.size() - 1;
-         committed_token_index++) {
-      Request::CommittedToken &committed_token =
-          committed_tokens.at(committed_token_index);
-      new_bc.committed_tokens[new_bc.num_tokens_to_commit].request_index =
-          request_index;
-      new_bc.committed_tokens[new_bc.num_tokens_to_commit].index_in_kv_cache =
-          committed_token.from_index;
-      new_bc.committed_tokens[new_bc.num_tokens_to_commit].token_depth =
-          committed_token.to_index;
-      new_bc.num_tokens_to_commit++;
-    }
-
-    // get tree of tokens from suffix tree
-    populate_best_suffix_tree_candidates(request);
-
-    // add bonus token to the batch config
-    new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
-    new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
-        request.tokens.size() - 1;
-    new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
-        request.tokens.size() - 1;
-    new_bc.tokensInfo[new_bc.num_tokens].token_id = request.tokens.back();
-    new_bc.num_tokens++;
-    // add candidate tokens to the batch config
-    for (int i = 0; i < request.suffix_decoding_best_token_ids.size(); i++) {
-      new_bc.tokensInfo[new_bc.num_tokens].request_index = request_index;
-      new_bc.tokensInfo[new_bc.num_tokens].abs_index_in_request =
-          request.tokens.size() + i;
-      new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request =
-          request.tokens.size() + i;
-      new_bc.tokensInfo[new_bc.num_tokens].token_id =
-          request.suffix_decoding_best_token_ids[i];
-      new_bc.num_tokens++;
-    }
-    new_bc.requestsInfo[request_index].num_tokens_in_batch =
-        request.suffix_decoding_best_token_ids.size() +
-        1; // +1 for the bonus token
-    request.first_token_offset_in_batch =
-        new_bc.num_tokens - (request.suffix_decoding_best_token_ids.size() +
-                             1); // -1 for the bonus token
-    request.num_tokens_in_batch =
-        request.suffix_decoding_best_token_ids.size() +
-        1; // +1 for the bonus token
-
-    // Causal mask
-    new_bc.causalMask[request_index] = BatchConfig::BitMask();
-    new_bc.causalMask[request_index].non_tree_cache_size =
-        new_bc.requestsInfo[request_index].first_token_index_in_request;
-    assert(request.suffix_decoding_best_parents.size() ==
-           request.suffix_decoding_best_token_ids.size());
-    // bonus token from prev iter
-    new_bc.causalMask[request_index].bit_mask[0].set_bit(0);
-    for (int i = 0; i < request.suffix_decoding_best_parents.size(); i++) {
-      assert(request.suffix_decoding_best_parents[i] < i);
-      int idx_to_copy_from =
-          (i == 0) ? 0 : request.suffix_decoding_best_parents[i] + 1;
-      assert(idx_to_copy_from < i + 1);
-      new_bc.causalMask[request_index].bit_mask[i + 1] =
-          new_bc.causalMask[request_index].bit_mask[idx_to_copy_from];
-      new_bc.causalMask[request_index].bit_mask[i + 1].set_bit(i + 1);
-    }
-
-    // Copy the streaming cache info
-    new_bc.streamingCacheInfo[request_index] = request.streaming_cache_info;
-
-    if (profiling_requests[request.guid].llm_decoding_steps == 0) {
-      profiling_requests[request.guid].start_decoding_time =
-          Realm::Clock::current_time_in_microseconds();
-    }
-  }
-  long long int end_time = Realm::Clock::current_time_in_microseconds();
-  profiling.tree_operation_step_times.push_back(
-      (double)(end_time - start_time) * 1e-3);
-
-  if (verbose) {
-    std::cout << "prepare_suffix_decoding_batch_config NEW batchconfig:"
-              << std::endl;
-    new_bc.print();
-  }
-  profiling.llm_step_start = Realm::Clock::current_time_in_microseconds();
-  return new_bc;
-}
-
 int get_tree_size(Request const &request) {
   int size = 0;
   for (auto &layer : request.speculative_token_trees[0].tree_layers) {
@@ -2157,10 +1819,6 @@ bool RequestManager::update_llm_verify_results(
       // Request is completed
       request_update_attainment(request_index, attained);
       request_completed = true;
-      if (decoding_mode == SUFFIX_DECODING &&
-          get_suffix_tree_online_tree_update()) {
-        insert_completed_request_into_suffix_tree(request_index);
-      }
       request_complete_clean_up(request_index);
     } else if (!current_attained and slo_violation_early_termination) {
       // Early drop that request
@@ -2169,100 +1827,6 @@ bool RequestManager::update_llm_verify_results(
       request_complete_clean_up(request_index);
     } else {
       update_bitmask_prompt(guid, request.committed_tokens.size() - 1);
-    }
-  }
-
-  // Some requests may be completed after appending the verified tokens.
-  // If there is a request completed, return true.
-  return request_completed;
-}
-
-bool RequestManager::update_llm_suffix_decoding_results(
-    InferenceResult const &llm_verify_result) {
-  assert((decoding_mode == SUFFIX_DECODING) &&
-         "The decoding mode should be suffix decoding");
-  assert(!speculative_sampling &&
-         "Speculative sampling is not supported yet for suffix decoding");
-  // Update llm_cache_size with the last committed_tokens, and clear
-  // committed_tokens
-  int nb_requests_decoded = 0;
-  for (int request_index = 0; request_index < get_max_requests_per_batch();
-       ++request_index) {
-    if (!request_available[request_index]) {
-      // Request in this slot is unavailable
-      continue;
-    }
-    int guid = guid_of_requests[request_index];
-    Request &request = all_requests[guid];
-    assert(request.status == Request::RUNNING);
-    request.llm_cache_size += request.committed_tokens.size() - 1;
-    request.committed_tokens.clear();
-
-    profiling_requests[guid].llm_decoding_steps++;
-    nb_requests_decoded++;
-  }
-
-  // Process the LLM results greedily
-  get_verify_results_suffix_decoding(llm_verify_result);
-
-  long long int current_time = Realm::Clock::current_time_in_microseconds();
-  profiling.llm_step_times.push_back((current_time - profiling.llm_step_start) *
-                                     1e-3);
-  profiling.requests_per_step.push_back(nb_requests_decoded);
-
-  bool request_completed = false;
-
-  // Iterate over the requests
-  for (int request_index = 0; request_index < get_max_requests_per_batch();
-       ++request_index) {
-    if (!request_available[request_index]) {
-      // Request in this slot is unavailable
-      continue;
-    }
-    int guid = guid_of_requests[request_index];
-    Request &request = all_requests[guid];
-    assert(request.status == Request::RUNNING);
-
-    request.decode_latency_ms =
-        (current_time - profiling_requests[guid].start_decoding_time) * 1e-3;
-    bool attained =
-        request.decode_latency_ms <= get_request_expected_latency(request);
-    bool current_attained =
-        request.decode_latency_ms <=
-        get_request_expected_latency(request) +
-            get_baseline_latency() * request.get_slo_ratio() * 6;
-
-    // Initialize the token tree for the request
-    // init_token_tree(guid);
-    assert(!request.committed_tokens.empty() &&
-           "The committed tokens should not be empty.");
-
-    // Check if the request is completed. If its completed, clean up the
-    // metainfo stored in the RequestManager. Otherwise, update its bitmask.
-    bool eos_token_found = false;
-    for (auto const &committed_token : request.committed_tokens) {
-      if (is_eos_token(committed_token.token_id)) {
-        eos_token_found = true;
-        break;
-      }
-    }
-    if (eos_token_found or request.decode_length() >= get_max_output_length() or
-        request.tokens.size() >= get_max_sequence_length()) {
-      if (get_suffix_tree_online_tree_update()) {
-        insert_completed_request_into_suffix_tree(request_index);
-      }
-      // Request is completed
-      request_update_attainment(request_index, attained);
-      request_completed = true;
-      request_complete_clean_up(request_index);
-
-    } else if (!current_attained and slo_violation_early_termination) {
-      // Early drop that request
-      request_update_attainment(request_index, attained);
-      request_completed = true;
-      request_complete_clean_up(request_index);
-    } else {
-      // update_bitmask_prompt(guid, request.committed_tokens.size() - 1);
     }
   }
 
@@ -2849,179 +2413,6 @@ void RequestManager::get_verify_results_greedy(
   profiling.generated_tokens_per_step.push_back(total_nb_generated_tokens);
 }
 
-void RequestManager::get_verify_results_suffix_decoding(
-    InferenceResult const &llm_verify_result) {
-  // This function maintain the generated token list of the request and the
-  // committed tokens.
-  if (verbose) {
-    std::cout << "Entering get_verify_results_suffix_decoding" << std::endl;
-    std::cout << llm_verify_result << std::endl;
-  }
-  int total_nb_generated_tokens = 0;
-  for (int request_index = 0; request_index < get_max_requests_per_batch();
-       ++request_index) {
-    if (!request_available[request_index]) {
-      continue;
-    }
-    RequestGuid guid = guid_of_requests[request_index];
-    Request &request = all_requests[guid];
-
-    if (verbose) {
-      std::cout << "Processing request " << guid << std::endl;
-      std::cout << "request.tokens: [";
-      for (auto token : request.tokens) {
-        std::cout << token << ", ";
-      }
-      std::cout << "]" << std::endl;
-    }
-
-    assert(request.status == Request::RUNNING);
-
-    int llm_result_offset = request.first_token_offset_in_batch;
-    int llm_cache_size =
-        request.tokens.size() - 1; // index of the token in the LLM's cache
-    int committed_token_index =
-        request.tokens.size() -
-        1; // committed_token.to_index, also absolute depth in request
-    if (verbose) {
-      std::cout << "llm_result_offset: " << llm_result_offset << std::endl;
-      std::cout << "llm_cache_size: " << llm_cache_size << std::endl;
-      std::cout << "committed_token_index: " << committed_token_index
-                << std::endl;
-    }
-    // 1. handle bonus token from previous iteration. Don't add it to
-    // request.tokens because it has already been added.
-    // assert(llm_verify_result.token_ids[llm_result_offset] ==
-    //        request.tokens.back());
-    request.committed_tokens.push_back(Request::CommittedToken(
-        llm_cache_size, committed_token_index, request.tokens.back()));
-    llm_cache_size++;
-    committed_token_index++;
-
-    // 2. walk through best_tokens, compare them with
-    // llm_verify_result.token_ids, and add each match to the committed_tokens
-    // as well as request.tokens.
-
-    int last_accepted_token_idx = -1;
-    bool found_eos = false;
-    for (int i = 0; i < (int)request.suffix_decoding_best_token_ids.size();
-         i++) {
-      int current_token = request.suffix_decoding_best_token_ids[i];
-      int parent_idx = request.suffix_decoding_best_parents[i];
-      int current_result =
-          llm_verify_result.token_ids[llm_result_offset + parent_idx + 1];
-      int last_parent_idx =
-          (last_accepted_token_idx == -1)
-              ? -2
-              : request.suffix_decoding_best_parents[last_accepted_token_idx];
-      TokenId last_accepted_token = request.tokens.back();
-      TokenId current_parent_token =
-          (parent_idx == -1)
-              ? request.tokens.back()
-              : request.suffix_decoding_best_token_ids[parent_idx];
-      if (verbose) {
-        printf("\ti=%i: {current_token: %d, current_result: %d, "
-               "last_accepted_token: %d, current_parent_token: %d, "
-               "last_parent_idx: %d, parent_idx: %d, last_accepted_token_idx: "
-               "%i}\n",
-               i,
-               current_token,
-               current_result,
-               last_accepted_token,
-               current_parent_token,
-               last_parent_idx,
-               parent_idx,
-               last_accepted_token_idx);
-      }
-      // Accept token if:
-      //  (1) it matches the result,
-      //  (2) last accepted token is the token's parent
-      //  (3) no other token has been accepted in this layer
-      if (current_token == current_result &&
-          last_accepted_token == current_parent_token &&
-          last_parent_idx != parent_idx) {
-        request.committed_tokens.push_back(Request::CommittedToken(
-            llm_cache_size + i, committed_token_index, current_token));
-        request.tokens.push_back(current_token);
-        committed_token_index++;
-        last_accepted_token_idx = i;
-        if (is_eos_token(current_token)) {
-          found_eos = true;
-          break;
-        }
-      }
-    }
-
-    // 3. Add the bonus token
-    int bonus_token_idx = last_accepted_token_idx + 1;
-    if (verbose) {
-      std::cout << "last_accepted_token_idx: " << last_accepted_token_idx
-                << std::endl;
-      std::cout << "accepted_tokens: ";
-      for (int i = 1; i < request.committed_tokens.size(); i++) {
-        std::cout << request.committed_tokens[i].token_id << " ";
-      }
-      std::cout << std::endl;
-      std::cout << "bonus_token_idx: " << bonus_token_idx << std::endl;
-      std::cout
-          << "bonus token: "
-          << llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]
-          << std::endl;
-    }
-    if (!found_eos) {
-      request.committed_tokens.push_back(Request::CommittedToken(
-          -1,
-          committed_token_index,
-          llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]));
-      request.tokens.push_back(
-          llm_verify_result.token_ids[llm_result_offset + bonus_token_idx]);
-    }
-
-    assert(request.committed_tokens.size() >= 2);
-    int nb_generated_tokens = (int)request.committed_tokens.size() -
-                              1; // exclude previous bonus token
-    int accepted_tokens = (int)request.committed_tokens.size() -
-                          1; // exclude previous bonus token
-    if (!found_eos) {
-      accepted_tokens--; // exclude the last bonus token (if we found eos, we
-                         // don't add it)
-    }
-
-    total_nb_generated_tokens += nb_generated_tokens;
-    profiling_requests[guid].speculated_size_per_step.push_back(
-        (int)request.suffix_decoding_best_token_ids.size());
-    profiling_requests[guid].accepted_tokens_per_step.push_back(
-        accepted_tokens);
-    profiling_requests[guid].generated_tokens_per_step__.push_back(
-        nb_generated_tokens);
-
-    if (verbose) {
-      std::cout << "Request " << request.guid << " committed tokens: ";
-      for (auto const &committed_token : request.committed_tokens) {
-        std::cout << committed_token.token_id << " ("
-                  << tokenizer_->Decode({committed_token.token_id}) << ") ";
-      }
-      std::cout << std::endl;
-      std::string output = this->tokenizer_->Decode(request.tokens);
-      std::cout << "Output sequence: " << output << std::endl;
-    }
-
-    NewProfileInfo new_profile_info;
-    new_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
-    new_profile_info.request_guid = guid;
-    new_profile_info.request_step_idx =
-        profiling_requests[guid].llm_decoding_steps - 1;
-    new_profile_info.num_speculated_tokens =
-        (int)request.suffix_decoding_best_token_ids.size();
-    new_profile_info.num_accepted_tokens = accepted_tokens;
-    new_profile_info.prefix_length = request.suffix_decoding_best_prefix_length;
-    new_profile_info.speculation_score = request.suffix_decoding_best_score;
-    new_profile_info.num_generated_tokens = nb_generated_tokens;
-    new_profiling_info.push_back(new_profile_info);
-  }
-  profiling.generated_tokens_per_step.push_back(total_nb_generated_tokens);
-}
-
 std::vector<GenerationResult>
     FFModel::generate(std::vector<GenerationRequest> &requests,
                       EmissionMachine &emission_machine) {
@@ -3106,8 +2497,7 @@ void RequestManager::background_serving_task(
       ssm->config.lg_ctx = ctx;
     }
   }
-  if (rm->decoding_mode == INCREMENTAL_DECODING ||
-      rm->decoding_mode == SUFFIX_DECODING) {
+  if (rm->decoding_mode == INCREMENTAL_DECODING) {
     // No SSMs: perform incremental decoding
     rm->serve_decoding(llm);
   } else {

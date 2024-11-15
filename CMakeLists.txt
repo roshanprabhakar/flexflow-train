@@ -288,41 +288,6 @@ if(NOT BUILD_LEGION_ONLY)
   list(REMOVE_ITEM FLEXFLOW_SRC "${FLEXFLOW_ROOT}/src/runtime/cpp_driver.cc")
   #list(APPEND FLEXFLOW_SRC ${FLEXFLOW_ROOT}/inference/file_loader.cc)
 
-  include(FetchContent)
-  include(FetchContent)
-
-  # Try fetching the repo using SSH first
-  FetchContent_Declare(
-    suffix_decoding_ssh
-    GIT_REPOSITORY git@github.com:Snowflake-Labs/suffix-tree-decoding.git
-    GIT_TAG main  # or a specific tag/commit hash
-  )
-
-  FetchContent_GetProperties(suffix_decoding_ssh)
-  if(NOT suffix_decoding_ssh_POPULATED)
-    message(STATUS "Trying to fetch suffix_decoding using SSH...")
-    FetchContent_Populate(suffix_decoding_ssh)
-  endif()
-
-  # If SSH fetch fails, fall back to HTTP
-  if(NOT EXISTS ${suffix_decoding_ssh_SOURCE_DIR})
-    message(STATUS "SSH fetch failed, falling back to HTTP...")
-    FetchContent_Declare(
-      suffix_decoding
-      GIT_REPOSITORY https://github.com/Snowflake-Labs/suffix-tree-decoding.git
-      GIT_TAG main  # or a specific tag/commit hash
-    )
-    FetchContent_MakeAvailable(suffix_decoding)
-    list(APPEND FLEXFLOW_INCLUDE_DIRS ${suffix_decoding_SOURCE_DIR}/src)
-    list(APPEND FLEXFLOW_SRC ${suffix_decoding_SOURCE_DIR}/src/suffix_decoding.cc)
-  else()
-    list(APPEND FLEXFLOW_INCLUDE_DIRS ${suffix_decoding_ssh_SOURCE_DIR}/src)
-    list(APPEND FLEXFLOW_SRC ${suffix_decoding_ssh_SOURCE_DIR}/src/suffix_decoding.cc)
-  endif()
-  # FetchContent_MakeAvailable(suffix_decoding)
-  # list(APPEND FLEXFLOW_INCLUDE_DIRS ${suffix_decoding_SOURCE_DIR}/src)
-  # list(APPEND FLEXFLOW_SRC ${suffix_decoding_SOURCE_DIR}/src/suffix_decoding.cc)
-
   set(FLEXFLOW_CPP_DRV_SRC
     ${FLEXFLOW_ROOT}/src/runtime/cpp_driver.cc)
 
@@ -615,7 +580,7 @@ if(NOT BUILD_LEGION_ONLY)
 
   if(FF_BUILD_ALL_INFERENCE_EXAMPLES OR FF_BUILD_ALL_EXAMPLES)
     add_subdirectory(inference/spec_infer)
-    add_subdirectory(inference/suffix_decoding)
+    add_subdirectory(inference/simplified_infer)
     add_subdirectory(inference/incr_decoding)
     add_subdirectory(inference/trace_generator)
   endif()

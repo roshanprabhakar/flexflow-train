@@ -19,7 +19,6 @@
 #include "flexflow/inference.h"
 #include "flexflow/model.h"
 #include "flexflow/utils/file_loader.h"
-#include "suffix_decoding.h"
 #include <condition_variable>
 #include <future>
 #include <mutex>
@@ -149,12 +148,6 @@ struct Request {
   Status status = PENDING;
   std::vector<BatchConfig::TokenId> tokens;
 
-  // TokenTree speculative_token_tree;
-  SuffixTree *prompt_tree = nullptr;
-  std::vector<int> suffix_decoding_best_token_ids;
-  std::vector<int> suffix_decoding_best_parents;
-  float suffix_decoding_best_score = 0.0f;
-  int suffix_decoding_best_prefix_length = 0;
   std::vector<TokenTree> speculative_token_trees;
   // To make request manager stateful, we need to store the causal mask here
   BatchConfig::BitMask causal_mask;
@@ -243,7 +236,6 @@ struct NewProfileInfo {
   int request_step_idx;
   int num_speculated_tokens;
   int num_accepted_tokens;
-  int prefix_length;
   double speculation_score;
   int num_generated_tokens;
   long long speculation_start_timestamp;
@@ -257,10 +249,8 @@ struct RequestProfileInfo {
   long long start_time = 0, start_decoding_time = 0, finish_time = 0;
   long long speculation_start_timestamp;
   long long speculation_end_timestamp;
-  // suffix decoding metrics
   std::vector<int> speculated_size_per_step;
   std::vector<int> accepted_tokens_per_step;
-  std::vector<int> prefix_length_per_step;
   std::vector<int> generated_tokens_per_step__;
 };
 struct ProfileInfo {
@@ -291,7 +281,6 @@ public:
     DECODING = 1002,
     SSM_SPEC = 1003,
     LLM_VERIFY = 1004,
-    SUFFIX_SPEC = 1005,
   };
   enum BackgroundServerStatus {
     INITIALIZED = 2001,
@@ -301,7 +290,6 @@ public:
   enum DecodingMode {
     INCREMENTAL_DECODING = 3001,
     SPECULATIVE_DECODING = 3002,
-    SUFFIX_DECODING = 3003,
   };
   enum PrefillModel {
     LLM = 4001,
@@ -372,18 +360,6 @@ public:
   void register_output_filepath(std::string const &);
 
   FFModel *get_ssm_model(int model_id);
-  int get_suffix_tree_max_depth();
-  void set_suffix_tree_max_depth(int max_depth);
-  MatchingStrategy get_suffix_tree_matching_strategy();
-  void set_suffix_tree_matching_strategy(MatchingStrategy strategy);
-  float get_suffix_tree_max_spec_factor();
-  void set_suffix_tree_max_spec_factor(float factor);
-  bool get_suffix_tree_online_tree_update();
-  void set_suffix_tree_online_tree_update(bool online_update);
-  void init_suffix_tree(std::string const &trace_filepath,
-                        std::string const &partition_name);
-  void insert_completed_request_into_suffix_tree(
-      int batch_index); // for suffix tree
 
   void serve_spec_infer(FFModel *model);
   void serve_spec_infer_sync(FFModel *model);
@@ -527,12 +503,6 @@ private:
   // Multi-model support
   std::vector<FFModel *> ssm_models;
 
-  int suffix_tree_max_depth = -1; // max depth of the suffix tree
-  MatchingStrategy suffix_tree_matching_strategy;
-  float suffix_tree_max_spec_factor = -1.0f;
-  bool suffix_tree_online_tree_update = true;
-  SuffixTree *suffix_tree = nullptr;
-
   // Background server handler
   Legion::Future background_server_handler;
 
@@ -573,17 +543,10 @@ private:
   BatchConfig prepare_first_spec_batch_config();
   BatchConfig prepare_verify_batch_config();
   BatchConfig prepare_verify_batch_config_sd();
-  /* ---------- Suffix Decoding Helper Functions ---------- */
-  bool update_llm_suffix_decoding_results(
-      InferenceResult const &llm_verify_result);
-  void populate_best_suffix_tree_candidates(Request &request);
-  BatchConfig prepare_suffix_decoding_batch_config();
 
   // LLM result verification
   void get_verify_results_greedy(InferenceResult const &llm_verify_result);
   void get_verify_results_sample(InferenceResult const &llm_verify_result);
-  void get_verify_results_suffix_decoding(
-      InferenceResult const &llm_verify_result);
 
   // Bitmask related
   void init_bitmask_prompt(RequestGuid guid, int prompt_length);
