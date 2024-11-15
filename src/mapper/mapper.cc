@@ -292,9 +292,7 @@ void FFMapper::select_task_options(MapperContext const ctx,
     output.initial_proc = all_cpus[0];
     return;
   }
-  if ((task.task_id == LOAD_FLOAT_WEIGHT_TASK_ID) ||
-      (task.task_id == LOAD_HALF_WEIGHT_TASK_ID) ||
-      (task.task_id == LOAD_QUANT_WEIGHT_TASK_ID)) {
+  if (task.task_id == LOAD_WEIGHT_TASK_ID) {
     output.initial_proc = all_cpus[0];
     return;
   }
@@ -655,17 +653,18 @@ void FFMapper::map_task(MapperContext const ctx,
                                task.regions[idx],
                                created,
                                &footprint)) {
-      if (log_instance_creation) {
-        for (size_t idx = 0; idx < created_instances.size(); idx++) {
-          log_ff_mapper.print("Instance[%zu]: memory:" IDFMT "	proc:" IDFMT
-                              "	size:%zu	task:%s",
-                              idx,
-                              created_instances[idx].memory.id,
-                              created_instances[idx].processor.id,
-                              created_instances[idx].size,
-                              created_instances[idx].task_name.c_str());
-        }
-      }
+      // if (log_instance_creation) {
+      //   for (size_t idx = 0; idx < created_instances.size(); idx++) {
+      //     log_ff_mapper.print("Instance[%zu]: memory: " IDFMT "	proc: "
+      //     IDFMT
+      //                         "	size: %zu	task: %s",
+      //                         idx,
+      //                         created_instances[idx].memory.id,
+      //                         created_instances[idx].processor.id,
+      //                         created_instances[idx].size,
+      //                         created_instances[idx].task_name.c_str());
+      //   }
+      // }
       // Report failed to creation
       log_ff_mapper.error(
           "Out of memory! FlexFlow failed to reserve block of size %s"
@@ -693,6 +692,16 @@ void FFMapper::map_task(MapperContext const ctx,
       clog.memory = target_mem;
       clog.processor = task.target_proc;
       created_instances.push_back(clog);
+      log_ff_mapper.print(
+          "Created Instance[%lu]: memory_kind: %s memory_id: %llx	"
+          "proc: " IDFMT "	size: %zu	(capacity %lu) task: %s",
+          created_instances.size() - 1,
+          Legion::Mapping::Utilities::to_string(clog.memory.kind()),
+          clog.memory.id,
+          clog.processor.id,
+          clog.size,
+          clog.memory.capacity(),
+          clog.task_name.c_str());
     }
   } // for idx
 }
