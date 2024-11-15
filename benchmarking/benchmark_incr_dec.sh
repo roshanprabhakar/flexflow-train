@@ -42,7 +42,7 @@ request_per_second_values=(
 )
 
 dataset_name="sharegpt"
-dataset_fp="../wildchat/${dataset_name}.json"
+dataset_fp="../benchmarking/${dataset_name}.json"
 partition_name="all"
 
 export LEGION_BACKTRACE=1
@@ -68,7 +68,7 @@ for j in "${!batch_sizes[@]}"; do
     metrics_fp="/usr/FlexFlow/inference/output/incr_dec_llm_${model_name_}_bz_${batch_size}_rate_${rate}_dataset_${dataset_name}.csv"
     rm $metrics_fp $output_fp $log_fp || true
 
-    time ./inference/suffix_decoding/incr_dec \
+    time ./inference/simplified_infer/incr_dec \
         -ll:gpu $NGPUS -ll:cpu $NCPUS -ll:util $NCPUS \
         -tensor-parallelism-degree $NGPUS \
         -ll:fsize $FSIZE -ll:zsize $ZSIZE -ll:csize $CSIZE \

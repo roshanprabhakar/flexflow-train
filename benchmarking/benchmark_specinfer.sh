@@ -52,7 +52,7 @@ request_per_second_values=(
 )
 
 dataset_name="sharegpt"
-dataset_fp="../wildchat/${dataset_name}.json"
+dataset_fp="../benchmarking/${dataset_name}.json"
 partition_name="all"
 
 export LEGION_BACKTRACE=1

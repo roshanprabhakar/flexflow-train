@@ -488,7 +488,6 @@ size_t RequestManager::get_num_ssms() {
   return ssm_models.size();
 }
 
-
 RequestManager::RequestGuid
     RequestManager::register_new_request(GenerationRequest const &req) {
   // Add a new request
@@ -738,7 +737,6 @@ bool isPrefixAndRemove(std::vector<int> const &prefix, std::vector<int> &vec) {
 
   return false;
 }
-
 
 void RequestManager::request_complete_clean_up(int batch_index) {
   RequestGuid guid = guid_of_requests[batch_index];
