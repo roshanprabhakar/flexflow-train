@@ -1,6 +1,10 @@
 import pandas as pd
 import re, os, math, argparse
 
+# Usage:
+# Run FlexFlow code with --log-instance-creation flag and redirect the output to a file
+# python mem_analysis.py --file_path /path/to/log_file.txt
+
 def extract_data(file_path):
     # Define regex patterns
     memory_allocator_pattern = re.compile(r'MemoryAllocator.*memory_kind: (\w+).*memory_id: (\w+).*size: (\d+).*capacity (\d+).*task_name: (.+)')
