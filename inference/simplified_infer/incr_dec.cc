@@ -19,7 +19,6 @@
 #include "models/llama.h"
 #include "models/mpt.h"
 #include "models/opt.h"
-#include "models/starcoder.h"
 #include <cassert>
 #include <wordexp.h>
 
@@ -31,9 +30,10 @@ Legion::Logger log_app("llama");
 
 struct FilePaths {
   std::string cache_folder_path;
-  std::string prompt_file_path;
   std::string trace_file_path;
-  std::string output_file_path;
+  std::string trace_output_path;
+  std::string log_file_path;
+  std::string csv_file_path;
 };
 
 void parse_input_args(char **argv,
@@ -42,24 +42,14 @@ void parse_input_args(char **argv,
                       std::string &llm_model_name,
                       bool &use_full_precision,
                       bool &verbose,
-                      bool &do_sample,
-                      float &temperature,
-                      float &topp,
                       int &max_requests_per_batch,
                       int &max_tokens_per_batch,
-                      int &max_tokens_per_ssm_batch,
-                      int &max_tokens_per_prefilling_batch,
                       int &max_sequence_length,
                       int &max_output_length,
-                      int &sampling_seed,
-                      bool &streaming_cache,
-                      bool &slo_attainment_early_termination,
-                      double &baseline_latency_ms,
-                      double &ssm_spec_latency_ms,
-                      double &llm_verify_latency_ms,
-                      double &request_per_second,
-                      std::string &emission_file_path,
-                      bool &add_special_tokens) {
+                      bool &do_sample,
+                      int &request_per_second,
+                      bool &add_special_tokens,
+                      std::string &target_partition) {
   for (int i = 1; i < argc; i++) {
     // llm model type
     if (!strcmp(argv[i], "-llm-model")) {
@@ -74,19 +64,26 @@ void parse_input_args(char **argv,
       paths.cache_folder_path = std::string(argv[++i]);
       continue;
     }
-    // prompts
-    if (!strcmp(argv[i], "-prompt")) {
-      paths.prompt_file_path = std::string(argv[++i]);
-      continue;
-    }
     // traces
     if (!strcmp(argv[i], "-trace")) {
       paths.trace_file_path = std::string(argv[++i]);
       continue;
     }
+    if (!strcmp(argv[i], "-trace-output-path")) {
+      paths.trace_output_path = std::string(argv[++i]);
+      continue;
+    }
+    if (!strcmp(argv[i], "-target-partition")) {
+      target_partition = std::string(argv[++i]);
+      continue;
+    }
     // output file
-    if (!strcmp(argv[i], "-output-file")) {
-      paths.output_file_path = std::string(argv[++i]);
+    if (!strcmp(argv[i], "-log-output-path")) {
+      paths.log_file_path = std::string(argv[++i]);
+      continue;
+    }
+    if (!strcmp(argv[i], "-csv-output-path")) {
+      paths.csv_file_path = std::string(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--use-full-precision")) {
@@ -102,28 +99,12 @@ void parse_input_args(char **argv,
       do_sample = true;
       continue;
     }
-    if (!strcmp(argv[i], "--temperature")) {
-      temperature = std::stof(argv[++i]);
-      continue;
-    }
-    if (!strcmp(argv[i], "--topp")) {
-      topp = std::stof(argv[++i]);
-      continue;
-    }
     if (!strcmp(argv[i], "--max-requests-per-batch")) {
       max_requests_per_batch = std::stoi(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--max-tokens-per-batch")) {
       max_tokens_per_batch = std::stoi(argv[++i]);
-      continue;
-    }
-    if (!strcmp(argv[i], "--max-tokens-per-ssm-batch")) {
-      max_tokens_per_ssm_batch = std::stoi(argv[++i]);
-      continue;
-    }
-    if (!strcmp(argv[i], "--max-tokens-per-prefilling-batch")) {
-      max_tokens_per_prefilling_batch = std::stoi(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--max-sequence-length")) {
@@ -134,40 +115,12 @@ void parse_input_args(char **argv,
       max_output_length = std::stoi(argv[++i]);
       continue;
     }
-    if (!strcmp(argv[i], "--sampling-seed")) {
-      sampling_seed = std::stoi(argv[++i]);
-      continue;
-    }
-    if (!strcmp(argv[i], "--enable-streaming-cache")) {
-      streaming_cache = true;
-      continue;
-    }
-    if (!strcmp(argv[i], "--slo-attainment-early-termination")) {
-      slo_attainment_early_termination = true;
-      continue;
-    }
-    if (!strcmp(argv[i], "--baseline-latency-ms")) {
-      baseline_latency_ms = std::stod(argv[++i]);
-      continue;
-    }
-    if (!strcmp(argv[i], "--ssm-spec-latency-ms")) {
-      ssm_spec_latency_ms = std::stod(argv[++i]);
-      continue;
-    }
-    if (!strcmp(argv[i], "--llm-verify-latency-ms")) {
-      llm_verify_latency_ms = std::stod(argv[++i]);
-      continue;
-    }
     if (!strcmp(argv[i], "--request-per-second")) {
-      request_per_second = std::stod(argv[++i]);
+      request_per_second = std::stoi(argv[++i]);
       continue;
     }
-    if (!strcmp(argv[i], "--emission-file-path")) {
-      emission_file_path = std::string(argv[++i]);
-      continue;
-    }
-    if (!strcmp(argv[i], "--no-special-tokens")) {
-      add_special_tokens = false;
+    if (!strcmp(argv[i], "--add-special-tokens")) {
+      add_special_tokens = true;
       continue;
     }
   }
@@ -196,25 +149,18 @@ void FlexFlow::top_level_task(Task const *task,
   bool use_full_precision = false;
   bool verbose = false;
   bool do_sample = false;
-  float temperature = 0.8f;
-  float topp = 0.6f;
-  int max_requests_per_batch = 1;
+  int max_requests_per_batch = 8;
   int max_tokens_per_batch = 128;
-  int max_tokens_per_ssm_batch = -1;
-  int max_tokens_per_prefilling_batch = -1;
-  int max_sequence_length = 256;
+  int max_sequence_length = 512;
   int max_output_length = 512;
+  int num_warmup_requests = 0;
+  double warmup_delay = 15.0;
   RequestManager::DecodingMode decoding_mode =
       RequestManager::INCREMENTAL_DECODING;
   int sampling_seed = 0;
-  bool streaming_cache = false;
-  bool slo_attainment_early_termination = false;
-  double baseline_latency_ms = 50;
-  double ssm_spec_latency_ms = 20;
-  double llm_verify_latency_ms = 50;
-  double request_per_second = 1.0;
-  bool add_special_tokens = true;
-  std::string emission_file_path;
+  int request_per_second = -1;
+  bool add_special_tokens = false;
+  std::string target_partition = "FEATURE_EXTRACTION";
 
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
   char **argv = command_args.argv;
@@ -225,35 +171,66 @@ void FlexFlow::top_level_task(Task const *task,
                    llm_model_name,
                    use_full_precision,
                    verbose,
-                   do_sample,
-                   temperature,
-                   topp,
                    max_requests_per_batch,
                    max_tokens_per_batch,
-                   max_tokens_per_ssm_batch,
-                   max_tokens_per_prefilling_batch,
                    max_sequence_length,
                    max_output_length,
-                   sampling_seed,
-                   streaming_cache,
-                   slo_attainment_early_termination,
-                   baseline_latency_ms,
-                   ssm_spec_latency_ms,
-                   llm_verify_latency_ms,
+                   do_sample,
                    request_per_second,
-                   emission_file_path,
-                   add_special_tokens);
-  if (max_tokens_per_ssm_batch == -1) {
-    max_tokens_per_ssm_batch = max_tokens_per_batch;
-  }
-  if (max_tokens_per_prefilling_batch == -1) {
-    max_tokens_per_prefilling_batch = max_tokens_per_batch;
-  }
+                   add_special_tokens,
+                   target_partition);
 
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
 
+  // Get dataset
+  std::ifstream input_file(file_paths.trace_file_path);
+  assert(input_file.good() && "Prompt file does not exist.");
+  nlohmann::ordered_json j = nlohmann::ordered_json::parse(input_file);
+  input_file.close();
+
+  // Find the partition with name "FEATURE_EXTRACTION"
+  auto &partitions = j["partitions"];
+  auto it =
+      std::find_if(partitions.begin(),
+                   partitions.end(),
+                   [target_partition](nlohmann::ordered_json const &partition) {
+                     return partition["partition_name"] == target_partition;
+                   });
+  nlohmann::ordered_json &partition = *it;
+  if (it == partitions.end()) {
+    std::cerr << "Partition " << target_partition
+              << " not found in the trace file." << std::endl;
+    assert(false);
+  }
+  // check that the max prompt + response length sum in the eval_entries in the
+  // partition does not exceed the max_sequence_length
+  int max_prompt_response_length = 0;
+  for (auto &eval_entry : partition["eval_entries"]) {
+    int prompt_length = eval_entry["prompt_length"];
+    int response_length = eval_entry["response_length"];
+    if (response_length >= max_output_length) {
+      std::cerr << "Error: A response length from the targt partition in the "
+                   "dataset (="
+                << response_length
+                << ") exceeds the max_output_length(=" << max_output_length
+                << ")." << std::endl;
+      assert(false);
+    }
+    max_prompt_response_length =
+        std::max(max_prompt_response_length, prompt_length + response_length);
+  }
+  if (max_prompt_response_length >= max_sequence_length) {
+    std::cerr << "Error: max prompt + response length sum (="
+              << max_prompt_response_length
+              << ") in the eval_entries in the partition exceeds the "
+                 "max_sequence_length(="
+              << max_sequence_length << ")." << std::endl;
+    assert(false);
+  }
+
+  // Get model configs
   std::string config_filepath = join_path(
       {file_paths.cache_folder_path, "configs", llm_model_name, "config.json"});
   std::string tokenizer_filepath =
@@ -286,9 +263,6 @@ void FlexFlow::top_level_task(Task const *task,
     } else if (str == "RWForCausalLM" || str == "FalconForCausalLM") {
       model_type = ModelType::FALCON;
       break;
-    } else if (str == "GPTBigCodeForCausalLM") {
-      model_type = ModelType::STARCODER;
-      break;
     } else if (str == "MPTForCausalLM") {
       model_type = ModelType::MPT;
       break;
@@ -297,9 +271,6 @@ void FlexFlow::top_level_task(Task const *task,
   int bos_token_id = model_config.find("bos_token_id") == model_config.end()
                          ? -1
                          : (int)model_config.at("bos_token_id");
-  // int eos_token_id = model_config.find("eos_token_id") == model_config.end()
-  //                        ? -1
-  //                        : (int)model_config.at("eos_token_id");
   std::vector<int> eos_token_ids;
   if (model_config.find("eos_token_id") != model_config.end()) {
     if (model_config["eos_token_id"].is_array()) {
@@ -316,27 +287,31 @@ void FlexFlow::top_level_task(Task const *task,
   assert(model_type != ModelType::UNKNOWN &&
          "Invalid LLM model type passed (or no type was passed).");
 
+  // set request manager properties
   srand(sampling_seed);
-  GenerationConfig generationConfig(do_sample, temperature, topp);
+  GenerationConfig generationConfig(do_sample, 0.8, 0.6, false, 16);
   RequestManager *rm = RequestManager::get_request_manager();
   rm->set_max_requests_per_batch(max_requests_per_batch);
   rm->set_max_tokens_per_batch(max_tokens_per_batch);
-  rm->set_max_tokens_per_ssm_batch(max_tokens_per_ssm_batch);
-  rm->set_max_tokens_per_prefilling_batch(max_tokens_per_prefilling_batch);
+  rm->set_max_tokens_per_ssm_batch(max_tokens_per_batch);
+  rm->set_max_tokens_per_prefilling_batch(max_tokens_per_batch);
   rm->set_max_sequence_length(max_sequence_length);
   rm->set_max_output_length(max_output_length);
   rm->set_decoding_mode(decoding_mode);
-  rm->set_slo_violation_early_termination(slo_attainment_early_termination);
-  rm->set_baseline_latency(baseline_latency_ms);
-  rm->set_ssm_spec_latency(ssm_spec_latency_ms);
-  rm->set_llm_verify_latency(llm_verify_latency_ms);
+  rm->set_slo_violation_early_termination(false);
+  rm->set_baseline_latency(50);
+  rm->set_ssm_spec_latency(20);
+  rm->set_llm_verify_latency(50);
+  rm->set_spec_infer_old_version(true);
+  rm->set_greedy_schedule(false);
+  rm->set_equal_schedule(false);
   rm->set_max_tree_depth(8);
   rm->set_max_tree_width(16);
   rm->set_verbose(verbose);
-  rm->set_streaming_cache(streaming_cache);
+  rm->set_streaming_cache(false);
   rm->register_tokenizer(
       model_type, bos_token_id, eos_token_ids, tokenizer_filepath);
-  rm->register_output_filepath(file_paths.output_file_path);
+  rm->register_output_filepath(file_paths.log_file_path);
 
   FFModel model(ffconfig, ffconfig.cpu_offload);
   if (model_type == ModelType::LLAMA) {
@@ -345,7 +320,7 @@ void FlexFlow::top_level_task(Task const *task,
                               weights_filepath,
                               INC_DECODING_MODE,
                               generationConfig,
-                              streaming_cache,
+                              false,
                               use_full_precision);
   } else if (model_type == ModelType::OPT) {
     OPT::create_opt_model(model,
@@ -359,13 +334,6 @@ void FlexFlow::top_level_task(Task const *task,
                                 weights_filepath,
                                 INC_DECODING_MODE,
                                 use_full_precision);
-  } else if (model_type == ModelType::STARCODER) {
-    STARCODER::create_starcoder_model(model,
-                                      config_filepath,
-                                      weights_filepath,
-                                      INC_DECODING_MODE,
-                                      generationConfig,
-                                      use_full_precision);
   } else if (model_type == ModelType::MPT) {
     MPT::create_mpt_model(model,
                           config_filepath,
@@ -379,82 +347,116 @@ void FlexFlow::top_level_task(Task const *task,
 
   rm->start_background_server(&model);
 
+  int total_num_requests = 0;
   {
+    // Iterate through eval_entries
     std::vector<GenerationRequest> requests;
-    std::vector<GenerationResult> results;
+    std::vector<double> timestamps, ratios;
+    if (partition.contains("num_warmup_requests")) {
+      num_warmup_requests = partition["num_warmup_requests"];
+    }
+    for (auto &entry : partition["eval_entries"]) {
+      std::string text = entry["prompt"];
+      int max_new_tokens_ = entry["response_length"];
 
-    if (!file_paths.prompt_file_path.empty()) {
-      std::ifstream file_handle(file_paths.prompt_file_path);
-      assert(file_handle.good() && "Prompt file does not exist.");
-      json prompt_json = json::parse(file_handle,
-                                     /*parser_callback_t */ nullptr,
-                                     /*allow_exceptions */ true,
-                                     /*ignore_comments */ true);
+      bool is_warmup_request = total_num_requests < num_warmup_requests;
+      double request_delay =
+          1000.0 *
+          (request_per_second > 0 ? (1.0 / (double)request_per_second) : 0);
+      double emission_time_ms =
+          is_warmup_request
+              ? 0.0
+              : (warmup_delay +
+                 request_delay * (total_num_requests - num_warmup_requests));
 
-      // Parse slo_ratios
-      std::vector<std::pair<double, double>> slo_ratios;
-      if (prompt_json[0].contains("slo_ratios")) {
-        for (auto &[key, value] : prompt_json[0]["slo_ratios"].items()) {
-          slo_ratios.emplace_back(std::stod(key), value.get<double>());
-        }
+      GenerationRequest inference_req(text,             // prompt
+                                      -1.0,             // slo_ratio
+                                      emission_time_ms, // emission_time_ms
+                                      add_special_tokens);
+
+      requests.push_back(inference_req);
+      timestamps.push_back(emission_time_ms);
+      ratios.push_back(1.0);
+      total_num_requests++;
+
+      if (verbose) {
+        break;
       }
-      double total = std::accumulate(
-          slo_ratios.begin(),
-          slo_ratios.end(),
-          0.0,
-          [](double sum, std::pair<double, double> const &pair) {
-            return sum + pair.second;
-          });
-      if (std::abs(total - 1.0) > 1e-6) {
-        std::cerr << "Error: slo_ratios values do not sum to 1. Total sum: "
-                  << total << std::endl;
-        assert(false);
-      }
-      for (size_t i = 1; i < prompt_json.size(); ++i) {
-        requests.push_back(
-            GenerationRequest(prompt_json[i]["prompt"].get<std::string>(),
-                              -1.0,
-                              0,
-                              add_special_tokens));
-      }
-      PoissonEmissionMachine emission_machine(request_per_second, slo_ratios);
-      // ConstantEmissionMachine emission_machine(-1, slo_ratios);
-      results = model.generate(requests, emission_machine);
-    } else if (!file_paths.trace_file_path.empty()) {
-      std::ifstream file_handle(file_paths.trace_file_path);
-      assert(file_handle.good() && "Trace file does not exist.");
-      json trace_json = json::parse(file_handle,
-                                    /*parser_callback_t */ nullptr,
-                                    /*allow_exceptions */ true,
-                                    /*ignore_comments */ true);
-      std::vector<double> timestamps, ratios;
-      for (auto const &json_obj : trace_json) {
-        EmissionTrace trace(json_obj);
-        requests.push_back(
-            GenerationRequest(trace.prompt, -1.0, 0, add_special_tokens));
-        timestamps.push_back(trace.emission_time_ms);
-        ratios.push_back(trace.slo_ratio);
-      }
-      TraceEmissionMachine emission_machine(timestamps, ratios);
-      results = model.generate(requests, emission_machine);
-    } else {
-      assert(false && "No prompt or trace file provided.");
+    }
+    TraceEmissionMachine emission_machine(timestamps, ratios);
+    std::vector<GenerationResult> result =
+        model.generate(requests, emission_machine);
+    assert(result.size() == requests.size());
+    assert(result.size() == total_num_requests);
+    assert(result.size() == partition["eval_entries"].size());
+    int i = 0;
+    for (auto &entry : partition["eval_entries"]) {
+      entry["original_response"] = entry["response"];
+      entry["original_response_length"] = entry["response_length"];
+      std::string ff_out = result[i].output_text;
+      int tot_length = result[i].output_text.length();
+      entry["response"] = ff_out;
+      entry["response_length"] = result[i].output_tokens.size();
+      entry["specinfer_decoding_steps"] = result[i].decoding_steps;
+      i++;
     }
 
-    // output generation results as json
-    if (!emission_file_path.empty()) {
-      json output_json;
-      for (size_t i = 0; i < results.size(); ++i) {
-        EmissionTrace trace(results[i]);
-        output_json.push_back(trace.to_json());
-      }
-      std::ofstream emission_file_handle(emission_file_path);
-      emission_file_handle << output_json.dump(2) << std::endl;
+    // Write the modified JSON to a file
+    std::ofstream output_file(file_paths.trace_output_path);
+    if (output_file.is_open()) {
+      output_file << j.dump(2);
+      output_file.close();
+      std::cout << "Modified JSON has been saved to "
+                << file_paths.trace_output_path << std::endl;
+    } else {
+      std::cerr << "Unable to open file for writing." << std::endl;
     }
   }
 
   // terminate the request manager by stopping the background thread
   rm->terminate_background_server();
+
+  std::string header =
+      "llm,partition,max_requests_per_batch,max_tokens_per_"
+      "batch,request_per_second,is_warmup_request,request_guid,"
+      "request_step_idx,timestamp,num_generated_tokens";
+  // csv filepath
+  // create csv filepath and add header if it doesn't exist
+
+  bool csv_file_exists = std::filesystem::exists(file_paths.csv_file_path);
+  if (!csv_file_exists) {
+    // Create new file and write header
+    std::ofstream file(file_paths.csv_file_path);
+    if (!file.is_open()) {
+      std::cerr << "Failed to open file: " << file_paths.csv_file_path
+                << std::endl;
+      assert(false);
+    }
+    file << header << "\n";
+    file.close();
+  }
+
+  // Append the new row
+  std::ofstream file(file_paths.csv_file_path, std::ios::app);
+  if (!file.is_open()) {
+    std::cerr << "Failed to open file: " << file_paths.csv_file_path
+              << std::endl;
+  }
+
+  std::vector<NewProfileInfo> new_profiling_info = rm->get_new_profiling_info();
+  for (auto const &info : new_profiling_info) {
+    file << llm_model_name + ",";
+    file << target_partition + ",";
+    file << std::to_string(max_requests_per_batch) + ",";
+    file << std::to_string(max_tokens_per_batch) + ",";
+    file << std::to_string(request_per_second) + ",";
+    bool is_warmup_request =
+        (info.request_guid - 1000000) < num_warmup_requests;
+    file << std::to_string(is_warmup_request) + ",";
+    file << info.request_guid << "," << info.request_step_idx << ","
+         << info.timestamp << "," << info.num_generated_tokens << "\n";
+  }
+  file.close();
 
   // Execution fence
   {

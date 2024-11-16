@@ -403,13 +403,13 @@ __global__ void apply_pos_encoding_to_streaming_proj_kernel(
   // Apply the rotary position encoding.
   cuFloatComplex cii = {kv_cache[real_part_idx], kv_cache[complex_part_idx]};
   size_t pos = token_idx;
-  float freq = pos * (1.0 / pow(rope_theta, (float)2 * offset_in_head / head_dim));
+  float freq =
+      pos * (1.0 / pow(rope_theta, (float)2 * offset_in_head / head_dim));
 
   if (llama3_rope) {
     float pi = CUDART_PI_F;
     float wavelen = 2 * pi / freq;
-    float low_freq_wavelen =
-        original_max_position_embeddings / low_freq_factor;
+    float low_freq_wavelen = original_max_position_embeddings / low_freq_factor;
     float high_freq_wavelen =
         original_max_position_embeddings / high_freq_factor;
     if (wavelen < high_freq_wavelen) {
@@ -439,7 +439,7 @@ void apply_pos_encoding_to_streaming_proj(
   // apply rotary embedding if needed
   if (!m->rotary_embedding_meta->apply_rotary_embedding) {
     return;
-  }  
+  }
   int const kv_hidden_size = m->num_kv_heads * m->qk_dim;
   int num_tokens = 0;
   for (int req_idx = 0; req_idx < BatchConfig::max_requests_per_batch();
