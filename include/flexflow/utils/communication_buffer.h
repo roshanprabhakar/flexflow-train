@@ -24,7 +24,6 @@
 #include <rccl/rccl.h>
 #endif
 #endif
-#include "legion.h"
 
 // adapted from https://github.com/mlc-ai/relax
 
@@ -59,9 +58,7 @@ public:
   int *barrier_flag;
 };
 
-CommunicationBuffer *create_comm_buf_with_local_ptr(Legion::Context ctx,
-                                                    Legion::Runtime *runtime,
-                                                    int num_devices,
+CommunicationBuffer *create_comm_buf_with_local_ptr(int num_devices,
                                                     int device_id,
                                                     ncclComm_t ncclComm,
                                                     void *allgather_src,

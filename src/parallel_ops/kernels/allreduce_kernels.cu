@@ -58,9 +58,7 @@ AllReduceMeta::~AllReduceMeta() {
 namespace Kernels {
 namespace AllReduce {
 
-CommunicationBuffer *get_or_create_comm_buffer(Legion::Context ctx,
-                                               Legion::Runtime *runtime,
-                                               AllReduceMeta *m,
+CommunicationBuffer *get_or_create_comm_buffer(AllReduceMeta *m,
                                                int num_devices,
                                                int device_id,
                                                ncclComm_t ncclComm,
@@ -71,9 +69,7 @@ CommunicationBuffer *get_or_create_comm_buffer(Legion::Context ctx,
     return iter->second;
   } else {
     CommunicationBuffer *comm_buffer =
-        create_comm_buf_with_local_ptr(ctx,
-                                       runtime,
-                                       num_devices,
+        create_comm_buf_with_local_ptr(num_devices,
                                        device_id,
                                        ncclComm,
                                        m->allgather_src,
@@ -123,8 +119,8 @@ inline bool CanApplyTwoShotAllReduce(int64_t num_elements,
 }
 
 // Customized all-reduce kernel backed by CUDA Peer memory.
-void inference_kernel_wrapper(Legion::Context ctx,
-                              Legion::Runtime *runtime,
+void inference_kernel_wrapper(Context ctx,
+                              Runtime *runtime,
                               AllReduceMeta *m,
                               BatchConfig const *bc,
                               GenericTensorAccessorR const &input,
@@ -138,72 +134,68 @@ void inference_kernel_wrapper(Legion::Context ctx,
   assert(input.domain == output.domain);
   size_t hidden_dim_size = input.domain.hi()[0] - input.domain.lo()[0] + 1;
   size_t num_elements = bc->num_tokens * hidden_dim_size;
-  // int num_devices = m->handle.num_devices;
-  // int device_id = m->handle.device_id;
+  int num_devices = m->handle.num_devices;
+  int device_id = m->handle.device_id;
   ncclComm_t ncclComm = m->handle.ncclComm;
   DataType dtype = input.data_type;
 
-  // tensorrt_llm::AllReduceStrategyType strategy =
-  //     tensorrt_llm::SelectImplementation(
-  //         num_elements * ((get_bits(dtype) + 7) / 8), num_devices);
+  tensorrt_llm::AllReduceStrategyType strategy =
+      tensorrt_llm::SelectImplementation(
+          num_elements * ((get_bits(dtype) + 7) / 8), num_devices);
 
-  // if (strategy == tensorrt_llm::AllReduceStrategyType::RING ||
-  //     !CanApplyCustomAllReduce(num_elements, dtype)) {
-  // Dispatch to nccl AllReduce if the customized all-reduce cannot apply.
-  ncclDataType_t nccl_data_type = ff_to_nccl_datatype(dtype);
-  runtime->concurrent_task_barrier(ctx);
-  checkNCCL(ncclAllReduce(input.ptr,
-                          output.ptr,
-                          num_elements,
-                          nccl_data_type,
-                          ncclSum,
-                          ncclComm,
-                          stream));
-  runtime->concurrent_task_barrier(ctx);
-  //   return;
-  // }
+  if (strategy == tensorrt_llm::AllReduceStrategyType::RING ||
+      !CanApplyCustomAllReduce(num_elements, dtype)) {
+    // Dispatch to nccl AllReduce if the customized all-reduce cannot apply.
+    ncclDataType_t nccl_data_type = ff_to_nccl_datatype(dtype);
+    runtime->concurrent_task_barrier(ctx);
+    checkNCCL(ncclAllReduce(input.ptr,
+                            output.ptr,
+                            num_elements,
+                            nccl_data_type,
+                            ncclSum,
+                            ncclComm,
+                            stream));
+    runtime->concurrent_task_barrier(ctx);
+    return;
+  }
 
-  // // Initialize the all-reduce kernel arguments.
-  // tensorrt_llm::AllReduceParams params;
-  // params.ranks_per_node = num_devices;
-  // params.rank = device_id;
-  // params.local_rank = device_id;
-  // CommunicationBuffer *comm_buffer =
-  //     get_or_create_comm_buffer(ctx,
-  //                               runtime,
-  //                               m,
-  //                               num_devices,
-  //                               device_id,
-  //                               ncclComm,
-  //                               const_cast<void *>(input.ptr),
-  //                               stream);
-  // params.barrier_flag = ++(*comm_buffer->barrier_flag);
-  // for (int i = 0; i < num_devices; ++i) {
-  //   params.peer_comm_buffer_ptrs[i] = comm_buffer->comm_ptrs[i];
-  // }
-  // for (int i = 0; i < num_devices; ++i) {
-  //   params.peer_barrier_ptrs_in[i] =
-  //       reinterpret_cast<uint32_t *>(comm_buffer->barrier_in[i]);
-  // }
-  // for (int i = 0; i < num_devices; ++i) {
-  //   params.peer_barrier_ptrs_out[i] =
-  //       reinterpret_cast<uint32_t *>(comm_buffer->barrier_out[i]);
-  // }
+  // Initialize the all-reduce kernel arguments.
+  tensorrt_llm::AllReduceParams params;
+  params.ranks_per_node = num_devices;
+  params.rank = device_id;
+  params.local_rank = device_id;
+  CommunicationBuffer *comm_buffer =
+      get_or_create_comm_buffer(m,
+                                num_devices,
+                                device_id,
+                                ncclComm,
+                                const_cast<void *>(input.ptr),
+                                stream);
+  params.barrier_flag = ++(*comm_buffer->barrier_flag);
+  for (int i = 0; i < num_devices; ++i) {
+    params.peer_comm_buffer_ptrs[i] = comm_buffer->comm_ptrs[i];
+  }
+  for (int i = 0; i < num_devices; ++i) {
+    params.peer_barrier_ptrs_in[i] =
+        reinterpret_cast<uint32_t *>(comm_buffer->barrier_in[i]);
+  }
+  for (int i = 0; i < num_devices; ++i) {
+    params.peer_barrier_ptrs_out[i] =
+        reinterpret_cast<uint32_t *>(comm_buffer->barrier_out[i]);
+  }
 
-  // if (!CanApplyTwoShotAllReduce(num_elements, dtype, num_devices)) {
-  //   // Two-shot all-reduce does not support this case.
-  //   // So we fallback to the one-shot strategy.
-  //   strategy = tensorrt_llm::AllReduceStrategyType::ONESHOT;
-  // }
+  if (!CanApplyTwoShotAllReduce(num_elements, dtype, num_devices)) {
+    // Two-shot all-reduce does not support this case.
+    // So we fallback to the one-shot strategy.
+    strategy = tensorrt_llm::AllReduceStrategyType::ONESHOT;
+  }
 
-  // runtime->concurrent_task_barrier(ctx);
-  // tensorrt_llm::customAllReduce(
-  //     params, output.ptr, num_elements, dtype, strategy, stream);
-  // runtime->concurrent_task_barrier(ctx);
+  tensorrt_llm::customAllReduce(
+      params, output.ptr, num_elements, dtype, strategy, stream);
 }
 
-void forward_kernel_wrapper(Legion::Context ctx,
-                            Legion::Runtime *runtime,
+void forward_kernel_wrapper(Context ctx,
+                            Runtime *runtime,
                             AllReduceMeta const *m,
                             GenericTensorAccessorR const &input,
                             GenericTensorAccessorW const &output) {

@@ -23,9 +23,7 @@
 // For the i-th pointer, if i is the worker id of the given device,
 // then the returned i-th ptr_group is the local pointer,
 // or otherwise it is an peer memory pointer from the remote device.
-std::vector<void *> create_peer_ptr_group(Legion::Context ctx,
-                                          Legion::Runtime *runtime,
-                                          int num_devices,
+std::vector<void *> create_peer_ptr_group(int num_devices,
                                           int device_id,
                                           ncclComm_t ncclComm,
                                           void *allgather_src,
@@ -48,14 +46,12 @@ std::vector<void *> create_peer_ptr_group(Legion::Context ctx,
                             cudaMemcpyHostToDevice,
                             stream));
 
-  runtime->concurrent_task_barrier(ctx);
   checkNCCL(ncclAllGather(allgather_src,
                           allgather_dst,
                           sizeof(void *),
                           ncclChar,
                           ncclComm,
                           stream));
-  runtime->concurrent_task_barrier(ctx);
 
   std::vector<void *> peer_pointers(num_devices);
   checkCUDA(cudaMemcpyAsync(peer_pointers.data(),
@@ -89,9 +85,7 @@ void free_peer_ptr_group(std::vector<void *> ptr_group,
 // all-gathering peer pointers across devices. The size of allgather_src should
 // be sizeof(void*), and the size of allgather_dst should be sizeof(void*) *
 // num_devices.
-CommunicationBuffer *create_comm_buf_with_local_ptr(Legion::Context ctx,
-                                                    Legion::Runtime *runtime,
-                                                    int num_devices,
+CommunicationBuffer *create_comm_buf_with_local_ptr(int num_devices,
                                                     int device_id,
                                                     ncclComm_t ncclComm,
                                                     void *allgather_src,
@@ -106,27 +100,21 @@ CommunicationBuffer *create_comm_buf_with_local_ptr(Legion::Context ctx,
   comm_buf->num_devices = num_devices;
   comm_buf->device_id = device_id;
   comm_buf->local_ptr = local_ptr;
-  comm_buf->comm_ptrs = create_peer_ptr_group(ctx,
-                                              runtime,
-                                              num_devices,
+  comm_buf->comm_ptrs = create_peer_ptr_group(num_devices,
                                               device_id,
                                               ncclComm,
                                               allgather_src,
                                               allgather_dst,
                                               local_ptr,
                                               stream);
-  comm_buf->barrier_in = create_peer_ptr_group(ctx,
-                                               runtime,
-                                               num_devices,
+  comm_buf->barrier_in = create_peer_ptr_group(num_devices,
                                                device_id,
                                                ncclComm,
                                                allgather_src,
                                                allgather_dst,
                                                barrier_in_ptr,
                                                stream);
-  comm_buf->barrier_out = create_peer_ptr_group(ctx,
-                                                runtime,
-                                                num_devices,
+  comm_buf->barrier_out = create_peer_ptr_group(num_devices,
                                                 device_id,
                                                 ncclComm,
                                                 allgather_src,
