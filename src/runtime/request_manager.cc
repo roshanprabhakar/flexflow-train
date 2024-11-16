@@ -1875,7 +1875,6 @@ bool RequestManager::update_ssm_inference_results(
     profiling_requests[guid].ssm_decoding_steps++;
 
     if (current_ssm_step == ssm_tree_depth) {
-      assert(profiling_requests[guid].ssm_decoding_steps % ssm_tree_depth == 0);
       profiling_requests[guid].speculation_start_timestamp =
           profiling.ssm_step_start;
       profiling_requests[guid].speculation_end_timestamp =
@@ -2728,6 +2727,25 @@ void RequestManager::terminate_background_server() {
     for (int num_tokens : profiling.generated_tokens_per_step) {
       total_tokens += num_tokens;
     }
+
+    if (profiling_requests.size() != all_requests.size()) {
+      std::cerr << "profiling_requests.size()=" << profiling_requests.size()
+                << " != all_requests.size()=" << all_requests.size()
+                << std::endl;
+    }
+    assert(profiling_requests.size() == all_requests.size());
+    str += "\nDecoding Steps: ";
+    for (auto const &profiling_info : profiling_requests) {
+      int request_id = profiling_info.first;
+      Request &request = all_requests[request_id];
+      str += "Request " + std::to_string(request_id) + ": ";
+      str += std::to_string(profiling_info.second.llm_decoding_steps);
+      str += "/";
+      str += std::to_string(request.decode_length());
+      float speedup = (float)request.decode_length() /
+                      profiling_info.second.llm_decoding_steps;
+      str += " " + std::to_string(speedup) + "\n";
+    }
     str += "\n total_time_ms(" + std::to_string(total_time / 1000.0) + ")";
     str += "\n total_requests(" + std::to_string(total_requests) + "/" +
            std::to_string(all_requests.size()) + ")";
@@ -2877,25 +2895,6 @@ void RequestManager::terminate_background_server() {
     goodput_str += std::to_string(goodput);
     goodput_str += ")";
     str += goodput_str;
-
-    if (profiling_requests.size() != all_requests.size()) {
-      std::cerr << "profiling_requests.size()=" << profiling_requests.size()
-                << " != all_requests.size()=" << all_requests.size()
-                << std::endl;
-    }
-    assert(profiling_requests.size() == all_requests.size());
-    str += "\nDecoding Steps: ";
-    for (auto const &profiling_info : profiling_requests) {
-      int request_id = profiling_info.first;
-      Request &request = all_requests[request_id];
-      str += "Request " + std::to_string(request_id) + ": ";
-      str += std::to_string(profiling_info.second.llm_decoding_steps);
-      str += "/";
-      str += std::to_string(request.decode_length());
-      float speedup = (float)request.decode_length() /
-                      profiling_info.second.llm_decoding_steps;
-      str += " " + std::to_string(speedup) + "\n";
-    }
 
     write_to_output_file("", str);
     background_server_status = TERMINATED;
