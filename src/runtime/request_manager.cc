@@ -500,19 +500,19 @@ RequestManager::RequestGuid
     request.tokens.push_back(bos_token_id);
   }
   std::vector<int32_t> tokens = this->tokenizer_->Encode(req.prompt);
-  // for (int i = 0; i < tokens.size(); i++) {
-  //   std::cout << "[" << i << "]" << tokens.at(i) << "\n";
-  // }
-  // std::cout << "[slo ratio] " << req.slo_ratio << std::endl;
+  for (int i = 0; i < tokens.size(); i++) {
+    std::cout << "[" << i << "]" << tokens.at(i) << "\n";
+  }
+  std::cout << "[slo ratio] " << req.slo_ratio << std::endl;
   request.tokens.insert(request.tokens.end(), tokens.begin(), tokens.end());
   request.set_slo_ratio(req.slo_ratio);
 
   if (get_num_ssms() == 0) {
-    // std::cout << "No small speculative model registered, using incremental "
-    //  "decoding."
-    // << std::endl;
+    std::cout << "No small speculative model registered, using incremental "
+                 "decoding."
+              << std::endl;
   } else {
-    // std::cout << "Num of SSMs: " << get_num_ssms() << std::endl;
+    std::cout << "Num of SSMs: " << get_num_ssms() << std::endl;
     assert(get_num_ssms() == 1 && "Only one SSM is supported now.");
     init_token_tree(request.guid);
   }
@@ -762,8 +762,6 @@ void RequestManager::request_complete_clean_up(int batch_index) {
   // }
   // std::string output =
   //     this->tokenizer_->Decode(std::vector<int>(bos_it, eos_it));
-  std::string output = this->tokenizer_->Decode(request.tokens);
-
   {
     std::lock_guard<std::mutex> const lock(request_result_mutex);
     request_generation_results[guid].output_tokens = request.tokens;
@@ -786,12 +784,13 @@ void RequestManager::request_complete_clean_up(int batch_index) {
 
   trigger_request_completion_future(guid);
 
-  std::cout << "Request " << guid << " completed" << std::endl;
-  // std::cout << "<bos>" << output;
-  // if (eos_rit != request.tokens.rend()) {
-  //   std::cout << "<eos>";
-  // }
-  // std::cout << std::endl << std::endl;
+  std::string output = this->tokenizer_->Decode(request.tokens);
+  std::cout << "Request " << guid << " completed: " << std::endl;
+  std::cout << "<bos>" << output;
+  if (is_eos_token(request.tokens.back())) {
+    std::cout << "<eos>";
+  }
+  std::cout << std::endl << std::endl;
   {
     RequestProfileInfo profile_info = profiling_requests[guid];
 
@@ -2424,10 +2423,10 @@ std::vector<GenerationResult>
   for (size_t i = 0; i < requests.size(); i++) {
     requests[i].slo_ratio = emission_machine.sample_slo_ratio();
     requests[i].emission_time_ms = emission_machine.get_elapsed_time_ms();
-    // printf("Prompt[%ld] with slo %.3f: %s\n",
-    //        i,
-    //        requests[i].slo_ratio,
-    //        requests[i].prompt.c_str());
+    printf("Prompt[%ld] with slo %.3f: %s\n",
+           i,
+           requests[i].slo_ratio,
+           requests[i].prompt.c_str());
     RequestManager::RequestGuid guid = rm->register_new_request(requests[i]);
     if (guid != RequestManager::INVALID_GUID) {
       guids.push_back(guid);
