@@ -39,7 +39,13 @@ public:
   void load_single_weight_tensor(FFModel *ff, Layer *l, int weight_idx);
 
   void load_quantization_weight(FFModel *ff, Layer *l, int weight_idx);
-  void load_weights(FFModel *ff);
+
+  static void
+      load_weight_task(Legion::Task const *task,
+                       std::vector<Legion::PhysicalRegion> const &regions,
+                       Legion::Context ctx,
+                       Legion::Runtime *runtime);
+  void load_weights_parallel(FFModel *ff, Context ctx, Runtime *runtime);
 
   void load_positions(FFModel *ff,
                       Tensor pt,
@@ -53,4 +59,19 @@ private:
   std::string prompts_filepath;
   std::string weights_folder;
   bool use_full_precision;
+};
+
+struct WeightLoadTaskArgs {
+  FFModel *ff;
+  FileDataLoader *loader;
+  Layer *layer;
+  int weight_idx;
+  DataType data_type;
+  WeightLoadTaskArgs(FFModel *_ff,
+                     FileDataLoader *_loader,
+                     Layer *_l,
+                     int _idx,
+                     DataType _data_type)
+      : ff(_ff), loader(_loader), layer(_l), weight_idx(_idx),
+        data_type(_data_type) {}
 };

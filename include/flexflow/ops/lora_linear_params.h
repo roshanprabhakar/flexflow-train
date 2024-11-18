@@ -17,6 +17,9 @@ namespace FlexFlow {
 class LoraOptimizerConfig {
 public:
   LoraOptimizerConfig();
+  virtual std::string getType() const = 0;
+  virtual nlohmann::json toJson() const = 0;
+  static LoraOptimizerConfig *fromJson(nlohmann::json const &j);
   virtual ~LoraOptimizerConfig() {}
 };
 
@@ -29,9 +32,11 @@ public:
                          bool weight_decay_ = 0.0f);
   friend std::ostream &operator<<(std::ostream &os,
                                   LoraSGDOptimizerConfig const &llc);
-
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(
-      LoraSGDOptimizerConfig, lr, momentum, nesterov, weight_decay)
+  std::string getType() const override {
+    return "SGD";
+  }
+  nlohmann::json toJson() const override;
+  static LoraSGDOptimizerConfig *fromJson(nlohmann::json const &j);
 
 public:
   double lr = 0.001f;
@@ -51,8 +56,11 @@ public:
   friend std::ostream &operator<<(std::ostream &os,
                                   LoraAdamOptimizerConfig const &llc);
 
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(
-      LoraAdamOptimizerConfig, alpha, beta1, beta2, weight_decay, epsilon)
+  std::string getType() const override {
+    return "Adam";
+  }
+  nlohmann::json toJson() const override;
+  static LoraAdamOptimizerConfig *fromJson(nlohmann::json const &j);
 
 public:
   // Adam
@@ -62,14 +70,6 @@ public:
   double weight_decay = 0.0f;
   double epsilon = 1e-8;
 };
-
-// Serialization helpers
-template <typename T>
-void serialize_to_json_file(T const &obj, fs::path const &filepath);
-
-// Function to deserialize JSON from file and create object
-template <typename T>
-std::unique_ptr<T> deserialize_from_json_file(fs::path const &filepath);
 
 class LoraLinearConfig {
 public:
@@ -92,17 +92,14 @@ public:
   friend std::ostream &operator<<(std::ostream &os,
                                   LoraLinearConfig const &llc);
 
-  NLOHMANN_DEFINE_TYPE_INTRUSIVE(LoraLinearConfig,
-                                 cache_folder,
-                                 peft_model_id,
-                                 rank,
-                                 lora_alpha,
-                                 lora_dropout,
-                                 target_modules,
-                                 trainable,
-                                 init_lora_weights,
-                                 base_model_name_or_path,
-                                 precision)
+  std::string serialize_to_json_string(int indent = -1) const;
+  void serialize_to_json_file(std::string const &filename) const;
+  // Deserialization method
+  static LoraLinearConfig
+      deserialize_from_json_string(std::string const &json_string);
+  // Deserialization method
+  static LoraLinearConfig
+      deserialize_from_json_file(std::string const &filename);
 
   std::string cache_folder;
   // Huggingface model ID (for download and/or upload)
@@ -128,8 +125,8 @@ public:
 class LoraLinearParams {
 public:
   LayerID layer_guid;
-  OperatorType type;
-  std::unordered_map<PEFTModelID, LoraLinearConfig> peft_configs;
+  int max_rank;
+  int max_concurrent_adapters;
   char name[MAX_OPNAME];
 
   bool is_valid(std::pair<ParallelTensorShape, ParallelTensorShape> const

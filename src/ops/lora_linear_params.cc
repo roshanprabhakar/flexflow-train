@@ -12,6 +12,17 @@ namespace FlexFlow {
 // empty optimizer
 LoraOptimizerConfig::LoraOptimizerConfig() {}
 
+LoraOptimizerConfig *LoraOptimizerConfig::fromJson(nlohmann::json const &j) {
+  std::string type = j["type"];
+  if (type == "SGD") {
+    return LoraSGDOptimizerConfig::fromJson(j);
+  }
+  if (type == "Adam") {
+    return LoraAdamOptimizerConfig::fromJson(j);
+  }
+  throw std::runtime_error("Unknown optimizer type");
+}
+
 // SGD optimizer
 LoraSGDOptimizerConfig::LoraSGDOptimizerConfig()
     : lr(0.001f), momentum(0.0f), nesterov(false), weight_decay(0.0f) {}
@@ -28,6 +39,24 @@ std::ostream &operator<<(std::ostream &os, LoraSGDOptimizerConfig const &llc) {
      << ",nesterov=" << llc.nesterov << ",weight_decay=" << llc.weight_decay
      << ")";
   return os;
+}
+
+nlohmann::json LoraSGDOptimizerConfig::toJson() const {
+  return {{"type", "SGD"},
+          {"lr", lr},
+          {"momentum", momentum},
+          {"nesterov", nesterov},
+          {"weight_decay", weight_decay}};
+}
+
+LoraSGDOptimizerConfig *
+    LoraSGDOptimizerConfig::fromJson(nlohmann::json const &j) {
+  LoraSGDOptimizerConfig *sgd = new LoraSGDOptimizerConfig();
+  sgd->lr = j["lr"];
+  sgd->momentum = j["momentum"];
+  sgd->nesterov = j["nesterov"];
+  sgd->weight_decay = j["weight_decay"];
+  return sgd;
 }
 
 // Adam optimizer
@@ -50,37 +79,25 @@ std::ostream &operator<<(std::ostream &os, LoraAdamOptimizerConfig const &llc) {
   return os;
 }
 
-// Serialization helpers
-template <typename T>
-void serialize_to_json_file(T const &obj, fs::path const &filepath) {
-  json j = obj;
-  std::ofstream file(filepath);
-  file << j.dump(4);
+nlohmann::json LoraAdamOptimizerConfig::toJson() const {
+  return {{"type", "Adam"},
+          {"alpha", alpha},
+          {"beta1", beta1},
+          {"beta2", beta2},
+          {"weight_decay", weight_decay},
+          {"epsilon", epsilon}};
 }
 
-template <typename T>
-std::unique_ptr<T> deserialize_from_json_file(fs::path const &filepath) {
-  std::ifstream file(filepath);
-  json j;
-  file >> j;
-  return std::make_unique<T>(j.get<T>());
+LoraAdamOptimizerConfig *
+    LoraAdamOptimizerConfig::fromJson(nlohmann::json const &j) {
+  LoraAdamOptimizerConfig *adam = new LoraAdamOptimizerConfig();
+  adam->alpha = j["alpha"];
+  adam->beta1 = j["beta1"];
+  adam->beta2 = j["beta2"];
+  adam->weight_decay = j["weight_decay"];
+  adam->epsilon = j["epsilon"];
+  return adam;
 }
-
-template void
-    serialize_to_json_file<LoraLinearConfig>(LoraLinearConfig const &obj,
-                                             fs::path const &filepath);
-template void serialize_to_json_file<LoraSGDOptimizerConfig>(
-    LoraSGDOptimizerConfig const &obj, fs::path const &filepath);
-template void serialize_to_json_file<LoraAdamOptimizerConfig>(
-    LoraAdamOptimizerConfig const &obj, fs::path const &filepath);
-template std::unique_ptr<LoraLinearConfig>
-    deserialize_from_json_file<LoraLinearConfig>(fs::path const &filepath);
-template std::unique_ptr<LoraSGDOptimizerConfig>
-    deserialize_from_json_file<LoraSGDOptimizerConfig>(
-        fs::path const &filepath);
-template std::unique_ptr<LoraAdamOptimizerConfig>
-    deserialize_from_json_file<LoraAdamOptimizerConfig>(
-        fs::path const &filepath);
 
 // ------------------ LoRA configs -------------------
 // ---------------------------------------------------
@@ -216,6 +233,78 @@ std::ostream &operator<<(std::ostream &os, LoraLinearConfig const &llc) {
   os << "base_model_name_or_path: " << llc.base_model_name_or_path << std::endl;
   os << "precision: " << llc.precision << std::endl;
   return os;
+}
+
+double ToThreeDecimalPlaces(float f) {
+  double d = static_cast<double>(f);
+  int i;
+  if (d >= 0) {
+    i = static_cast<int>(d * 1000 + 0.5);
+  } else {
+    i = static_cast<int>(d * 1000 - 0.5);
+  }
+  return (i / 1000.0);
+}
+
+std::string LoraLinearConfig::serialize_to_json_string(int indent) const {
+  nlohmann::json j = {{"cache_folder", cache_folder},
+                      {"peft_model_id", peft_model_id},
+                      {"rank", rank},
+                      {"lora_alpha", ToThreeDecimalPlaces(lora_alpha)},
+                      {"lora_dropout", ToThreeDecimalPlaces(lora_dropout)},
+                      {"target_modules", target_modules},
+                      {"trainable", trainable},
+                      {"init_lora_weights", init_lora_weights},
+                      {"base_model_name_or_path", base_model_name_or_path},
+                      {"precision", precision},
+                      {"optimizer_config",
+                       optimizer_config
+                           ? nlohmann::json(optimizer_config->toJson())
+                           : nlohmann::json()}};
+
+  return j.dump(indent); // No indentation
+}
+
+void LoraLinearConfig::serialize_to_json_file(
+    std::string const &filename) const {
+  std::string j = serialize_to_json_string(4);
+  std::ofstream file(filename);
+  file << j;
+}
+
+// Deserialization method
+LoraLinearConfig LoraLinearConfig::deserialize_from_json_string(
+    std::string const &json_string) {
+  // std::cout << "Attempting to deserialize from JSON string: " << json_string
+  //           << std::endl;
+  nlohmann::json j = nlohmann::json::parse(json_string);
+  LoraOptimizerConfig *optimizer_config_ = nullptr;
+  if (!j["optimizer_config"].is_null()) {
+    optimizer_config_ = LoraOptimizerConfig::fromJson(j["optimizer_config"]);
+  }
+  LoraLinearConfig config = LoraLinearConfig::EmptyConfig;
+  config.cache_folder = j["cache_folder"].get<std::string>();
+  config.peft_model_id = j["peft_model_id"].get<std::string>();
+  config.rank = j["rank"].get<int>();
+  config.lora_alpha = j["lora_alpha"].get<float>();
+  config.lora_dropout = j["lora_dropout"].get<float>();
+  config.target_modules = j["target_modules"].get<std::vector<std::string>>();
+  config.trainable = j["trainable"].get<bool>();
+  config.init_lora_weights = j["init_lora_weights"].get<bool>();
+  config.base_model_name_or_path =
+      j["base_model_name_or_path"].get<std::string>();
+  config.precision = j["precision"].get<std::string>();
+  config.optimizer_config = optimizer_config_;
+  return config;
+}
+
+// Deserialization method
+LoraLinearConfig
+    LoraLinearConfig::deserialize_from_json_file(std::string const &filename) {
+  std::ifstream file(filename);
+  std::string j;
+  file >> j;
+  return deserialize_from_json_string(j);
 }
 
 }; // namespace FlexFlow

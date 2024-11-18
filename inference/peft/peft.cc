@@ -256,7 +256,7 @@ void FlexFlow::top_level_task(Task const *task,
   LoraOptimizerConfig *optim_config = nullptr;
   if (enable_peft_finetuning) {
     // float sgd_learning_rate = 2e-1;
-    float sgd_learning_rate = 1.0f;
+    float sgd_learning_rate = 0.001f;
     optim_config = new LoraSGDOptimizerConfig(sgd_learning_rate);
   }
   LoraLinearConfig peft_config_finetuning =
@@ -275,6 +275,8 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_max_requests_per_batch(
       max_requests_per_batch +
       (int)enable_peft_finetuning); // add one slot for finetuning if needed
+  rm->set_max_concurrent_adapters(max_requests_per_batch +
+                                  (int)enable_peft_finetuning);
   rm->set_max_tokens_per_batch(max_tokens_per_batch);
   rm->set_max_sequence_length(max_sequence_length);
   rm->register_tokenizer(
@@ -320,17 +322,18 @@ void FlexFlow::top_level_task(Task const *task,
     assert(false && "unknow model type");
   }
 
-  // Add PEFT layer
-  PEFTModelID *peft_model_id = nullptr, *peft_model_id_finetuning = nullptr;
-  if (!peft_model_name.empty()) {
-    peft_model_id = model.add_lora_layer(peft_config);
-    if (enable_peft_finetuning) {
-      peft_model_id_finetuning = model.add_lora_layer(peft_config_finetuning);
-    }
-  }
-
   // Start background server
   rm->start_background_server(&model);
+
+  // Add PEFT adapter(s)
+  PEFTModelID *peft_model_id = nullptr, *peft_model_id_finetuning = nullptr;
+  if (!peft_model_name.empty()) {
+    peft_model_id = model.register_peft_adapter(peft_config);
+    if (enable_peft_finetuning) {
+      peft_model_id_finetuning =
+          model.register_peft_adapter(peft_config_finetuning);
+    }
+  }
 
   // Run workload
   {

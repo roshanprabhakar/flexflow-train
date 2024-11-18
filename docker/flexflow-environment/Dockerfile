@@ -7,7 +7,7 @@ LABEL org.opencontainers.image.description="FlexFlow environment container"
 SHELL ["/bin/bash", "-c"]
 
 # Install basic dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends wget sudo binutils git zlib1g-dev lsb-release nano gdb libhdf5-dev jq && \
+RUN apt-get update && apt-get install -y --no-install-recommends wget sudo binutils git zlib1g-dev lsb-release nano gdb libhdf5-dev jq openssh-client && \
     rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/cuda.list /etc/apt/sources.list.d/nvidia-ml.list && \
 	apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends software-properties-common && \
     apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential apt-utils \
@@ -125,6 +125,7 @@ RUN pip3 install transformers>=4.31.0 sentencepiece einops
 RUN pip3 install tensorflow notebook
 # PEFT-related
 RUN pip3 install scipy bitsandbytes datasets accelerate loralib triton peft
+RUN pip3 install streamlit
 
 # Install Rust
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y

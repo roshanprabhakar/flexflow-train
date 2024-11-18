@@ -1550,8 +1550,6 @@ FFRuntime::FFRuntime(FFConfig &config) {
         config.cpu_offload ? config.offload_reserve_space_size : 0;
     info.peft_activation_reserve_space_size =
         config.enable_peft ? config.peft_activation_reserve_space_size : 0;
-    info.peft_weight_reserve_space_size =
-        config.enable_peft ? config.peft_weight_reserve_space_size : 0;
     info.quantization_type = config.quantization_type;
     info.allowTensorOpMathConversion = config.allow_tensor_op_math_conversion;
     argmap.set_point(*it, TaskArgument(&info, sizeof(FFInitInfo)));
@@ -3423,62 +3421,29 @@ bool FFModel::need_to_add_combine(int layer_idx) const {
 bool FFModel::need_to_add_allreduce(int layer_idx) const {
   auto const &l = layers[layer_idx];
   if (config.computationMode == COMP_MODE_INFERENCE &&
-      config.tensor_parallelism_degree > 1 &&
-      (
-          //  l->op_type == OP_INC_MULTIHEAD_SELF_ATTENTION ||
-          //  l->op_type == OP_TREE_INC_MULTIHEAD_SELF_ATTENTION ||
-          (std::string(l->name).find("attn.o_proj") != std::string::npos) ||
-          // mlp layer
-          is_mlp_block(layer_idx) ||
-          // llama mlp layer
-          (l->op_type == OP_LINEAR && layer_idx >= 2 &&
-           layers[layer_idx - 1]->op_type == OP_GELU &&
-           layers[layer_idx - 2]->op_type == OP_LINEAR) ||
-          // LLAMA without element-wise operator fusion
-          (l->op_type == OP_LINEAR && layer_idx >= 5 &&
-           layers[layer_idx - 1]->op_type == OP_EW_MUL &&
-           layers[layer_idx - 2]->op_type == OP_EW_MUL &&
-           layers[layer_idx - 3]->op_type == OP_SIGMOID &&
-           layers[layer_idx - 4]->op_type == OP_LINEAR &&
-           layers[layer_idx - 5]->op_type == OP_LINEAR) ||
-          // LLAMA with element-wise operator fusion
-          (l->op_type == OP_LINEAR && layer_idx >= 3 &&
-           layers[layer_idx - 1]->op_type == OP_SIGMOID_SILU_MULTI &&
-           layers[layer_idx - 2]->op_type == OP_LINEAR &&
-           layers[layer_idx - 3]->op_type == OP_LINEAR))) {
+      config.tensor_parallelism_degree > 1 && l->op_type == OP_LINEAR &&
+      (/*llama/mpt attention*/
+       (std::string(l->name).find("attn.o_proj") != std::string::npos) ||
+       /*opt/starcoder attention*/
+       (std::string(l->name).find("self_attn.o_proj") != std::string::npos) ||
+       /*falcon attention*/
+       (std::string(l->name).find("self_attention.o_proj") !=
+        std::string::npos) ||
+       /*llama mlp*/
+       (std::string(l->name).find("mlp.down_proj") != std::string::npos) ||
+       /*opt mlp*/
+       (std::string(l->name).find("fc2") != std::string::npos) ||
+       /*falcon mlp*/
+       (std::string(l->name).find("mlp.dense_4h_to_h") != std::string::npos) ||
+       /*mpt mlp*/
+       (std::string(l->name).find("ffn.down_proj") != std::string::npos) ||
+       /*starcoder mlp*/
+       (std::string(l->name).find("mlp.c_proj") != std::string::npos))) {
     return true;
   }
   return false;
 }
 
-#ifdef DEADCODE
-bool FFModel::need_to_add_parallel_identity(int layer_idx) const {
-  auto const &l = layers[layer_idx];
-  // add parallel identity (allreduce in the backward pass) before the lm head
-  // we find the lm head by looking for the linear layer right after a residual
-  // rms norm / layer norm, and before a softmax, followed by
-  // argmax/argtopk/sampling
-  if (config.computationMode == COMP_MODE_INFERENCE &&
-      config.tensor_parallelism_degree > 1 &&
-      ((l->op_type == OP_RESIDUAL_RMS_NORM ||
-        l->op_type == OP_RESIDUAL_LAYERNORM) &&
-       // there are at least 2 layers before the norm, and at least 3 following
-       // the norm
-       layer_idx >= 2 && layer_idx < layers.size() - 3 &&
-       // norm is followed by linear layer (lm head)
-       layers[layer_idx + 1]->op_type == OP_LINEAR &&
-       // lm head is followed by softmax
-       layers[layer_idx + 2]->op_type == OP_SOFTMAX &&
-       // softmax is followed by argmax/argtopk/sampling
-       (layers[layer_idx + 3]->op_type == OP_ARG_TOPK ||
-        layers[layer_idx + 3]->op_type == OP_SAMPLING ||
-        layers[layer_idx + 3]->op_type == OP_ARGMAX ||
-        layers[layer_idx + 3]->op_type == OP_SCALAR_TRUE_DIV))) {
-    return true;
-  }
-  return false;
-}
-#endif
 bool FFModel::need_to_add_parallel_identity(int layer_idx) const {
   auto const &l = layers[layer_idx];
   // add parallel identity (allreduce in the backward pass) before the lm head
@@ -4400,7 +4365,6 @@ FFConfig::FFConfig() {
   enable_peft = DefaultConfig::enablePeft;
   peft_activation_reserve_space_size =
       DefaultConfig::peftActivationReserveSpaceSize;
-  peft_weight_reserve_space_size = DefaultConfig::peftWeightReserveSpaceSize;
   quantization_type = DT_NONE;
   only_data_parallel = DefaultConfig::onlyDataParallel;
   data_parallelism_degree = 1;
@@ -4533,10 +4497,6 @@ void FFConfig::parse_args(char **argv, int argc) {
     }
     if (!strcmp(argv[i], "-peft-activation-reserve-space-size")) {
       peft_activation_reserve_space_size = atoll(argv[++i]) * 1024 * 1024;
-      continue;
-    }
-    if (!strcmp(argv[i], "-peft-weight-reserve-space-size")) {
-      peft_weight_reserve_space_size = atoll(argv[++i]) * 1024 * 1024;
       continue;
     }
     if ((!strcmp(argv[i], "--only-data-parallel"))) {
@@ -4849,6 +4809,20 @@ void register_flexflow_internal_tasks(Runtime *runtime,
         registrar.global_registration = false;
       }
       runtime->register_task_variant<RequestManager::background_serving_task>(
+          registrar);
+    }
+  }
+  {
+    TaskVariantRegistrar registrar(LOAD_WEIGHT_TASK_ID, "load_weight_task");
+    registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+    if (pre_register) {
+      Runtime::preregister_task_variant<FileDataLoader::load_weight_task>(
+          registrar, "load_weight_task");
+    } else {
+      if (enable_control_replication) {
+        registrar.global_registration = false;
+      }
+      runtime->register_task_variant<FileDataLoader::load_weight_task>(
           registrar);
     }
   }

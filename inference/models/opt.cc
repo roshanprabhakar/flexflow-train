@@ -243,9 +243,6 @@ void OPT::create_opt_model(FFModel &ff,
                    REG_MODE_NONE,
                    0.0f,
                    std::string("layers." + std::to_string(i) + ".fc2").c_str());
-    // Low-Rank Adapter (LoRA) for the second linear layer
-    // ff.lora_linear(std::string("fc2"), std::string("layers." +
-    // std::to_string(i) + ".fc2.lora").c_str());
   }
 
   // final
@@ -284,6 +281,13 @@ void OPT::create_opt_model(FFModel &ff,
     // output = ff.arg_top_k(lm_head, /*k=*/1, false);
     Tensor softmax = ff.softmax(lm_head, -1);
     output = ff.argmax(softmax, /*beam_Search*/ false);
+  }
+
+  // If PEFT is enabled, add LoRA layers
+  if (ff.config.enable_peft) {
+    // todo: add attention projections
+    std::vector<std::string> target_modules = {"fc1", "fc2"};
+    ff.add_lora_layers(target_modules);
   }
 
   FileDataLoader *fileloader = new FileDataLoader(

@@ -17,14 +17,13 @@ public:
   using Params = LoraLinearParams;
   using Input = std::pair<ParallelTensor, ParallelTensor>;
 
-  LoraLinear(
-      FFModel &model,
-      LayerID const &layer_guid,
-      OperatorType type,
-      ParallelTensor const input,
-      ParallelTensor const output,
-      std::unordered_map<PEFTModelID, LoraLinearConfig> const &_peft_configs,
-      char const *name = nullptr);
+  LoraLinear(FFModel &model,
+             LayerID const &layer_guid,
+             ParallelTensor const input,
+             ParallelTensor const output,
+             int max_rank,
+             int max_concurrent_adapters,
+             char const *name = nullptr);
   LoraLinear(FFModel &model,
              LoraLinear const &other,
              ParallelTensor const input,
@@ -91,7 +90,9 @@ public:
   // size_t get_params_hash() const override;
   LoraLinearParams get_params() const;
 
-  std::unordered_map<PEFTModelID, LoraLinearConfig> peft_configs;
+  // std::unordered_map<PEFTModelID, LoraLinearConfig> peft_configs;
+  int max_rank;
+  int max_concurrent_adapters;
 };
 
 }; // namespace FlexFlow

@@ -150,6 +150,13 @@ public:
                           std::vector<int> eos_token_ids,
                           std::string const &path);
   void register_output_filepath(std::string const &);
+  void set_peft_config(PEFTModelID const &peft_model_id,
+                       LoraLinearConfig const &peft_config);
+  LoraLinearConfig const &get_peft_config(PEFTModelID const &peft_model_id);
+  void set_max_lora_rank(int max_lora_rank);
+  void set_max_concurrent_adapters(int max_concurrent_adapters);
+  int get_max_lora_rank();
+  int get_max_concurrent_adapters();
   void initBitMask(BatchConfig::BitMask &bitmask, int initLength);
   void appendPendingRequest(BatchConfig::BitMask &bitmask, int initLength);
   void appendBitMask(BatchConfig::BitMask &bitmask,
@@ -182,6 +189,9 @@ public:
   bool is_eos_token(int token_id);
   bool check_inf_req_completion(BatchConfig const &old_bc, int i);
   void check_batch(BatchConfig const &old_bc, BatchConfig const &new_bc);
+  void add_peft_config_to_request_info(BatchConfig &bc,
+                                       int req_idx,
+                                       LoraLinearConfig const &peft_config);
   BatchConfig prepare_next_batch(BatchConfig const &bc,
                                  InferenceResult const &result);
   BatchConfigFuture prepare_next_batch(BatchConfigFuture const &bc,
@@ -291,6 +301,10 @@ private:
   int max_sequence_length;
   Status request_manager_status;
 
+  // peft
+  std::unordered_map<PEFTModelID, LoraLinearConfig> peft_configs;
+  int max_lora_rank = 32;
+  int max_concurrent_adapters = 0;
   // peft benchmarking
   bool enable_peft_finetuning = false;
   static bool inference_finished;

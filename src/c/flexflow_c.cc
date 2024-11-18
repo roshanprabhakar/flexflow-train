@@ -177,6 +177,11 @@ void flexflow_config_set_pipeline_parallelism_degree(flexflow_config_t handle_,
   handle->pipeline_parallelism_degree = value;
 }
 
+bool flexflow_config_get_enable_peft(flexflow_config_t handle_) {
+  FFConfig *handle = FFCObjectWrapper::unwrap(handle_);
+  return handle->enable_peft;
+}
+
 int flexflow_config_get_python_data_loader_type(flexflow_config_t handle_) {
   FFConfig *handle = FFCObjectWrapper::unwrap(handle_);
   return handle->python_data_loader_type;
@@ -1608,18 +1613,33 @@ flexflow_tensor_t flexflow_model_add_argmax(flexflow_model_t handle_,
 }
 
 #ifdef FF_BUILD_INFERENCE
-flexflow_peft_model_id_t flexflow_model_add_lora_layer(
+void flexflow_model_add_lora_layers(flexflow_model_t handle_,
+                                    int num_target_modules,
+                                    char const **target_modules_) {
+  FFModel *handle = FFCObjectWrapper::unwrap(handle_);
+  std::vector<std::string> target_modules;
+  for (int i = 0; i < num_target_modules; i++) {
+    target_modules.push_back(target_modules_[i]);
+  }
+  DEBUG_PRINT("[Add Lora Layers] model handle: %p, num_target_modules %d",
+              handle,
+              num_target_modules);
+  handle->add_lora_layers(target_modules);
+}
+
+flexflow_peft_model_id_t flexflow_model_register_peft_adapter(
     flexflow_model_t handle_,
     const flexflow_lora_linear_config_t peft_config_) {
   FFModel *handle = FFCObjectWrapper::unwrap(handle_);
   LoraLinearConfig const *peft_config = FFCObjectWrapper::unwrap(peft_config_);
-  PEFTModelID *peft_model_id = handle->add_lora_layer(*peft_config);
+  PEFTModelID *peft_model_id = handle->register_peft_adapter(*peft_config);
 
-  DEBUG_PRINT("[Add Lora Layer] model handle: %p, peft_config handle %p, "
-              "peft_model_id: %p",
-              handle,
-              peft_config,
-              peft_model_id);
+  DEBUG_PRINT(
+      "[Register PEFT Adapter] model handle: %p, peft_config handle %p, "
+      "peft_model_id: %p",
+      handle,
+      peft_config,
+      peft_model_id);
   return FFCObjectWrapper::wrap(peft_model_id);
 }
 #endif
@@ -2765,6 +2785,14 @@ int flexflow_request_manager_get_max_sequence_length(
   return handle->get_max_sequence_length();
 }
 
+void flexflow_request_manager_set_max_concurrent_adapters(
+    flexflow_request_manager_t handle_, int max_concurrent_adapters) {
+  RequestManager *handle = FFCObjectWrapper::unwrap(handle_);
+  handle->set_max_concurrent_adapters(max_concurrent_adapters);
+  DEBUG_PRINT("[RequestManager] set max_concurrent_adapters %d",
+              max_concurrent_adapters);
+}
+
 void flexflow_request_manager_set_enable_peft_finetuning(
     flexflow_request_manager_t handle_, bool enable_peft_finetuning_) {
   RequestManager *handle = FFCObjectWrapper::unwrap(handle_);
@@ -2909,7 +2937,9 @@ void flexflow_file_data_loader_load_weights(flexflow_file_data_loader_t handle_,
                                             flexflow_model_t model_handle_) {
   FileDataLoader *handle = FFCObjectWrapper::unwrap(handle_);
   FFModel *model = FFCObjectWrapper::unwrap(model_handle_);
-  handle->load_weights(model);
+  Context ctx = model->config.lg_ctx;
+  Runtime *runtime = model->config.lg_hlr;
+  handle->load_weights_parallel(model, ctx, runtime);
 }
 
 // // -----------------------------------------------------------------------

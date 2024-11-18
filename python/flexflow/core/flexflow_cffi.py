@@ -811,6 +811,10 @@ class FFConfig(object):
     @property
     def python_data_loader_type(self):
         return ffc().flexflow_config_get_python_data_loader_type(self.handle)
+    
+    @property
+    def enable_peft(self):
+        return ffc().flexflow_config_get_enable_peft(self.handle)
 
     @property
     def cpu_offload(self):
@@ -1629,6 +1633,11 @@ class RequestManager(object):
 
     def get_max_sequence_length(self):
         return ffc().flexflow_request_manager_get_max_sequence_length(self.handle)
+    
+    def set_max_concurrent_adapters(self, max_adapters):
+        return ffc().flexflow_request_manager_set_max_concurrent_adapters(
+            self.handle, max_adapters
+        )
 
     def set_enable_peft_finetuning(self, enable_peft_finetuning):
         return ffc().flexflow_request_manager_set_enable_peft_finetuning(
@@ -4288,8 +4297,12 @@ class FFModel(object):
         self.add_layer(OpType.ARGMAX, name)
         return Tensor(handle, owner_op_type=OpType.ARGMAX)
 
-    def add_lora_layer(self, peft_config):
-        return ffc().flexflow_model_add_lora_layer(self.handle, peft_config.handle)
+    def add_lora_layers(self, target_modules: List[str]):
+        c_target_modules = [get_c_name(module) for module in target_modules]
+        return ffc().flexflow_model_add_lora_layers(self.handle, len(target_modules), c_target_modules)
+    
+    def register_peft_adapter(self, peft_config):
+        return ffc().flexflow_model_register_peft_adapter(self.handle, peft_config.handle)
 
     def reset_metrics(self):
         """Reset performance metrics.
@@ -4751,6 +4764,7 @@ class FFModel(object):
                     finetuning_losses=finetuning_losses,
                 )
             )
+        return results
 
     def set_position_offset(self, offset):
         ffc().flexflow_model_set_position_offset(self.handle, offset)

@@ -6,43 +6,27 @@
 #include "flexflow/fftype.h"
 #include "flexflow/op_meta.h"
 #include "flexflow/ops/lora_linear.h"
+#include "flexflow/utils/peft_weight_allocator.h"
 
 namespace FlexFlow {
+
 using Legion::Context;
 using Legion::Runtime;
-struct LoraLinearWeight {
-  // weights
-  void *w0_ptr, *w1_ptr;
-  // gradients
-  void *w0_grad_ptr, *w1_grad_ptr;
-  // v values for SGD optimizer (when using momentum)
-  void *w0_v_values_ptr, *w1_v_values_ptr;
-  int in_dim, out_dim, rank, num_shards;
-};
-
-struct LoraLinearModelState {
-  LoraLinearWeight weights;
-  LoraOptimizerConfig const *optimizer_config;
-  float lora_alpha;
-  std::string cache_folder;
-  // Huggingface model ID (for download and/or upload)
-  std::string peft_model_id;
-};
 
 class LoraLinearMeta : public OpMeta {
 public:
   LoraLinearMeta(FFHandler handle, LoraLinear const *li);
   ~LoraLinearMeta(void);
-  // PEFT related fields
-  void *low_rank_activation;
-  void *input_activation;
-  std::unordered_map<PEFTModelID, LoraLinearModelState> model_state;
-  size_t allocated_peft_buffer_size1 = 0, allocated_peft_buffer_size2 = 0;
+  PEFTMemoryManager *peft_memory_manager;
 };
 
 namespace Kernels {
 namespace LoraLinear {
-void init_kernel_wrapper(LoraLinearMeta *m, int seed);
+
+bool lora_applies_to_this_layer(LoraLinearMeta *m,
+                                LoraLinearConfig const &config);
+
+// void init_kernel_wrapper(LoraLinearMeta *m, int seed);
 void inference_kernel_wrapper(LoraLinearMeta *m,
                               BatchConfig const *bc,
                               GenericTensorAccessorR const &input,
@@ -51,12 +35,13 @@ void peft_bwd_kernel_wrapper(Context ctx,
                              Runtime *runtime,
                              LoraLinearMeta *m,
                              BatchConfig const *bc,
+                             int shard_id,
                              GenericTensorAccessorW const &input_grad,
                              GenericTensorAccessorR const &output_grad);
 
 namespace Internal {
-template <typename DT>
-void init_kernel(LoraLinearMeta *m, int seed, ffStream_t stream);
+// template <typename DT>
+// void init_kernel(LoraLinearMeta *m, int seed, ffStream_t stream);
 template <typename DT>
 void inference_kernel(LoraLinearMeta *m,
                       BatchConfig const *bc,
@@ -70,6 +55,7 @@ void peft_bwd_kernel(Context ctx,
                      Runtime *runtime,
                      LoraLinearMeta *m,
                      BatchConfig const *bc,
+                     int shard_id,
                      DT *input_grad_ptr,
                      DT const *output_grad_ptr,
                      int in_dim,

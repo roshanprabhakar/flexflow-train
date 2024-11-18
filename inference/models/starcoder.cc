@@ -253,6 +253,13 @@ void STARCODER::create_starcoder_model(
     }
   }
 
+  // If PEFT is enabled, add LoRA layers
+  if (ff.config.enable_peft) {
+    // todo: add attention projections
+    std::vector<std::string> target_modules = {"c_fc", "c_proj"};
+    ff.add_lora_layers(target_modules);
+  }
+
   InferenceManager *im = InferenceManager::get_inference_manager();
   FileDataLoader *fileloader = new FileDataLoader(
       "",
