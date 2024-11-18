@@ -120,4 +120,4 @@ if [ -f "$hf_token_path" ]; then
   hf_token_volume+="-v $hf_token_path:/root/.cache/huggingface/token"
 fi
 
-eval docker run -it "$gpu_arg" "--shm-size=${SHM_SIZE}" "${hf_token_volume}" "${image}-${FF_GPU_BACKEND}${gpu_backend_version}:latest"
+eval docker run -it "$gpu_arg" "--shm-size=${SHM_SIZE}" "--cap-add=SYS_PTRACE" "${hf_token_volume}" "${image}-${FF_GPU_BACKEND}${gpu_backend_version}:latest"
