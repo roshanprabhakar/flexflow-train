@@ -58,7 +58,9 @@ AllReduceMeta::~AllReduceMeta() {
 namespace Kernels {
 namespace AllReduce {
 
-CommunicationBuffer *get_or_create_comm_buffer(AllReduceMeta *m,
+CommunicationBuffer *get_or_create_comm_buffer(Context ctx,
+                                               Runtime *runtime,
+                                               AllReduceMeta *m,
                                                int num_devices,
                                                int device_id,
                                                ncclComm_t ncclComm,
@@ -69,7 +71,9 @@ CommunicationBuffer *get_or_create_comm_buffer(AllReduceMeta *m,
     return iter->second;
   } else {
     CommunicationBuffer *comm_buffer =
-        create_comm_buf_with_local_ptr(num_devices,
+        create_comm_buf_with_local_ptr(ctx,
+                                       runtime,
+                                       num_devices,
                                        device_id,
                                        ncclComm,
                                        m->allgather_src,
@@ -165,7 +169,9 @@ void inference_kernel_wrapper(Context ctx,
   params.rank = device_id;
   params.local_rank = device_id;
   CommunicationBuffer *comm_buffer =
-      get_or_create_comm_buffer(m,
+      get_or_create_comm_buffer(ctx,
+                                runtime,
+                                m,
                                 num_devices,
                                 device_id,
                                 ncclComm,
@@ -190,8 +196,10 @@ void inference_kernel_wrapper(Context ctx,
     strategy = tensorrt_llm::AllReduceStrategyType::ONESHOT;
   }
 
+  runtime->concurrent_task_barrier(ctx);
   tensorrt_llm::customAllReduce(
       params, output.ptr, num_elements, dtype, strategy, stream);
+  runtime->concurrent_task_barrier(ctx);
 }
 
 void forward_kernel_wrapper(Context ctx,
