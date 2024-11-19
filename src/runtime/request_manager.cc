@@ -1041,8 +1041,6 @@ bool RequestManager::update_llm_decode_results(InferenceResult const &result) {
   bool request_completed = false;
   int nb_requests_decoded = 0;
   long long int current_time = Realm::Clock::current_time_in_microseconds();
-  profiling.llm_step_times.push_back((current_time - profiling.llm_step_start) *
-                                     1e-3);
 
   for (int request_index = 0; request_index < get_max_requests_per_batch();
        ++request_index) {
@@ -1096,6 +1094,8 @@ bool RequestManager::update_llm_decode_results(InferenceResult const &result) {
                 << output << std::endl;
     }
   }
+  profiling.llm_step_times.push_back((current_time - profiling.llm_step_start) *
+                                     1e-3);
   profiling.requests_per_step.push_back(nb_requests_decoded);
   profiling.generated_tokens_per_step.push_back(nb_requests_decoded);
   return request_completed;
