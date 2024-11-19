@@ -500,10 +500,10 @@ RequestManager::RequestGuid
     request.tokens.push_back(bos_token_id);
   }
   std::vector<int32_t> tokens = this->tokenizer_->Encode(req.prompt);
-  for (int i = 0; i < tokens.size(); i++) {
-    std::cout << "[" << i << "]" << tokens.at(i) << "\n";
-  }
-  std::cout << "[slo ratio] " << req.slo_ratio << std::endl;
+  // for (int i = 0; i < tokens.size(); i++) {
+  //   std::cout << "[" << i << "]" << tokens.at(i) << "\n";
+  // }
+  // std::cout << "[slo ratio] " << req.slo_ratio << std::endl;
   request.tokens.insert(request.tokens.end(), tokens.begin(), tokens.end());
   request.set_slo_ratio(req.slo_ratio);
 
