@@ -63,6 +63,7 @@ void parse_input_args(char **argv,
                       ModelNames &model_names,
                       bool &use_full_precision,
                       bool &verbose,
+                      int &ssm_tp_degree,
                       int &max_requests_per_batch,
                       int &max_tokens_per_batch,
                       int &max_tokens_per_ssm_batch,
@@ -102,6 +103,10 @@ void parse_input_args(char **argv,
         c = std::tolower(c);
       }
       model_names.ssm_model_names.push_back(ssm_model_name);
+      continue;
+    }
+    if (!strcmp(argv[i], "-ssm-tp-degree")) {
+      ssm_tp_degree = std::stoi(argv[++i]);
       continue;
     }
     // cache folder
@@ -391,6 +396,7 @@ void FlexFlow::top_level_task(Task const *task,
   ModelMeta model_metadata;
   bool use_full_precision = false;
   bool verbose = false;
+  int ssm_tp_degree = 1;
   int max_requests_per_batch = 8;
   int max_tokens_per_batch = 128;
   int max_tokens_per_ssm_batch = -1;
@@ -426,6 +432,7 @@ void FlexFlow::top_level_task(Task const *task,
                    model_metadata.model_names,
                    use_full_precision,
                    verbose,
+                   ssm_tp_degree,
                    max_requests_per_batch,
                    max_tokens_per_batch,
                    max_tokens_per_ssm_batch,
@@ -461,6 +468,8 @@ void FlexFlow::top_level_task(Task const *task,
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
+  assert(ssm_tp_degree >= 1 &&
+         ssm_tp_degree <= ffconfig.numNodes * ffconfig.workersPerNode);
 
   // Sanity check for SpecInfer old version
   if (spec_infer_old_version) {
@@ -537,11 +546,12 @@ void FlexFlow::top_level_task(Task const *task,
   std::vector<int> ssm_model_ids;
   std::vector<FFModel> ssm_models;
   FFConfig bm_config = ffconfig;
-  bm_config.data_parallelism_degree = bm_config.tensor_parallelism_degree =
-      bm_config.pipeline_parallelism_degree = 1;
-  //   bm_config.data_parallelism_degree = 1;
-  //   bm_config.tensor_parallelism_degree = 4;
-  //   bm_config.pipeline_parallelism_degree = 1;
+  std::cout << "SSM TP Degree: " << ssm_tp_degree << std::endl;
+  // bm_config.data_parallelism_degree = bm_config.tensor_parallelism_degree =
+  //     bm_config.pipeline_parallelism_degree = 1;
+  bm_config.data_parallelism_degree = 1;
+  bm_config.tensor_parallelism_degree = ssm_tp_degree;
+  bm_config.pipeline_parallelism_degree = 1;
   for (int ssm_id = 0; ssm_id < num_ssms; ssm_id++) {
     FFModel beam_model(bm_config);
     ssm_models.push_back(beam_model);
