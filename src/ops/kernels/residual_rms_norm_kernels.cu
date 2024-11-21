@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+#include "flashinfer/norm.cuh"
 #include "flexflow/ffconst_utils.h"
 #include "flexflow/ops/kernels/residual_rms_norm_kernels.h"
 #include "flexflow/ops/residual_rms_norm.h"
@@ -143,7 +144,7 @@ template <typename T>
 void forward_kernel(ResidualRMSNormMeta const *m,
                     T const *input1_ptr,
                     T const *input2_ptr,
-                    T const *weight_ptr,
+                    T const *weight_const_ptr,
                     T *residual_output_ptr,
                     T *output_ptr,
                     int batch_size,
@@ -168,8 +169,23 @@ void forward_kernel(ResidualRMSNormMeta const *m,
                                                residual_output_ptr,
                                                static_cast<T *>(m->rms_ptr),
                                                static_cast<T *>(m->norm_ptr),
-                                               weight_ptr,
+                                               weight_const_ptr,
                                                output_ptr);
+
+  //   checkCUDA(cudaMemcpyAsync(output_ptr,
+  //                           input1_ptr,
+  //                           batch_size * m->in_dim * sizeof(T),
+  //                           cudaMemcpyDeviceToDevice,
+  //                           stream));
+  // checkCUDA(cudaMemcpyAsync(residual_output_ptr,
+  //                           input2_ptr,
+  //                           batch_size * m->in_dim * sizeof(T),
+  //                           cudaMemcpyDeviceToDevice,
+  //                           stream));
+  // T* weight_ptr = const_cast<T*>(weight_const_ptr);
+  // // inplace residual_rms_norm
+  // flashinfer::norm::FusedAddRMSNorm<T>(
+  //     output_ptr, residual_output_ptr, weight_ptr, batch_size, m->in_dim, m->eps, stream);
 }
 
 void forward_kernel_wrapper(ResidualRMSNormMeta const *m,
