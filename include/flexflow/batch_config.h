@@ -57,8 +57,12 @@ public:
   BatchConfig();
   int num_active_requests() const;
   int num_active_tokens() const;
-  int num_active_infr_tokens() const;
-  int num_active_peft_tokens() const;
+
+  int finetuning_request_index() const;
+  int num_finetuning_requests() const;
+  int num_finetuning_tokens() const;
+  bool peft_bwd_applies_to_this_layer(int layer) const;
+
   static int max_requests_per_batch();
   static int max_tokens_per_batch();
   static int max_verify_tokens_per_batch();
@@ -77,12 +81,9 @@ public:
   static int const MAX_SPEC_TREE_TOKEN_NUM = 64;
   static int const MAX_PEFT_CONFIG_SIZE = 1024;
 
-  //  Set by update
-
-  int num_tokens = 0, num_peft_tokens = 0, num_peft_label_tokens = 0;
   // number of tokens in prompt phase, start offset of tokens in inc_decoding
   // phase. num_tokens - num_prompt_tokens = num_generation_tokens;
-  int num_generation_tokens = 0;
+  int num_tokens = 0, num_generation_tokens = 0;
 
   struct PerRequestInfo {
     PerRequestInfo() {
@@ -94,9 +95,13 @@ public:
       peft_model_id = PEFTModelID::NO_ID;
       prompt_phase = false;
       batch_config_request_id = -1;
-      peft_bwd = false;
-      optimizer_tasks = {true, false, false, false};
       std::memset(peft_model_config_str, 0, MAX_PEFT_CONFIG_SIZE);
+      // finetuning-only fields
+      finetuning_request = false;
+      finetuning_backward_phase = false;
+      peft_bwd_first_layer = -1;
+      peft_bwd_last_layer = -1;
+      optimizer_tasks = {true, false, false, false};
     }
     int first_token_depth_in_request;
     int first_token_offset_in_batch;
@@ -110,7 +115,10 @@ public:
     // PEFT fields
     PEFTModelID peft_model_id;
     char peft_model_config_str[MAX_PEFT_CONFIG_SIZE];
-    bool peft_bwd;
+    bool finetuning_request; // we need this because the kernels don't know if
+                             // peft_finetuning is enabled
+    bool finetuning_backward_phase;
+    int peft_bwd_first_layer, peft_bwd_last_layer;
     OptimizerTasks optimizer_tasks;
   };
   struct PerTokenInfo {
@@ -138,7 +146,6 @@ public:
   BitMask causalMask[MAX_NUM_REQUESTS];
   PerRequestInfo requestsInfo[MAX_NUM_REQUESTS];
   PerTokenInfo tokensInfo[MAX_NUM_TOKENS];
-  PerTokenInfo labelsInfo[MAX_NUM_TOKENS];
 
   bool request_completed[MAX_NUM_REQUESTS];
   bool request_running[MAX_NUM_REQUESTS];

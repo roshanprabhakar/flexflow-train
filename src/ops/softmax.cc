@@ -505,12 +505,13 @@ void Softmax::peft_bwd_task(Task const *task,
   assert(regions.size() == 2);
   assert(task->regions.size() == 2);
   BatchConfig const *bc = BatchConfig::from_future(task->futures[0]);
-  if (bc->num_active_peft_tokens() == 0) {
+  SoftmaxMeta *m = *((SoftmaxMeta **)task->local_args);
+  if (!bc->peft_bwd_applies_to_this_layer(m->layer_guid.transformer_layer_id)) {
     return;
   }
   Domain in_domain = runtime->get_index_space_domain(
       ctx, task->regions[0].region.get_index_space());
-  SoftmaxMeta *m = *((SoftmaxMeta **)task->local_args);
+
   GenericTensorAccessorW input_grad = helperGetGenericTensorAccessorRW(
       m->input_type[0], regions[0], task->regions[0], FID_DATA, ctx, runtime);
   GenericTensorAccessorR output_grad = helperGetGenericTensorAccessorRO(

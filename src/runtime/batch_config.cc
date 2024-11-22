@@ -53,12 +53,24 @@ void set_optimizer_tasks(OptimizerTasks &tasks,
   }
 }
 
-BatchConfig::BatchConfig() : num_tokens(0), num_peft_tokens(0) {
+BatchConfig::BatchConfig() : num_tokens(0), num_generation_tokens(0) {
   for (int i = 0; i < MAX_NUM_REQUESTS; i++) {
     requestsInfo[i].first_token_depth_in_request = 0;
     requestsInfo[i].first_token_offset_in_batch = 0;
     requestsInfo[i].num_tokens_in_batch = 0;
+    requestsInfo[i].max_length = 0;
+    requestsInfo[i].request_guid = 0;
+    requestsInfo[i].peft_model_id = PEFTModelID::NO_ID;
+    requestsInfo[i].finetuning_request = false;
+    requestsInfo[i].finetuning_backward_phase = false;
+    requestsInfo[i].peft_bwd_first_layer = -1;
+    requestsInfo[i].peft_bwd_last_layer = -1;
+    requestsInfo[i].optimizer_tasks = {true, false, false, false};
+    requestsInfo[i].prompt_phase = false;
+    requestsInfo[i].batch_config_request_id = -1;
+    std::memset(requestsInfo[i].peft_model_config_str, 0, MAX_PEFT_CONFIG_SIZE);
     request_completed[i] = true;
+    request_running[i] = false;
   }
   for (int i = 0; i < MAX_NUM_TOKENS; i++) {
     tokensInfo[i].abs_depth_in_request = 0;
@@ -102,12 +114,32 @@ int BatchConfig::num_active_tokens() const {
   return num_tokens;
 }
 
-int BatchConfig::num_active_infr_tokens() const {
-  return num_tokens;
+int BatchConfig::finetuning_request_index() const {
+  assert(max_requests_per_batch() > 0);
+  return max_requests_per_batch() - 1;
 }
 
-int BatchConfig::num_active_peft_tokens() const {
-  return num_peft_tokens;
+int BatchConfig::num_finetuning_requests() const {
+  return requestsInfo[finetuning_request_index()].finetuning_request ? 1 : 0;
+}
+
+int BatchConfig::num_finetuning_tokens() const {
+  return requestsInfo[finetuning_request_index()].finetuning_request
+             ? requestsInfo[finetuning_request_index()].num_tokens_in_batch
+             : 0;
+}
+
+bool BatchConfig::peft_bwd_applies_to_this_layer(int layer) const {
+  if (!requestsInfo[finetuning_request_index()].finetuning_request ||
+      !requestsInfo[finetuning_request_index()].finetuning_backward_phase) {
+    return false;
+  }
+  assert(requestsInfo[finetuning_request_index()].peft_bwd_first_layer >= 0);
+  assert(requestsInfo[finetuning_request_index()].peft_bwd_last_layer >= 0);
+  assert(layer >= 0);
+  return (
+      layer >= requestsInfo[finetuning_request_index()].peft_bwd_first_layer &&
+      layer <= requestsInfo[finetuning_request_index()].peft_bwd_last_layer);
 }
 
 /*static*/
@@ -144,9 +176,8 @@ std::ostream &operator<<(std::ostream &os, BatchConfig const &bc) {
   os << "Max sequence length: " << bc.max_sequence_length() << std::endl;
   // Current values
   os << "Number of active tokens: " << bc.num_active_tokens() << std::endl;
-  os << "Number of inference tokens: " << bc.num_active_infr_tokens()
-     << std::endl;
-  os << "Number of peft tokens: " << bc.num_active_peft_tokens() << std::endl;
+  os << "Number of inference tokens: " << bc.num_active_tokens() << std::endl;
+  os << "Number of peft tokens: " << bc.num_finetuning_tokens() << std::endl;
   os << "Number of requests: " << bc.num_active_requests() << std::endl;
   os << "Number of generation tokens: " << bc.num_generation_tokens
      << std::endl;
@@ -172,7 +203,10 @@ std::ostream &operator<<(std::ostream &os, BatchConfig const &bc) {
       // PEFT values
       os << "    PEFT Model ID: " << bc.requestsInfo[i].peft_model_id
          << std::endl;
-      os << "    PEFT bwd: " << bc.requestsInfo[i].peft_bwd << std::endl;
+      os << "    Finetuning req: " << bc.requestsInfo[i].finetuning_request
+         << std::endl;
+      os << "    Finetuning backward phase: "
+         << bc.requestsInfo[i].finetuning_backward_phase << std::endl;
       os << "    optimizer_tasks: {"
          << "compute_gradients: " << std::boolalpha
          << bc.requestsInfo[i].optimizer_tasks.compute_gradients

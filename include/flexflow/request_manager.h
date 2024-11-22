@@ -91,9 +91,8 @@ struct Request {
   std::vector<int> finetuning_tokens_per_batch;
   bool warmup = false;
   std::string dataset_filepath;
-  std::vector<std::pair<std::vector<BatchConfig::TokenId>,
-                        std::vector<BatchConfig::TokenId>>>
-      dataset;
+  // no need to add labels because in LLM token ids are the labels
+  std::vector<std::vector<BatchConfig::TokenId>> dataset;
   std::vector<float> finetuning_losses;
   friend std::ostream &operator<<(std::ostream &os, Request const &req);
 };

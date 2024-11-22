@@ -80,16 +80,12 @@ std::ostream &operator<<(std::ostream &os, Request const &req) {
   os << "  max_training_steps: " << req.max_training_steps << "\n";
   os << "  dataset_filepath: " << req.dataset_filepath << "\n";
   os << "  dataset: [";
-  for (auto const &pair : req.dataset) {
+  for (auto const &tokens : req.dataset) {
     os << "[";
-    for (auto const &token : pair.first) {
+    for (auto const &token : tokens) {
       os << token << " ";
     }
-    os << "], [";
-    for (auto const &token : pair.second) {
-      os << token << " ";
-    }
-    os << "] ";
+    os << "], ";
   }
   os << "]\n";
   os << "}\n";
@@ -472,7 +468,6 @@ RequestManager::RequestGuid
            "Benchmarking tokens exceed max sequence length");
     request.benchmarking_tokens = request_.benchmarking_tokens;
     std::vector<int32_t> input_tokens;
-    std::vector<int32_t> output_tokens;
     bool bos_added = (bos_token_id >= 0 && request.add_special_tokens &&
                       model_type != ModelType::FALCON);
     if (bos_added) {
@@ -481,7 +476,7 @@ RequestManager::RequestGuid
     input_tokens.insert(input_tokens.end(),
                         request_.benchmarking_tokens - (int)bos_added,
                         15); // insert random number
-    request.dataset.push_back(std::make_pair(input_tokens, output_tokens));
+    request.dataset.push_back(input_tokens);
   } else {
     using json = nlohmann::json;
     std::ifstream file_handle(request.dataset_filepath);
@@ -493,24 +488,20 @@ RequestManager::RequestGuid
 
     for (auto &prompt : dataset_json) {
       std::string text = prompt.get<std::string>();
-      std::string output_text("");
       std::vector<int32_t> input_tokens;
       input_tokens = this->tokenizer_->Encode(text);
       if (bos_token_id >= 0 && model_type != ModelType::FALCON &&
           request.add_special_tokens) {
         input_tokens.insert(input_tokens.begin(), bos_token_id);
       }
-      std::vector<int32_t> output_tokens =
-          this->tokenizer_->Encode(output_text);
-      if (input_tokens.size() + output_tokens.size() >
-          get_max_sequence_length()) {
+      if (input_tokens.size() > get_max_sequence_length()) {
         std::cout << "Error: sample in training dataset is "
-                  << input_tokens.size() + output_tokens.size()
+                  << input_tokens.size()
                   << " tokens long, exceeding the maximum sequence length of "
                   << get_max_sequence_length() << " tokens.\n";
         return INVALID_GUID;
       } else {
-        request.dataset.push_back(std::make_pair(input_tokens, output_tokens));
+        request.dataset.push_back(input_tokens);
       }
     }
   }
@@ -546,16 +537,11 @@ RequestManager::RequestGuid
   }
 
   for (size_t r = 0; r < request.dataset.size(); r++) {
-    std::string input = "[" + std::to_string(r) + "] input:";
-    std::string output = "[" + std::to_string(r) + "] output:";
-    for (size_t i = 0; i < request.dataset[r].first.size(); i++) {
-      input = input + " " + std::to_string(request.dataset[r].first[i]);
-    }
-    for (size_t i = 0; i < request.dataset[r].second.size(); i++) {
-      output = output + " " + std::to_string(request.dataset[r].second[i]);
+    std::string input = "[" + std::to_string(r) + "] entry:";
+    for (size_t i = 0; i < request.dataset[r].size(); i++) {
+      input = input + " " + std::to_string(request.dataset[r][i]);
     }
     log_req_mgr.print("%s", input.c_str());
-    log_req_mgr.print("%s", output.c_str());
   }
 
   GenerationResult gr;
@@ -850,7 +836,8 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
         if (old_bc.requestsInfo[i].peft_model_id != PEFTModelID::NO_ID) {
           num_concurrent_adapters += 1;
         }
-        new_bc.requestsInfo[i].peft_bwd = old_bc.requestsInfo[i].peft_bwd;
+        new_bc.requestsInfo[i].finetuning_request =
+            old_bc.requestsInfo[i].finetuning_request;
         new_bc.requestsInfo[i].max_length = old_bc.requestsInfo[i].max_length;
         num_active_req++;
         new_bc.requestsInfo[num_active_req].batch_config_request_id = i;
@@ -934,7 +921,7 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
           add_peft_config_to_request_info(
               new_bc, i, get_peft_config(new_request.peft_model_id));
         }
-        new_bc.requestsInfo[i].peft_bwd = false;
+        new_bc.requestsInfo[i].finetuning_request = false;
         new_bc.request_completed[i] = false;
         new_bc.requestsInfo[i].prompt_phase = true;
         num_active_req++;
@@ -979,10 +966,10 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
         request.completed_training_steps % request.dataset.size();
     if (old_bc.requestsInfo[inference_batch_size].first_token_depth_in_request +
             old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch ==
-        request.dataset[dataset_entry].first.size()) {
+        request.dataset[dataset_entry].size()) {
       // completed the current dataset entry
       assert(request.dataset_entry_processed_tokens ==
-             request.dataset[dataset_entry].first.size());
+             request.dataset[dataset_entry].size());
       request.completed_training_steps += 1;
       request.dataset_entry_processed_tokens = 0;
     }
@@ -1079,14 +1066,12 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
     assert(request.max_training_steps > 0 &&
            request.completed_training_steps < request.max_training_steps);
     assert(request.dataset_entry_processed_tokens <=
-           request.dataset[dataset_entry].first.size());
+           request.dataset[dataset_entry].size());
 
     int num_peft_tokens =
-        min((int)request.dataset[dataset_entry].first.size() -
+        min((int)request.dataset[dataset_entry].size() -
                 request.dataset_entry_processed_tokens,
-            get_max_tokens_per_batch() - new_bc.num_active_infr_tokens());
-    int num_peft_label_tokens = request.dataset[dataset_entry].second.size();
-    assert(num_peft_label_tokens == 0);
+            get_max_tokens_per_batch() - new_bc.num_active_tokens());
 
     if (num_peft_tokens > 0 &&
         num_concurrent_adapters < get_max_concurrent_adapters()) {
@@ -1096,12 +1081,12 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
       new_bc.requestsInfo[inference_batch_size].first_token_depth_in_request =
           request.dataset_entry_processed_tokens;
       new_bc.requestsInfo[inference_batch_size].first_token_offset_in_batch =
-          new_bc.num_active_infr_tokens();
+          new_bc.num_active_tokens();
       new_bc.requestsInfo[inference_batch_size].num_tokens_in_batch =
           num_peft_tokens;
       new_bc.requestsInfo[inference_batch_size].max_length = request.max_length;
       new_bc.requestsInfo[inference_batch_size].request_guid = request.guid;
-      new_bc.requestsInfo[inference_batch_size].peft_bwd = true;
+      new_bc.requestsInfo[inference_batch_size].finetuning_request = true;
       new_bc.requestsInfo[inference_batch_size].peft_model_id =
           request.peft_model_id;
       add_peft_config_to_request_info(
@@ -1116,12 +1101,11 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
            i < request.dataset_entry_processed_tokens + num_peft_tokens;
            i++) {
         new_bc.tokensInfo[new_bc.num_tokens].token_id =
-            request.dataset[dataset_entry].first[i];
+            request.dataset[dataset_entry][i];
         new_bc.tokensInfo[new_bc.num_tokens].request_index =
             inference_batch_size;
         new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = i;
         new_bc.num_tokens++;
-        new_bc.num_peft_tokens++;
       }
       num_concurrent_adapters += 1;
     }

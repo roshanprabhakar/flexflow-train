@@ -498,6 +498,7 @@ OpMeta *Linear::init_task_with_dim(Task const *task,
   m->add_bias_only_once = linear->add_bias_only_once;
   m->profiling = linear->profiling;
   m->inference_debugging = linear->inference_debugging;
+  m->enable_peft_finetuning = linear->enable_peft_finetuning;
   m->trainable_inputs[0] = linear->trainable_inputs[0];
   m->weight_ptr_type = m->input_type[0];
   m->quantization_type = linear->quantization_type;
@@ -636,7 +637,7 @@ void Linear::inference_task(Task const *task,
   assert((weight.domain.hi()[1] - weight.domain.lo()[1] + 1) == out_dim);
   assert(weight.domain.get_volume() == in_dim * out_dim);
 
-  int batch_size = bc->num_active_infr_tokens();
+  int batch_size = bc->num_active_tokens();
   GenericTensorAccessorR bias;
   if (m->use_bias &&
       !(m->add_bias_only_once && task->index_point.point_data[0] != 0)) {
@@ -734,7 +735,7 @@ void Linear::peft_bwd_task(Task const *task,
       ctx, task->regions[0].region.get_index_space());
   LinearMeta *m = *((LinearMeta **)task->local_args);
   BatchConfig const *bc = BatchConfig::from_future(task->futures[0]);
-  if (bc->num_active_peft_tokens() == 0) {
+  if (!bc->peft_bwd_applies_to_this_layer(m->layer_guid.transformer_layer_id)) {
     return;
   }
   assert(regions.size() == 3);
@@ -753,8 +754,8 @@ void Linear::peft_bwd_task(Task const *task,
   int in_dim = input_grad.domain.hi()[0] - input_grad.domain.lo()[0] + 1;
   int out_dim = output_grad.domain.hi()[0] - output_grad.domain.lo()[0] + 1;
 
-  int num_infr_tokens = bc->num_active_infr_tokens();
-  int num_peft_tokens = bc->num_active_peft_tokens();
+  int num_infr_tokens = bc->num_active_tokens();
+  int num_peft_tokens = bc->num_finetuning_tokens();
   if (m->inference_debugging) {
     assert(task->index_point.get_dim() == 1);
     int shard_id = task->index_point.point_data[0];

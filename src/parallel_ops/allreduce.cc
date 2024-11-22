@@ -412,7 +412,7 @@ void AllReduce::peft_bwd_task(Task const *task,
 
   AllReduceMeta *m = *((AllReduceMeta **)task->local_args);
   BatchConfig const *bc = BatchConfig::from_future(task->futures[0]);
-  if (bc->num_active_peft_tokens() == 0) {
+  if (!bc->peft_bwd_applies_to_this_layer(m->layer_guid.transformer_layer_id)) {
     return;
   }
   GenericTensorAccessorW input_grad = helperGetGenericTensorAccessorRW(
