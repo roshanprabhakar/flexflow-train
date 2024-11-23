@@ -697,7 +697,7 @@ __global__ void scaling_query_kernel(DT *input_ptr,
 
 template <typename DT>
 __global__ void
-    apply_rotary_embedding_hf(DT *input_ptr,
+    apply_rotary_embedding_fwd(DT *input_ptr,
                               hipFloatComplex *complex_input,
                               BatchConfig::PerTokenInfo const *tokenInfos,
                               float rope_theta,
@@ -872,7 +872,7 @@ void compute_qkv_kernel(IncMultiHeadSelfAttentionMeta const *m,
     /*q&k*/
     parallelism = num_tokens * m->hidden_size;
     hipLaunchKernelGGL(
-        HIP_KERNEL_NAME(apply_rotary_embedding_hf),
+        HIP_KERNEL_NAME(apply_rotary_embedding_fwd),
         GET_BLOCKS(parallelism),
         min(CUDA_NUM_THREADS, parallelism),
         0,
