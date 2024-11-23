@@ -693,344 +693,300 @@ void RequestManager::add_peft_config_to_request_info(
   //           << bc.requestsInfo[req_idx].peft_model_config_str << std::endl;
 }
 
-BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
-                                               InferenceResult const &result) {
-  const std::lock_guard<std::mutex> lock(request_queue_mutex);
-  // Step 1: append result from previous iteration to request's tokens
+void RequestManager::save_new_tokens_from_batch(BatchConfig const &old_bc, InferenceResult const &result) {
   for (int i = 0; i < old_bc.num_active_tokens(); i++) {
-    size_t guid =
-        old_bc.requestsInfo[old_bc.tokensInfo[i].request_index].request_guid;
+    size_t guid = old_bc.requestsInfo[old_bc.tokensInfo[i].request_index].request_guid;
     Request &request = all_requests[guid];
     if (request.req_type == RequestType::REQ_FINETUNING) {
+      // finetuning requests don't produce any new decoding token
       continue;
     }
     if (old_bc.tokensInfo[i].abs_depth_in_request + 1 < request.tokens.size()) {
+      assert(old_bc.requestsInfo[old_bc.tokensInfo[i].request_index].prompt_phase == true);
       // This is a prompt token
       continue;
     } else {
       // This is a decoding token
-      assert(old_bc.tokensInfo[i].abs_depth_in_request + 1 ==
-             request.tokens.size());
+      assert(old_bc.tokensInfo[i].abs_depth_in_request + 1 == request.tokens.size());
+      request.tokens.push_back(result.token_ids[i]);
       if (!profiling_requests[guid].first_token_time_set) {
         profiling_requests[guid].first_token_time =
             Realm::Clock::current_time_in_microseconds();
         profiling_requests[guid].first_token_time_set = true;
       }
-      log_req_mgr.print("Output token is: %d", result.token_ids[i]);
-      request.tokens.push_back(result.token_ids[i]);
-      // std::string output = this->tokenizer_->Decode(request.tokens);
-      // log_req_mgr.print("Output: %s", output.c_str());
+      // log_req_mgr.print("Output token is: %d", result.token_ids[i]);
     }
   }
+}
 
-  int num_generation_tokens = 0;
-  int num_active_req = -1;
+void RequestManager::handle_completed_inf_request(BatchConfig const &old_bc, int i) {
+  Request &request = all_requests[old_bc.requestsInfo[i].request_guid];
+  assert(old_bc.requestsInfo[i].num_tokens_in_batch > 0);
+  assert(request.req_type == RequestType::REQ_INFERENCE && "Found misplaced finetuning request");
 
-  // when finetuning is enabled, the last entry in the batch cannot be used for
-  // inference
-  int inference_batch_size =
-      BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
-
-  int num_concurrent_adapters = 0;
-
-  // Step 2: prepare the next batch for existing inference requests
-  BatchConfig new_bc;
-  for (int i = 0; i < inference_batch_size; i++) {
-    if (old_bc.request_completed[i]) {
-      // no need to carry over tokens to new batch for this request
-      continue;
+  if (is_eos_token(request.tokens.back())) {
+    // remove the EOS token
+    request.tokens.pop_back();
+  }
+  std::string output = this->tokenizer_->Decode(request.tokens);
+  // Unlike Huggingface, the sentencepiece C++ library automatically
+  // removes the BOS token
+  if (model_type == ModelType::LLAMA && old_llama_tokenizer &&
+      request.add_special_tokens &&
+      request.tokens.at(0) == bos_token_id) {
+    output = "<s> " + output;
+  }
+  {
+    // update generation result
+    GenerationResult &gr = request_generation_results[request.guid];
+    assert(gr.guid == request.guid);
+    gr.output_tokens = request.tokens;
+    gr.output_text = output;
+  }
+  request.status = Request::COMPLETED;
+  trigger_request_completion_future(request.guid);
+  log_req_mgr.print("[Done] guid(%zu) final_length(%zu)",
+                    old_bc.requestsInfo[i].request_guid,
+                    request.tokens.size());
+  log_req_mgr.print("Final output: %s", output.c_str());
+  num_processed_requests++;
+  ProfileInfo profile_info = profiling_requests[request.guid];
+  profile_info.finish_time = Realm::Clock::current_time_in_microseconds();
+  total_request_run_time +=
+      profile_info.finish_time - profile_info.start_time;
+  profiling_requests[request.guid] = profile_info;
+  log_req_mgr.print("[%s] guid(%zu) llm_decoding_steps(%d) start(%.1lf) "
+                    "finish(%.1lf) latency(%.1lf) ttft(%.1lf)",
+                    request.warmup ? "Warmup" : "Profile",
+                    request.guid,
+                    profile_info.llm_decoding_steps,
+                    profile_info.start_time,
+                    profile_info.finish_time,
+                    profile_info.finish_time - profile_info.start_time,
+                    profile_info.first_token_time -
+                        profile_info.registration_time);
+  // Write output to file if needed:
+  if (!output_filepath.empty()) {
+    std::ofstream outputFile(output_filepath, std::ios::app);
+    if (outputFile.is_open()) {
+      outputFile << "[" << (request.warmup ? "Warmup" : "Profile")
+                  << "] guid(" << request.guid << ") llm_decoding_steps("
+                  << profile_info.llm_decoding_steps << ") latency("
+                  << std::fixed << std::setprecision(3)
+                  << (profile_info.finish_time - profile_info.start_time)
+                  << ") ttft(" << std::fixed << std::setprecision(3)
+                  << (profile_info.first_token_time -
+                      profile_info.registration_time)
+                  << ")\n";
+      if (request.benchmarking_tokens <= 0) {
+        outputFile << "token IDs: ";
+        for (int i = 0; i < request.tokens.size(); i++) {
+          outputFile << request.tokens[i];
+          if (i < request.tokens.size() - 1) {
+            outputFile << ",";
+          }
+        }
+        outputFile << std::endl;
+        outputFile << output;
+      }
+      outputFile.close();
     } else {
-      assert(old_bc.requestsInfo[i].num_tokens_in_batch > 0);
-      Request &request = all_requests[old_bc.requestsInfo[i].request_guid];
-      assert(request.req_type == RequestType::REQ_INFERENCE &&
-             "Found misplaced finetuning request");
-
-      int processed_tokens =
-          old_bc.requestsInfo[i].first_token_depth_in_request +
-          old_bc.requestsInfo[i].num_tokens_in_batch;
-      assert(processed_tokens < request.tokens.size());
-      bool request_completed = check_inf_req_completion(old_bc, i);
-      if (request_completed) {
-        if (is_eos_token(request.tokens.back())) {
-          // remove the EOS token
-          request.tokens.pop_back();
-        }
-        std::string output = this->tokenizer_->Decode(request.tokens);
-        // Unlike Huggingface, the sentencepiece C++ library automatically
-        // removes the BOS token
-        if (model_type == ModelType::LLAMA && old_llama_tokenizer &&
-            request.add_special_tokens &&
-            request.tokens.at(0) == bos_token_id) {
-          output = "<s> " + output;
-        }
-        {
-          // update generation result
-          GenerationResult &gr = request_generation_results[request.guid];
-          assert(gr.guid == request.guid);
-          gr.output_tokens = request.tokens;
-          gr.output_text = output;
-        }
-        request.status = Request::COMPLETED;
-        trigger_request_completion_future(request.guid);
-        log_req_mgr.print("[Done] guid(%zu) final_length(%zu)",
-                          old_bc.requestsInfo[i].request_guid,
-                          request.tokens.size());
-        log_req_mgr.print("Final output: %s", output.c_str());
-        num_processed_requests++;
-        ProfileInfo profile_info = profiling_requests[request.guid];
-        profile_info.finish_time = Realm::Clock::current_time_in_microseconds();
-        total_request_run_time +=
-            profile_info.finish_time - profile_info.start_time;
-        profiling_requests[request.guid] = profile_info;
-        log_req_mgr.print("[%s] guid(%zu) llm_decoding_steps(%d) start(%.1lf) "
-                          "finish(%.1lf) latency(%.1lf) ttft(%.1lf)",
-                          request.warmup ? "Warmup" : "Profile",
-                          request.guid,
-                          profile_info.llm_decoding_steps,
-                          profile_info.start_time,
-                          profile_info.finish_time,
-                          profile_info.finish_time - profile_info.start_time,
-                          profile_info.first_token_time -
-                              profile_info.registration_time);
-        // Write output to file if needed:
-        if (!output_filepath.empty()) {
-          std::ofstream outputFile(output_filepath, std::ios::app);
-          if (outputFile.is_open()) {
-            outputFile << "[" << (request.warmup ? "Warmup" : "Profile")
-                       << "] guid(" << request.guid << ") llm_decoding_steps("
-                       << profile_info.llm_decoding_steps << ") latency("
-                       << std::fixed << std::setprecision(3)
-                       << (profile_info.finish_time - profile_info.start_time)
-                       << ") ttft(" << std::fixed << std::setprecision(3)
-                       << (profile_info.first_token_time -
-                           profile_info.registration_time)
-                       << ")\n";
-            if (request.benchmarking_tokens <= 0) {
-              outputFile << "token IDs: ";
-              for (int i = 0; i < request.tokens.size(); i++) {
-                outputFile << request.tokens[i];
-                if (i < request.tokens.size() - 1) {
-                  outputFile << ",";
-                }
-              }
-              outputFile << std::endl;
-              outputFile << output;
-            }
-            outputFile.close();
-          } else {
-            std::cout << "Unable to open the output file: " << output_filepath
-                      << std::endl;
-            assert(false);
-          }
-        }
-      } else {
-        new_bc.request_completed[i] = false;
-        new_bc.requestsInfo[i].first_token_depth_in_request = processed_tokens;
-        new_bc.requestsInfo[i].first_token_offset_in_batch = new_bc.num_tokens;
-        new_bc.requestsInfo[i].request_guid =
-            old_bc.requestsInfo[i].request_guid;
-        new_bc.requestsInfo[i].peft_model_id =
-            old_bc.requestsInfo[i].peft_model_id;
-        std::strcpy(new_bc.requestsInfo[i].peft_model_config_str,
-                    old_bc.requestsInfo[i].peft_model_config_str);
-        if (old_bc.requestsInfo[i].peft_model_id != PEFTModelID::NO_ID) {
-          num_concurrent_adapters += 1;
-        }
-        new_bc.requestsInfo[i].finetuning_request =
-            old_bc.requestsInfo[i].finetuning_request;
-        new_bc.requestsInfo[i].max_length = old_bc.requestsInfo[i].max_length;
-        num_active_req++;
-        new_bc.requestsInfo[num_active_req].batch_config_request_id = i;
-        if (new_bc.requestsInfo[i].first_token_depth_in_request + 1 ==
-            request.tokens.size()) {
-          // Incremental phase
-          new_bc.requestsInfo[i].num_tokens_in_batch = 1;
-          num_generation_tokens++;
-          new_bc.requestsInfo[i].prompt_phase = false;
-        } else {
-          // Prompt phase
-          assert(old_bc.requestsInfo[i].prompt_phase == true);
-          int space_for_incr_dec_requests = 0;
-          // If the prompt can't fit in the batch, compute how much space we
-          // need to leave out for incomplete requests in decoding phase at
-          // higher indices.
-          for (int ii = i + 1; ii < inference_batch_size; ii++) {
-            if (old_bc.request_completed[ii]) {
-              continue;
-            }
-            Request &old_request =
-                all_requests[old_bc.requestsInfo[ii].request_guid];
-            bool req_completed = check_inf_req_completion(old_bc, ii);
-            if (!req_completed) {
-              space_for_incr_dec_requests++;
-            }
-          }
-          new_bc.requestsInfo[i].num_tokens_in_batch =
-              std::min(get_max_tokens_per_batch() - new_bc.num_tokens -
-                           space_for_incr_dec_requests,
-                       (int)request.tokens.size() -
-                           new_bc.requestsInfo[i].first_token_depth_in_request);
-          new_bc.requestsInfo[i].prompt_phase = true;
-        }
-        for (int j = 0; j < new_bc.requestsInfo[i].num_tokens_in_batch; j++) {
-          int depth = new_bc.requestsInfo[i].first_token_depth_in_request + j;
-          new_bc.tokensInfo[new_bc.num_tokens].request_index = i;
-          new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = depth;
-          assert(depth < request.tokens.size());
-          new_bc.tokensInfo[new_bc.num_tokens].token_id = request.tokens[depth];
-          new_bc.num_tokens++;
-        }
-        // Update profiling
-        profiling_requests[new_bc.requestsInfo[i].request_guid]
-            .llm_decoding_steps++;
-      }
+      std::cout << "Unable to open the output file: " << output_filepath
+                << std::endl;
+      assert(false);
     }
   }
-  new_bc.num_generation_tokens = num_generation_tokens;
+}
 
-  assert(num_concurrent_adapters <= get_max_concurrent_adapters() &&
-         "Number of concurrent adapters exceeded the limit");
+void RequestManager::add_unfinished_request(BatchConfig &new_bc, BatchConfig const &old_bc, int &num_active_req, int &num_concurrent_adapters, int inference_batch_size, int i) {
+  Request &request = all_requests[old_bc.requestsInfo[i].request_guid];
+  assert(old_bc.requestsInfo[i].num_tokens_in_batch > 0);
+  assert(request.req_type == RequestType::REQ_INFERENCE && "Found misplaced finetuning request");
+  int processed_tokens = old_bc.requestsInfo[i].first_token_depth_in_request + old_bc.requestsInfo[i].num_tokens_in_batch;
+  assert(processed_tokens < request.tokens.size());
 
-  // Step 3: add new inference requests to the next batch if there is space
-  for (int i = 0; i < inference_batch_size; i++) {
-    if (new_bc.request_completed[i]) {
-      if (!pending_infr_request_queue.empty() &&
-          new_bc.num_tokens < get_max_tokens_per_batch()) {
-        Request new_request = pending_infr_request_queue.front();
-        assert(new_request.req_type == RequestType::REQ_INFERENCE);
-
-        // if the request has peft adapters and we are at capacity, don't add it
-        // yet
-        if (new_request.peft_model_id != PEFTModelID::NO_ID &&
-            num_concurrent_adapters == get_max_concurrent_adapters()) {
-          break;
-        }
-
-        pending_infr_request_queue.pop();
-        // all_requests[new_request.guid] = new_request;
-
-        new_bc.requestsInfo[i].first_token_depth_in_request = 0;
-        new_bc.requestsInfo[i].first_token_offset_in_batch = new_bc.num_tokens;
-        new_bc.requestsInfo[i].request_guid = new_request.guid;
-        new_bc.requestsInfo[i].num_tokens_in_batch =
-            std::min(get_max_tokens_per_batch() - new_bc.num_tokens,
-                     (int)new_request.tokens.size());
-        new_bc.requestsInfo[i].max_length = new_request.max_length;
-        new_bc.requestsInfo[i].peft_model_id = new_request.peft_model_id;
-        if (new_request.peft_model_id != PEFTModelID::NO_ID) {
-          add_peft_config_to_request_info(
-              new_bc, i, get_peft_config(new_request.peft_model_id));
-        }
-        new_bc.requestsInfo[i].finetuning_request = false;
-        new_bc.request_completed[i] = false;
-        new_bc.requestsInfo[i].prompt_phase = true;
-        num_active_req++;
-        new_bc.requestsInfo[num_active_req].batch_config_request_id = i;
-        // add start time to profile_info for the new request
-        profiling_requests[new_request.guid].llm_decoding_steps = 1;
-        profiling_requests[new_request.guid].start_time =
-            Realm::Clock::current_time_in_microseconds();
-        for (int j = 0; j < new_bc.requestsInfo[i].num_tokens_in_batch; j++) {
-          int depth = new_bc.requestsInfo[i].first_token_depth_in_request + j;
-          new_bc.tokensInfo[new_bc.num_tokens].request_index = i;
-          new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = depth;
-          assert(depth < new_request.tokens.size());
-          new_bc.tokensInfo[new_bc.num_tokens].token_id =
-              new_request.tokens[depth];
-          new_bc.num_tokens++;
-        }
-        if (new_bc.num_tokens == get_max_tokens_per_batch()) {
-          break;
-        }
+  if (old_bc.requestsInfo[i].peft_model_id != PEFTModelID::NO_ID) {
+    num_concurrent_adapters += 1;
+  }
+  
+  // add request to new bc, at the same index
+  new_bc.request_completed[i] = false;
+  new_bc.requestsInfo[i].first_token_depth_in_request = processed_tokens;
+  new_bc.requestsInfo[i].first_token_offset_in_batch = new_bc.num_tokens;
+  new_bc.requestsInfo[i].request_guid = old_bc.requestsInfo[i].request_guid;
+  new_bc.requestsInfo[i].peft_model_id = old_bc.requestsInfo[i].peft_model_id;
+  std::strcpy(new_bc.requestsInfo[i].peft_model_config_str, old_bc.requestsInfo[i].peft_model_config_str);
+  new_bc.requestsInfo[i].finetuning_request = old_bc.requestsInfo[i].finetuning_request;
+  new_bc.requestsInfo[i].max_length = old_bc.requestsInfo[i].max_length;
+  
+  num_active_req++;
+  new_bc.requestsInfo[num_active_req].batch_config_request_id = i;
+  
+  if (new_bc.requestsInfo[i].first_token_depth_in_request + 1 == request.tokens.size()) {
+    // Incremental phase
+    new_bc.requestsInfo[i].num_tokens_in_batch = 1;
+    new_bc.num_generation_tokens++;
+    new_bc.requestsInfo[i].prompt_phase = false;
+  } else {
+    // Prompt phase
+    assert(old_bc.requestsInfo[i].prompt_phase == true);
+    int space_for_incr_dec_requests = 0;
+    // If the prompt can't fit in the batch, compute how much space we
+    // need to leave out for incomplete requests in decoding phase at
+    // higher indices.
+    for (int ii = i + 1; ii < inference_batch_size; ii++) {
+      if (old_bc.request_completed[ii]) {
+        continue;
+      }
+      Request &old_request = all_requests[old_bc.requestsInfo[ii].request_guid];
+      bool req_completed = check_inf_req_completion(old_bc, ii);
+      if (!req_completed) {
+        space_for_incr_dec_requests++;
       }
     }
+    new_bc.requestsInfo[i].num_tokens_in_batch =
+        std::min(get_max_tokens_per_batch() - new_bc.num_tokens -
+                      space_for_incr_dec_requests,
+                  (int)request.tokens.size() -
+                      new_bc.requestsInfo[i].first_token_depth_in_request);
+    new_bc.requestsInfo[i].prompt_phase = true;
   }
+  for (int j = 0; j < new_bc.requestsInfo[i].num_tokens_in_batch; j++) {
+    int depth = new_bc.requestsInfo[i].first_token_depth_in_request + j;
+    new_bc.tokensInfo[new_bc.num_tokens].request_index = i;
+    new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = depth;
+    assert(depth < request.tokens.size());
+    new_bc.tokensInfo[new_bc.num_tokens].token_id = request.tokens[depth];
+    new_bc.num_tokens++;
+  }
+  // Update profiling
+  profiling_requests[new_bc.requestsInfo[i].request_guid].llm_decoding_steps++;
+}
 
-  if (enable_peft_finetuning &&
-      !old_bc.request_completed[inference_batch_size]) {
-    assert(old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch > 0);
-    Request &request =
-        all_requests[old_bc.requestsInfo[inference_batch_size].request_guid];
-    assert(request.req_type == RequestType::REQ_FINETUNING &&
-           "Found misplaced inference request");
+void RequestManager::add_new_inference_request_if_available(BatchConfig &new_bc, int &num_active_req, int &num_concurrent_adapters, int i) {
+  if (!pending_infr_request_queue.empty() && new_bc.num_tokens < get_max_tokens_per_batch()) {
+    Request new_request = pending_infr_request_queue.front();
+    assert(new_request.req_type == RequestType::REQ_INFERENCE);
 
-    request.finetuning_losses.push_back(result.finetuning_loss);
-
-    request.dataset_entry_processed_tokens +=
-        old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch;
-    request.processed_finetuning_tokens +=
-        old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch;
-    request.finetuning_tokens_per_batch.push_back(
-        old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch);
-    int dataset_entry =
-        request.completed_training_steps % request.dataset.size();
-    if (old_bc.requestsInfo[inference_batch_size].first_token_depth_in_request +
-            old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch ==
-        request.dataset[dataset_entry].size()) {
-      // completed the current dataset entry
-      assert(request.dataset_entry_processed_tokens ==
-             request.dataset[dataset_entry].size());
-      request.completed_training_steps += 1;
-      request.dataset_entry_processed_tokens = 0;
+    // if the request has peft adapters and we are at capacity, don't add it yet
+    if (new_request.peft_model_id != PEFTModelID::NO_ID &&
+      num_concurrent_adapters == get_max_concurrent_adapters()) {
+      return;
     }
 
-    assert(request.completed_training_steps <= request.max_training_steps);
-    if (request.completed_training_steps == request.max_training_steps ||
-        inference_finished) {
-      // check if the fine tuning request has completed
-      request.status = Request::COMPLETED;
+    pending_infr_request_queue.pop();
 
-      GenerationResult &gr = request_generation_results[request.guid];
-      assert(gr.guid == request.guid);
-      gr.finetuning_losses = request.finetuning_losses;
-      trigger_request_completion_future(request.guid);
-      num_processed_requests++;
+    new_bc.requestsInfo[i].first_token_depth_in_request = 0;
+    new_bc.requestsInfo[i].first_token_offset_in_batch = new_bc.num_tokens;
+    new_bc.requestsInfo[i].request_guid = new_request.guid;
+    new_bc.requestsInfo[i].num_tokens_in_batch = std::min(get_max_tokens_per_batch() - new_bc.num_tokens, (int)new_request.tokens.size());
+    new_bc.requestsInfo[i].max_length = new_request.max_length;
+    new_bc.requestsInfo[i].peft_model_id = new_request.peft_model_id;
+    if (new_request.peft_model_id != PEFTModelID::NO_ID) {
+      add_peft_config_to_request_info(new_bc, i, get_peft_config(new_request.peft_model_id));
+    }
+    new_bc.requestsInfo[i].finetuning_request = false;
+    new_bc.request_completed[i] = false;
+    new_bc.requestsInfo[i].prompt_phase = true;
+    num_active_req++;
+    new_bc.requestsInfo[num_active_req].batch_config_request_id = i;
+    // add start time to profile_info for the new request
+    profiling_requests[new_request.guid].llm_decoding_steps = 1;
+    profiling_requests[new_request.guid].start_time =
+        Realm::Clock::current_time_in_microseconds();
+    for (int j = 0; j < new_bc.requestsInfo[i].num_tokens_in_batch; j++) {
+      int depth = new_bc.requestsInfo[i].first_token_depth_in_request + j;
+      new_bc.tokensInfo[new_bc.num_tokens].request_index = i;
+      new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = depth;
+      assert(depth < new_request.tokens.size());
+      new_bc.tokensInfo[new_bc.num_tokens].token_id = new_request.tokens[depth];
+      new_bc.num_tokens++;
+    }
+  }
+}
 
-      ProfileInfo profile_info = profiling_requests[request.guid];
-      profile_info.finish_time = Realm::Clock::current_time_in_microseconds();
-      total_request_run_time +=
-          profile_info.finish_time - profile_info.start_time;
-      profiling_requests[request.guid] = profile_info;
-      log_req_mgr.print("[%s] guid(%zu) completed_training_steps(%d) "
-                        "processed_finetuning_tokens(%lu) latency(%.1lf)",
-                        request.warmup ? "Warmup" : "Finetuning",
-                        request.guid,
-                        request.completed_training_steps,
-                        request.processed_finetuning_tokens,
-                        profile_info.finish_time - profile_info.start_time);
-      if (!output_filepath.empty()) {
-        std::ofstream outputFile(output_filepath, std::ios::app);
-        if (outputFile.is_open()) {
-          std::string tokens_str = "[";
-          for (size_t i = 0; i < request.finetuning_tokens_per_batch.size();
-               i++) {
-            tokens_str +=
-                std::to_string(request.finetuning_tokens_per_batch[i]);
-            if (i != request.finetuning_tokens_per_batch.size() - 1) {
-              tokens_str += ", ";
-            }
-          }
-          tokens_str += "]";
-          outputFile << "[" << (request.warmup ? "Warmup" : "Finetuning")
-                     << "] guid(" << request.guid
-                     << ") completed_training_steps("
-                     << request.completed_training_steps
-                     << ") processed_finetuning_tokens("
-                     << request.processed_finetuning_tokens << ") latency("
-                     << std::fixed << std::setprecision(3)
-                     << (profile_info.finish_time - profile_info.start_time)
-                     << ") tokens_per_batch(" << tokens_str << ")\n";
-          outputFile.close();
-        } else {
-          std::cout << "Unable to open the output file: " << output_filepath
-                    << std::endl;
-          assert(false);
+void RequestManager::handle_completed_finetuning_request(BatchConfig const &old_bc, int inference_batch_size) {
+  
+  Request &request = all_requests[old_bc.requestsInfo[inference_batch_size].request_guid];
+  // check if the fine tuning request has completed
+  request.status = Request::COMPLETED;
+
+  GenerationResult &gr = request_generation_results[request.guid];
+  assert(gr.guid == request.guid);
+  gr.finetuning_losses = request.finetuning_losses;
+  trigger_request_completion_future(request.guid);
+  num_processed_requests++;
+
+  ProfileInfo profile_info = profiling_requests[request.guid];
+  profile_info.finish_time = Realm::Clock::current_time_in_microseconds();
+  total_request_run_time +=
+      profile_info.finish_time - profile_info.start_time;
+  profiling_requests[request.guid] = profile_info;
+  log_req_mgr.print("[%s] guid(%zu) completed_training_steps(%d) "
+                    "processed_finetuning_tokens(%lu) latency(%.1lf)",
+                    request.warmup ? "Warmup" : "Finetuning",
+                    request.guid,
+                    request.completed_training_steps,
+                    request.processed_finetuning_tokens,
+                    profile_info.finish_time - profile_info.start_time);
+  if (!output_filepath.empty()) {
+    std::ofstream outputFile(output_filepath, std::ios::app);
+    if (outputFile.is_open()) {
+      std::string tokens_str = "[";
+      for (size_t i = 0; i < request.finetuning_tokens_per_batch.size();
+            i++) {
+        tokens_str +=
+            std::to_string(request.finetuning_tokens_per_batch[i]);
+        if (i != request.finetuning_tokens_per_batch.size() - 1) {
+          tokens_str += ", ";
         }
       }
+      tokens_str += "]";
+      outputFile << "[" << (request.warmup ? "Warmup" : "Finetuning")
+                  << "] guid(" << request.guid
+                  << ") completed_training_steps("
+                  << request.completed_training_steps
+                  << ") processed_finetuning_tokens("
+                  << request.processed_finetuning_tokens << ") latency("
+                  << std::fixed << std::setprecision(3)
+                  << (profile_info.finish_time - profile_info.start_time)
+                  << ") tokens_per_batch(" << tokens_str << ")\n";
+      outputFile.close();
+    } else {
+      std::cout << "Unable to open the output file: " << output_filepath
+                << std::endl;
+      assert(false);
     }
   }
+}
 
-  // Step 4: add PEFT bwd requests, if there is additional space
+void RequestManager::handle_existing_finetuning_request(BatchConfig &new_bc, BatchConfig const &old_bc, InferenceResult const &result, int inference_batch_size) {
+  assert(old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch > 0);
+  Request &request = all_requests[old_bc.requestsInfo[inference_batch_size].request_guid];
+  assert(request.req_type == RequestType::REQ_FINETUNING && "Found misplaced inference request");
+
+  request.finetuning_losses.push_back(result.finetuning_loss);
+
+  request.dataset_entry_processed_tokens += old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch;
+  request.processed_finetuning_tokens += old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch;
+  request.finetuning_tokens_per_batch.push_back(old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch);
+  int dataset_entry = request.completed_training_steps % request.dataset.size();
+  if (old_bc.requestsInfo[inference_batch_size].first_token_depth_in_request +
+          old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch ==
+      request.dataset[dataset_entry].size()) {
+    // completed the current dataset entry
+    assert(request.dataset_entry_processed_tokens == request.dataset[dataset_entry].size());
+    request.completed_training_steps += 1;
+    request.dataset_entry_processed_tokens = 0;
+  }
+
+  assert(request.completed_training_steps <= request.max_training_steps);
+  if (request.completed_training_steps == request.max_training_steps || inference_finished) {
+    handle_completed_finetuning_request(old_bc, inference_batch_size);
+  }
+}
+
+void RequestManager::update_pending_finetuning_requests_queue() {
   while (pending_peft_request_queue.size() > 0) {
     Request &request = pending_peft_request_queue.front();
     // assert(request.req_type = RequestType::REQ_FINETUNING);
@@ -1042,73 +998,125 @@ BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc,
       break;
     }
   }
+}
 
-  if (pending_peft_request_queue.size() > 0 && !inference_finished) {
-    Request &request = pending_peft_request_queue.front();
-    assert(request.req_type = RequestType::REQ_FINETUNING);
-    assert(request.dataset.size() > 0);
-    // update status and training steps
-    Request &all_req_handle = all_requests[request.guid];
-    assert(all_req_handle.req_type = RequestType::REQ_FINETUNING);
+void RequestManager::add_new_finetuning_request_if_available(BatchConfig &new_bc, int &num_concurrent_adapters, int inference_batch_size) {
+  Request &request = pending_peft_request_queue.front();
+  assert(request.req_type = RequestType::REQ_FINETUNING);
+  assert(request.dataset.size() > 0);
+  // update status and training steps
+  Request &all_req_handle = all_requests[request.guid];
+  assert(all_req_handle.req_type = RequestType::REQ_FINETUNING);
 
-    request.completed_training_steps = all_req_handle.completed_training_steps;
-    request.processed_finetuning_tokens =
-        all_req_handle.processed_finetuning_tokens;
-    request.status = all_req_handle.status;
-    int dataset_entry =
-        request.completed_training_steps % request.dataset.size();
-    request.dataset_entry_processed_tokens =
-        all_req_handle.dataset_entry_processed_tokens;
-    request.gradient_accumulation_steps =
-        all_req_handle.gradient_accumulation_steps;
+  request.completed_training_steps = all_req_handle.completed_training_steps;
+  request.processed_finetuning_tokens =
+      all_req_handle.processed_finetuning_tokens;
+  request.status = all_req_handle.status;
+  int dataset_entry =
+      request.completed_training_steps % request.dataset.size();
+  request.dataset_entry_processed_tokens =
+      all_req_handle.dataset_entry_processed_tokens;
+  request.gradient_accumulation_steps =
+      all_req_handle.gradient_accumulation_steps;
 
-    assert(request.status != Request::COMPLETED);
-    assert(request.max_training_steps > 0 &&
-           request.completed_training_steps < request.max_training_steps);
-    assert(request.dataset_entry_processed_tokens <=
-           request.dataset[dataset_entry].size());
+  assert(request.status != Request::COMPLETED);
+  assert(request.max_training_steps > 0 &&
+          request.completed_training_steps < request.max_training_steps);
+  assert(request.dataset_entry_processed_tokens <=
+          request.dataset[dataset_entry].size());
 
-    int num_peft_tokens =
-        min((int)request.dataset[dataset_entry].size() -
-                request.dataset_entry_processed_tokens,
-            get_max_tokens_per_batch() - new_bc.num_active_tokens());
+  int num_peft_tokens =
+      min((int)request.dataset[dataset_entry].size() -
+              request.dataset_entry_processed_tokens,
+          get_max_tokens_per_batch() - new_bc.num_active_tokens());
 
-    if (num_peft_tokens > 0 &&
-        num_concurrent_adapters < get_max_concurrent_adapters()) {
-      assert(new_bc.request_completed[inference_batch_size]);
-      // request info
-      new_bc.request_completed[inference_batch_size] = false;
-      new_bc.requestsInfo[inference_batch_size].first_token_depth_in_request =
-          request.dataset_entry_processed_tokens;
-      new_bc.requestsInfo[inference_batch_size].first_token_offset_in_batch =
-          new_bc.num_active_tokens();
-      new_bc.requestsInfo[inference_batch_size].num_tokens_in_batch =
-          num_peft_tokens;
-      new_bc.requestsInfo[inference_batch_size].max_length = request.max_length;
-      new_bc.requestsInfo[inference_batch_size].request_guid = request.guid;
-      new_bc.requestsInfo[inference_batch_size].finetuning_request = true;
-      new_bc.requestsInfo[inference_batch_size].peft_model_id =
-          request.peft_model_id;
-      add_peft_config_to_request_info(
-          new_bc, inference_batch_size, get_peft_config(request.peft_model_id));
-      set_optimizer_tasks(
-          new_bc.requestsInfo[inference_batch_size].optimizer_tasks,
-          request.max_training_steps,
-          request.completed_training_steps,
-          request.gradient_accumulation_steps);
-      // tokens info
-      for (size_t i = request.dataset_entry_processed_tokens;
-           i < request.dataset_entry_processed_tokens + num_peft_tokens;
-           i++) {
-        new_bc.tokensInfo[new_bc.num_tokens].token_id =
-            request.dataset[dataset_entry][i];
-        new_bc.tokensInfo[new_bc.num_tokens].request_index =
-            inference_batch_size;
-        new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = i;
-        new_bc.num_tokens++;
-      }
-      num_concurrent_adapters += 1;
+  if (num_peft_tokens > 0 &&
+      num_concurrent_adapters < get_max_concurrent_adapters()) {
+    assert(new_bc.request_completed[inference_batch_size]);
+    // request info
+    new_bc.request_completed[inference_batch_size] = false;
+    new_bc.requestsInfo[inference_batch_size].first_token_depth_in_request =
+        request.dataset_entry_processed_tokens;
+    new_bc.requestsInfo[inference_batch_size].first_token_offset_in_batch =
+        new_bc.num_active_tokens();
+    new_bc.requestsInfo[inference_batch_size].num_tokens_in_batch =
+        num_peft_tokens;
+    new_bc.requestsInfo[inference_batch_size].max_length = request.max_length;
+    new_bc.requestsInfo[inference_batch_size].request_guid = request.guid;
+    new_bc.requestsInfo[inference_batch_size].finetuning_request = true;
+    new_bc.requestsInfo[inference_batch_size].peft_model_id =
+        request.peft_model_id;
+    add_peft_config_to_request_info(
+        new_bc, inference_batch_size, get_peft_config(request.peft_model_id));
+    set_optimizer_tasks(
+        new_bc.requestsInfo[inference_batch_size].optimizer_tasks,
+        request.max_training_steps,
+        request.completed_training_steps,
+        request.gradient_accumulation_steps);
+    // tokens info
+    for (size_t i = request.dataset_entry_processed_tokens;
+          i < request.dataset_entry_processed_tokens + num_peft_tokens;
+          i++) {
+      new_bc.tokensInfo[new_bc.num_tokens].token_id =
+          request.dataset[dataset_entry][i];
+      new_bc.tokensInfo[new_bc.num_tokens].request_index =
+          inference_batch_size;
+      new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = i;
+      new_bc.num_tokens++;
     }
+    num_concurrent_adapters += 1;
+  }
+}
+
+BatchConfig RequestManager::prepare_next_batch(BatchConfig const &old_bc, InferenceResult const &result) {
+  const std::lock_guard<std::mutex> lock(request_queue_mutex);
+  
+  // Step 1: append result from previous iteration to request's tokens
+  save_new_tokens_from_batch(old_bc, result);
+
+  int num_active_req = -1;
+  // when finetuning is enabled, the last entry in the batch cannot be used for inference
+  int inference_batch_size = BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
+  int num_concurrent_adapters = 0;
+
+  // Step 2: prepare the next batch for existing inference requests
+  BatchConfig new_bc;
+  for (int i = 0; i < inference_batch_size; i++) {
+    if (old_bc.request_completed[i]) {
+      // no need to carry over tokens to new batch for this request
+      continue;
+    } else {
+      Request &request = all_requests[old_bc.requestsInfo[i].request_guid];
+      bool request_completed = check_inf_req_completion(old_bc, i);
+      if (request_completed) {
+        handle_completed_inf_request(old_bc, i);
+      } else {
+        add_unfinished_request(new_bc, old_bc, num_active_req, num_concurrent_adapters, inference_batch_size, i);
+      }
+    }
+  }
+
+  assert(num_concurrent_adapters <= get_max_concurrent_adapters() &&
+         "Number of concurrent adapters exceeded the limit");
+
+  // Step 3: add new inference requests to the next batch if there is space
+  for (int i = 0; i < inference_batch_size; i++) {
+    if (new_bc.request_completed[i]) {
+      add_new_inference_request_if_available(new_bc, num_active_req, num_concurrent_adapters, i);
+    }
+    if (new_bc.num_tokens == get_max_tokens_per_batch()) {
+      break;
+    }
+  }
+
+  if (enable_peft_finetuning && !old_bc.request_completed[inference_batch_size]) {
+    handle_existing_finetuning_request(new_bc, old_bc, result, inference_batch_size);
+  }
+  update_pending_finetuning_requests_queue();
+
+  // Step 4: add PEFT bwd requests, if there is additional space
+  if (pending_peft_request_queue.size() > 0 && !inference_finished) {
+    add_new_finetuning_request_if_available(new_bc, num_concurrent_adapters, inference_batch_size);
   }
   assert(num_concurrent_adapters <= get_max_concurrent_adapters() &&
          "Number of concurrent adapters exceeded the limit");

@@ -191,6 +191,17 @@ public:
   void add_peft_config_to_request_info(BatchConfig &bc,
                                        int req_idx,
                                        LoraLinearConfig const &peft_config);
+  
+  // helpers for prepare_next_batch
+  void save_new_tokens_from_batch(BatchConfig const &old_bc, InferenceResult const &result);
+  void handle_completed_inf_request(BatchConfig const &old_bc, int i);
+  void add_unfinished_request(BatchConfig &new_bc, BatchConfig const &old_bc, int &num_active_req, int &num_concurrent_adapters, int inference_batch_size, int i);
+  void add_new_inference_request_if_available(BatchConfig &new_bc, int &num_active_req, int &num_concurrent_adapters, int i);
+  void handle_completed_finetuning_request(BatchConfig const &old_bc, int inference_batch_size);
+  void handle_existing_finetuning_request(BatchConfig &new_bc, BatchConfig const &old_bc, InferenceResult const &result, int inference_batch_size);
+  void update_pending_finetuning_requests_queue();
+  void add_new_finetuning_request_if_available(BatchConfig &new_bc, int &num_concurrent_adapters, int inference_batch_size);
+
   BatchConfig prepare_next_batch(BatchConfig const &bc,
                                  InferenceResult const &result);
   BatchConfigFuture prepare_next_batch(BatchConfigFuture const &bc,
