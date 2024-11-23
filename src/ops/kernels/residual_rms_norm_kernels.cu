@@ -85,10 +85,10 @@ __global__ void FusedAddRMSNormKernel(T const *__restrict__ input,
 
   for (uint32_t i = 0; i < rounds; i++) {
     flashinfer::vec_t<T, VEC_SIZE> input_vec;
-    input_vec.fill(0);
     flashinfer::vec_t<T, VEC_SIZE> residual_vec;
-    residual_vec.fill(0);
     flashinfer::vec_t<T, VEC_SIZE> residual_output_vec;
+    input_vec.fill(0);
+    residual_vec.fill(0);
     residual_output_vec.fill(0);
     if ((i * num_threads + thread_id) * VEC_SIZE < d) {
       input_vec.load(input + bx * d + i * num_threads * VEC_SIZE +
@@ -132,17 +132,13 @@ __global__ void FusedAddRMSNormKernel(T const *__restrict__ input,
   float rms_rcp = flashinfer::math::rsqrt(smem[0] / float(d) + eps);
 
   for (uint32_t i = 0; i < rounds; i++) {
-    flashinfer::vec_t<T, VEC_SIZE> input_vec;
     flashinfer::vec_t<T, VEC_SIZE> weight_vec;
     flashinfer::vec_t<T, VEC_SIZE> residual_output_vec;
     flashinfer::vec_t<T, VEC_SIZE> output_vec;
-    input_vec.fill(0);
     weight_vec.fill(0);
     residual_output_vec.fill(0);
     output_vec.fill(0);
     if ((i * num_threads + thread_id) * VEC_SIZE < d) {
-      input_vec.load(input + bx * d + i * num_threads * VEC_SIZE +
-                     thread_id * VEC_SIZE);
       weight_vec.load(weight + i * num_threads * VEC_SIZE +
                       thread_id * VEC_SIZE);
       residual_output_vec.load(residual_output + bx * d +
