@@ -142,6 +142,9 @@ void inference_kernel_wrapper(Context ctx,
   int device_id = m->handle.device_id;
   ncclComm_t ncclComm = m->handle.ncclComm;
   DataType dtype = input.data_type;
+  if (num_elements == 0) {
+    return;
+  }
 
   tensorrt_llm::AllReduceStrategyType strategy =
       tensorrt_llm::SelectImplementation(
