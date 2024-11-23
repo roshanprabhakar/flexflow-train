@@ -199,10 +199,10 @@ void inference_kernel_wrapper(Context ctx,
     strategy = tensorrt_llm::AllReduceStrategyType::ONESHOT;
   }
 
-  runtime->concurrent_task_barrier(ctx);
+  // runtime->concurrent_task_barrier(ctx);
   tensorrt_llm::customAllReduce(
       params, output.ptr, num_elements, dtype, strategy, stream);
-  runtime->concurrent_task_barrier(ctx);
+  // runtime->concurrent_task_barrier(ctx);
 }
 
 void forward_kernel_wrapper(Context ctx,
