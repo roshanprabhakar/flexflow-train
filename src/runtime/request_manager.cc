@@ -50,44 +50,197 @@ std::string LoadBytesFromFile(std::string const &path) {
   return data;
 }
 
+Request::Request(const Request& other)
+    : req_type(other.req_type),
+      guid(next_available_guid++),
+      max_length(other.max_length),
+      max_new_tokens(other.max_new_tokens),
+      benchmarking_tokens(other.benchmarking_tokens),
+      add_special_tokens(other.add_special_tokens),
+      warmup(other.warmup),
+      status(Request::PENDING),
+      prompt(other.prompt),
+      tokens(other.tokens),
+      peft_model_id(other.peft_model_id),
+      peft_finetuning_info(other.peft_finetuning_info),
+      initial_len(other.initial_len),
+      ssm_cache_size(other.ssm_cache_size),
+      llm_cache_size(other.llm_cache_size),
+      beam_trees(other.beam_trees) {
+  
+  RequestManager *rm = RequestManager::get_request_manager();
+  int max_seq_len = rm->get_max_sequence_length();
+  if (req_type == RequestType::REQ_INFERENCE) {
+    // both unset
+    if (max_length == -1 && max_new_tokens == -1) {
+      max_length = max_seq_len - 1;
+    }
+    // both set
+    if (max_length != -1 && max_new_tokens != -1) {
+      max_length = -1;
+      std::cout << "Both `max_new_tokens` (=" << max_new_tokens
+                << ") and `max_length`(=" << max_length
+                << ") seem to have been set. `max_new_tokens` will take precedence.";
+    }
+  } else {
+    if (max_new_tokens != -1) {
+      std::cerr << "Error: max_new_tokens is not allowed for PEFT finetuning requests" << std::endl;
+      assert(false);
+    }
+    if (max_length == -1) {
+      max_length = max_seq_len - 1;
+    }
+  }
+}
+
+void RequestManager::load_request_token_ids(Request &request) {
+  if (req_type == RequestType::REQ_INFERENCE) {
+    // load prompt token ids
+    if (bos_token_id >= 0 && model_type != ModelType::FALCON && request.add_special_tokens) {
+      request.tokens.push_back(bos_token_id);
+    }
+    if (request.benchmarking_tokens >= 0) {
+      assert(request.benchmarking_tokens < get_max_sequence_length() && "Benchmarking tokens exceed max sequence length");
+      request.tokens.insert(request.tokens.end(),
+                            request.benchmarking_tokens,
+                            15); // insert random number
+    } else {
+      std::vector<int32_t> tokens = this->tokenizer_->Encode(request.prompt);
+      // from here on, we will only use the max_length parameter
+      if (request.max_new_tokens != -1) {
+        request.max_length = tokens.size() + request.max_new_tokens;
+      }
+      // check that max sequence length is not exceeded
+      // 1. prompt itself should be less than max sequence length
+      if (tokens.size() >= get_max_sequence_length()) {
+        std::cout << "Error: prompt (" << tokens.size()
+                  << " tokens) exceeds max sequence length of "
+                  << get_max_sequence_length() << ".\n";
+        return INVALID_GUID;
+      }
+      // 2. max_length should not exceed the max_sequence_length
+      if (request.max_length >= get_max_sequence_length()) {
+        std::cout << "Error: max_length (" << request.max_length
+                  << ") exceeds max sequence length of "
+                  << get_max_sequence_length() << ".\n";
+        return INVALID_GUID;
+      }
+      for (int i = 0; i < tokens.size(); i++) {
+        std::cout << "[" << i << "]" << tokens.at(i) << "\n";
+      }
+      request.tokens.insert(request.tokens.end(), tokens.begin(), tokens.end());
+    }
+
+    request.initial_len = request.tokens.size();
+
+    if (get_num_ssms() == 0) {
+      std::cout << "No small speculative model registered, using incremental "
+                  "decoding."
+                << std::endl;
+    } else {
+      std::cout << "Num of SSMs: " << get_num_ssms() << std::endl;
+      for (int i = 0; i < get_num_ssms(); i++) {
+        BeamTree beam_tree = BeamTree{};
+        request.beam_trees.push_back(beam_tree);
+      }
+    }
+  } else {
+    // load dataset token ids
+    if (request.benchmarking_tokens >= 0) {
+      assert(request.benchmarking_tokens <= get_max_sequence_length() &&
+            "Benchmarking tokens exceed max sequence length");
+      
+      std::vector<int32_t> input_tokens;
+      bool bos_added = (bos_token_id >= 0 && request.add_special_tokens &&
+                        model_type != ModelType::FALCON);
+      if (bos_added) {
+        input_tokens.push_back(bos_token_id);
+      }
+      input_tokens.insert(input_tokens.end(),
+                          request.benchmarking_tokens - (int)bos_added,
+                          15); // insert random number
+      request.dataset.push_back(input_tokens);
+    } else {
+      using json = nlohmann::json;
+      std::ifstream file_handle(request.dataset_filepath);
+      assert(file_handle.good() && "Dataset file does not exist.");
+      json dataset_json = json::parse(file_handle,
+                                      /*parser_callback_t */ nullptr,
+                                      /*allow_exceptions */ true,
+                                      /*ignore_comments */ true);
+
+      for (auto &prompt : dataset_json) {
+        std::string text = prompt.get<std::string>();
+        std::vector<int32_t> input_tokens;
+        input_tokens = this->tokenizer_->Encode(text);
+        if (bos_token_id >= 0 && model_type != ModelType::FALCON &&
+            request.add_special_tokens) {
+          input_tokens.insert(input_tokens.begin(), bos_token_id);
+        }
+        if (input_tokens.size() > get_max_sequence_length()) {
+          std::cout << "Error: sample in training dataset is "
+                    << input_tokens.size()
+                    << " tokens long, exceeding the maximum sequence length of "
+                    << get_max_sequence_length() << " tokens.\n";
+          return INVALID_GUID;
+        } else {
+          request.dataset.push_back(input_tokens);
+        }
+      }
+    }
+    if (request.gradient_accumulation_steps == -1) {
+      request.gradient_accumulation_steps = request.dataset.size();
+    }
+    assert(request.gradient_accumulation_steps > 0 &&
+         "Invalid gradient accumulation steps");
+    assert(request.gradient_accumulation_steps <= request.max_training_steps &&
+          "Gradient accumulation steps should be less than or equal to max "
+          "training steps");
+    }
+    assert(get_num_ssms() == 0 && "Small speculative models not supported for "
+                                "PEFT finetuning requests");
+}
+
+template <typename T>
+std::ostream& operator<<(std::ostream& os, const std::vector<T>& array) {
+  os << "[";
+  for (const auto& element : array) {
+    os << element << " ";
+  }
+  os << "]";
+  return os;
+}
+
 std::ostream &operator<<(std::ostream &os, Request const &req) {
   os << "Request {\n";
+  os << "  req_type: " << static_cast<int>(req.req_type) << "\n";
   os << "  guid: " << req.guid << "\n";
-  os << "  peft_model_id: " << req.peft_model_id << "\n";
   os << "  max_length: " << req.max_length << "\n";
   os << "  max_new_tokens: " << req.max_new_tokens << "\n";
+  os << "  benchmarking_tokens: " << req.benchmarking_tokens << "\n";
   os << "  add_special_tokens: " << req.add_special_tokens << "\n";
+  os << "  warmup: " << req.warmup << "\n";
+  os << "  status: " << static_cast<int>(req.status) << "\n";
+  os << "  peft_model_id: " << req.peft_model_id << "\n";
+  if (req.req_type == RequestType::REQ_INFERENCE) {
+    os << "  prompt: " << req.prompt << "\n";
+    os << "  tokens: " << req.tokens << "\n";
+  } else {
+    os << "  peft_finetuning_info: {\n";
+    os << "    status: " << req.peft_finetuning_info.status << "\n";
+    os << "    dataset_entry_processed_tokens: " << req.peft_finetuning_info.dataset_entry_processed_tokens << "\n";
+    os << "    max_training_steps: " << req.peft_finetuning_info.max_training_steps << "\n";
+    os << "    gradient_accumulation_steps: " << req.peft_finetuning_info.gradient_accumulation_steps << "\n";
+    os << "    completed_training_steps: " << req.peft_finetuning_info.completed_training_steps << "\n";
+    os << "    finetuning_tokens_per_batch: " << req.peft_finetuning_info.finetuning_tokens_per_batch << "\n";
+    os << "    finetuning_losses: " << req.peft_finetuning_info.finetuning_losses << "\n";
+    os << "    dataset_filepath: " << req.peft_finetuning_info.dataset_filepath << "\n";
+    os << "    dataset: " << req.peft_finetuning_info.dataset.size() << " entries\n";
+    os << "  }\n";
+  }
   os << "  initial_len: " << req.initial_len << "\n";
   os << "  ssm_cache_size: " << req.ssm_cache_size << "\n";
   os << "  llm_cache_size: " << req.llm_cache_size << "\n";
-  os << "  status: " << static_cast<int>(req.status) << "\n";
-  os << "  tokens: [";
-  for (auto const &token : req.tokens) {
-    os << token << " ";
-  }
-  os << "]\n";
-  os << "  prompt: " << req.prompt << "\n";
-  // os << "  beam_trees: [";
-  // for (const auto& tree : req.beam_trees) {
-  //     // Assuming BeamTree has its own << operator defined
-  //     os << tree << " ";
-  // }
-  // os << "]\n";
-  os << "  req_type: " << static_cast<int>(req.req_type) << "\n";
-  os << "  completed_training_steps: " << req.completed_training_steps << "\n";
-  os << "  gradient_accumulation_steps: " << req.gradient_accumulation_steps
-     << "\n";
-  os << "  max_training_steps: " << req.max_training_steps << "\n";
-  os << "  dataset_filepath: " << req.dataset_filepath << "\n";
-  os << "  dataset: [";
-  for (auto const &tokens : req.dataset) {
-    os << "[";
-    for (auto const &token : tokens) {
-      os << token << " ";
-    }
-    os << "], ";
-  }
-  os << "]\n";
   os << "}\n";
   return os;
 }
@@ -330,77 +483,8 @@ RequestManager::RequestGuid
     RequestManager::register_new_request(Request const &request_) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
   // Add a new request
-  Request request;
-  request.status = Request::PENDING;
-  request.guid = next_available_guid++;
-  request.max_length = request_.max_length;
-  request.max_new_tokens = request_.max_new_tokens;
-  request.add_special_tokens = request_.add_special_tokens;
-  // both unset
-  if (request.max_length == -1 && request.max_new_tokens == -1) {
-    request.max_length = get_max_sequence_length() - 1;
-  }
-  // both set
-  if (request.max_length != -1 && request.max_new_tokens != -1) {
-    request.max_length = -1;
-    std::cout
-        << "Both `max_new_tokens` (=" << request.max_new_tokens
-        << ") and `max_length`(=" << request.max_length
-        << ") seem to have been set. `max_new_tokens` will take precedence.";
-  }
-  request.peft_model_id = request_.peft_model_id;
-  request.warmup = request_.warmup;
-  if (bos_token_id >= 0 && model_type != ModelType::FALCON &&
-      request.add_special_tokens) {
-    request.tokens.push_back(bos_token_id);
-  }
-  if (request_.benchmarking_tokens >= 0) {
-    assert(request_.benchmarking_tokens < get_max_sequence_length() &&
-           "Benchmarking tokens exceed max sequence length");
-    request.benchmarking_tokens = request_.benchmarking_tokens;
-    request.tokens.insert(request.tokens.end(),
-                          request_.benchmarking_tokens,
-                          15); // insert random number
-  } else {
-    std::vector<int32_t> tokens = this->tokenizer_->Encode(request_.prompt);
-    // from here on, we will only use the max_length parameter
-    if (request.max_new_tokens != -1) {
-      request.max_length = tokens.size() + request.max_new_tokens;
-    }
-    // check that max sequence length is not exceeded
-    // 1. prompt itself should be less than max sequence length
-    if (tokens.size() >= get_max_sequence_length()) {
-      std::cout << "Error: prompt (" << tokens.size()
-                << " tokens) exceeds max sequence length of "
-                << get_max_sequence_length() << ".\n";
-      return INVALID_GUID;
-    }
-    // 2. max_length should not exceed the max_sequence_length
-    if (request.max_length >= get_max_sequence_length()) {
-      std::cout << "Error: max_length (" << request.max_length
-                << ") exceeds max sequence length of "
-                << get_max_sequence_length() << ".\n";
-      return INVALID_GUID;
-    }
-    for (int i = 0; i < tokens.size(); i++) {
-      std::cout << "[" << i << "]" << tokens.at(i) << "\n";
-    }
-    request.tokens.insert(request.tokens.end(), tokens.begin(), tokens.end());
-  }
-
-  request.initial_len = request.tokens.size();
-
-  if (get_num_ssms() == 0) {
-    std::cout << "No small speculative model registered, using incremental "
-                 "decoding."
-              << std::endl;
-  } else {
-    std::cout << "Num of SSMs: " << get_num_ssms() << std::endl;
-    for (int i = 0; i < get_num_ssms(); i++) {
-      BeamTree beam_tree = BeamTree{};
-      request.beam_trees.push_back(beam_tree);
-    }
-  }
+  Request request(request_);
+  load_request_token_ids(request);
 
   pending_infr_request_queue.push(request);
   all_requests[request.guid] = request;
@@ -433,101 +517,12 @@ RequestManager::RequestGuid
   return request.guid;
 }
 
-RequestManager::RequestGuid
-    RequestManager::register_new_peft_request(Request const &request_) {
+RequestManager::RequestGuid RequestManager::register_new_peft_request(Request const &request_) {
   assert(enable_peft_finetuning && "PEFT finetuning is not enabled");
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
   // Add a new request
-  Request request;
-  request.status = Request::PENDING;
-  request.guid = next_available_guid++;
-  request.initial_len = 0;
-  request.max_length = request_.max_length;
-  request.max_new_tokens = request_.max_new_tokens;
-  request.add_special_tokens = request_.add_special_tokens;
-  if (request.max_new_tokens != -1) {
-    std::cerr
-        << "Error: max_new_tokens is not allowed for PEFT finetuning requests"
-        << std::endl;
-    assert(false);
-  }
-  if (request.max_length == -1) {
-    request.max_length = get_max_sequence_length() - 1;
-  }
-  request.peft_model_id = request_.peft_model_id;
-  request.req_type = RequestType::REQ_FINETUNING;
-  request.completed_training_steps = 0;
-  request.gradient_accumulation_steps = request_.gradient_accumulation_steps;
-  request.max_training_steps = request_.max_training_steps;
-  request.dataset_filepath = request_.dataset_filepath;
-  request.warmup = request_.warmup;
-
-  // Load dataset
-  if (request_.benchmarking_tokens >= 0) {
-    assert(request_.benchmarking_tokens <= get_max_sequence_length() &&
-           "Benchmarking tokens exceed max sequence length");
-    request.benchmarking_tokens = request_.benchmarking_tokens;
-    std::vector<int32_t> input_tokens;
-    bool bos_added = (bos_token_id >= 0 && request.add_special_tokens &&
-                      model_type != ModelType::FALCON);
-    if (bos_added) {
-      input_tokens.push_back(bos_token_id);
-    }
-    input_tokens.insert(input_tokens.end(),
-                        request_.benchmarking_tokens - (int)bos_added,
-                        15); // insert random number
-    request.dataset.push_back(input_tokens);
-  } else {
-    using json = nlohmann::json;
-    std::ifstream file_handle(request.dataset_filepath);
-    assert(file_handle.good() && "Dataset file does not exist.");
-    json dataset_json = json::parse(file_handle,
-                                    /*parser_callback_t */ nullptr,
-                                    /*allow_exceptions */ true,
-                                    /*ignore_comments */ true);
-
-    for (auto &prompt : dataset_json) {
-      std::string text = prompt.get<std::string>();
-      std::vector<int32_t> input_tokens;
-      input_tokens = this->tokenizer_->Encode(text);
-      if (bos_token_id >= 0 && model_type != ModelType::FALCON &&
-          request.add_special_tokens) {
-        input_tokens.insert(input_tokens.begin(), bos_token_id);
-      }
-      if (input_tokens.size() > get_max_sequence_length()) {
-        std::cout << "Error: sample in training dataset is "
-                  << input_tokens.size()
-                  << " tokens long, exceeding the maximum sequence length of "
-                  << get_max_sequence_length() << " tokens.\n";
-        return INVALID_GUID;
-      } else {
-        request.dataset.push_back(input_tokens);
-      }
-    }
-  }
-
-  if (request.gradient_accumulation_steps == -1) {
-    request.gradient_accumulation_steps = request.dataset.size();
-  }
-  assert(request.gradient_accumulation_steps > 0 &&
-         "Invalid gradient accumulation steps");
-  assert(request.gradient_accumulation_steps <= request.max_training_steps &&
-         "Gradient accumulation steps should be less than or equal to max "
-         "training steps");
-
-  // Currently don't support speculative inference for PEFT
-  assert(get_num_ssms() == 0);
-  if (get_num_ssms() == 0) {
-    std::cout << "No small speculative model registered, using incremental "
-                 "decoding."
-              << std::endl;
-  } else {
-    std::cout << "Num of SSMs: " << get_num_ssms() << std::endl;
-    for (int i = 0; i < get_num_ssms(); i++) {
-      BeamTree beam_tree = BeamTree{};
-      request.beam_trees.push_back(beam_tree);
-    }
-  }
+  Request request(request_);
+  load_request_token_ids(request);
 
   pending_peft_request_queue.push(request);
   all_requests[request.guid] = request;

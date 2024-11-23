@@ -65,35 +65,49 @@ struct Request {
     COMPLETED = 103, // finished and verified
     FINISHING = 104, // finishing request, but not yet verified
   };
+  enum FinetuningStatus {
+    FORWARD_PHASE = 201,
+    BACKWARD_PHASE = 202, 
+  };
+  struct PeftFinetuningInfo {
+    FinetuningStatus status = FORWARD_PHASE;
+    int dataset_entry_processed_tokens = 0;
+    int max_training_steps = 1;
+    // how many gradient accumulation steps to do before updating the weights. if
+    // left as -1, it will be set to the number of entries in the dataset
+    int gradient_accumulation_steps = -1;
+    int completed_training_steps = 0;
+    std::string dataset_filepath;
+    std::vector<std::vector<BatchConfig::TokenId>> dataset;
+    std::vector<int> finetuning_tokens_per_batch;
+    std::vector<float> finetuning_losses;
+  };
+  RequestType req_type = REQ_INFERENCE;
   BatchConfig::RequestGuid guid;
-  PEFTModelID peft_model_id = PEFTModelID::NO_ID;
   int max_length = -1;
   int max_new_tokens = -1;
+  int benchmarking_tokens = -1;
   bool add_special_tokens = true;
-  int initial_len;
+  bool warmup = false;
+  Status status = PENDING;
+  // inference fields
+  std::string prompt;
+  std::vector<BatchConfig::TokenId> tokens;
+  
+  // peft fields
+  PEFTModelID peft_model_id = PEFTModelID::NO_ID;
+  PeftFinetuningInfo peft_finetuning_info;
+  
+  // speculation fields
+  int initial_len = 0;
   int ssm_cache_size = 0;
   int llm_cache_size = 0;
-
-  Status status = PENDING;
-  std::vector<BatchConfig::TokenId> tokens;
-  std::string prompt;
   std::vector<struct BeamTree> beam_trees;
-  // PEFT field
-  RequestType req_type = REQ_INFERENCE;
-  size_t processed_finetuning_tokens = 0;
-  int completed_training_steps = 0;
-  int dataset_entry_processed_tokens = 0;
-  int max_training_steps = 1;
-  // how many gradient accumulation steps to do before updating the weights. if
-  // left as -1, it will be set to the number of entries in the dataset
-  int gradient_accumulation_steps = -1;
-  int benchmarking_tokens = -1;
-  std::vector<int> finetuning_tokens_per_batch;
-  bool warmup = false;
-  std::string dataset_filepath;
-  // no need to add labels because in LLM token ids are the labels
-  std::vector<std::vector<BatchConfig::TokenId>> dataset;
-  std::vector<float> finetuning_losses;
+
+  Request() = default;
+  Request(const Request& other);
+  void load_token_ids();
+
   friend std::ostream &operator<<(std::ostream &os, Request const &req);
 };
 
@@ -130,6 +144,8 @@ public:
   static RequestManager *get_request_manager();
   size_t get_num_processed_requests();
   size_t get_num_ssms();
+
+  void load_request_token_ids(Request &request);
 
   void set_max_requests_per_batch(int max_num_requests);
   int get_max_requests_per_batch();
