@@ -71,16 +71,20 @@ struct Request {
   };
   struct PeftFinetuningInfo {
     FinetuningStatus status = FORWARD_PHASE;
-    int dataset_entry_processed_tokens = 0;
+    std::string dataset_filepath;
+    std::vector<std::vector<BatchConfig::TokenId>> dataset;
     int max_training_steps = 1;
+    // overall state
+    int completed_training_steps = 0;
+    // fwd state
+    int dataset_entry_processed_tokens = 0;
+    std::vector<float> finetuning_losses;
+    // bwd state
+    int last_processed_layer = INT_MAX;
     // how many gradient accumulation steps to do before updating the weights. if
     // left as -1, it will be set to the number of entries in the dataset
     int gradient_accumulation_steps = -1;
-    int completed_training_steps = 0;
-    std::string dataset_filepath;
-    std::vector<std::vector<BatchConfig::TokenId>> dataset;
-    std::vector<int> finetuning_tokens_per_batch;
-    std::vector<float> finetuning_losses;
+    // std::vector<int> finetuning_tokens_per_batch;
   };
   RequestType req_type = REQ_INFERENCE;
   BatchConfig::RequestGuid guid;
@@ -172,6 +176,10 @@ public:
   void set_max_concurrent_adapters(int max_concurrent_adapters);
   int get_max_lora_rank();
   int get_max_concurrent_adapters();
+  void set_num_transformer_layers(int num_transformer_layers);
+  int get_num_transformer_layers();
+  void set_num_layers_per_finetuning_step(int num_layers_per_finetuning_step);
+  int get_num_layers_per_finetuning_step();
   void initBitMask(BatchConfig::BitMask &bitmask, int initLength);
   void appendPendingRequest(BatchConfig::BitMask &bitmask, int initLength);
   void appendBitMask(BatchConfig::BitMask &bitmask,
@@ -202,21 +210,20 @@ public:
   void trigger_request_completion_future(RequestGuid const &guid);
   // Methods for preparing next batches
   bool is_eos_token(int token_id);
-  bool check_inf_req_completion(BatchConfig const &old_bc, int i);
+  bool inf_req_completed(BatchConfig const &old_bc, int i);
   void check_batch(BatchConfig const &old_bc, BatchConfig const &new_bc);
   void add_peft_config_to_request_info(BatchConfig &bc,
                                        int req_idx,
                                        LoraLinearConfig const &peft_config);
   
   // helpers for prepare_next_batch
-  void save_new_tokens_from_batch(BatchConfig const &old_bc, InferenceResult const &result);
-  void handle_completed_inf_request(BatchConfig const &old_bc, int i);
-  void add_unfinished_request(BatchConfig &new_bc, BatchConfig const &old_bc, int &num_active_req, int &num_concurrent_adapters, int inference_batch_size, int i);
-  void add_new_inference_request_if_available(BatchConfig &new_bc, int &num_active_req, int &num_concurrent_adapters, int i);
-  void handle_completed_finetuning_request(BatchConfig const &old_bc, int inference_batch_size);
-  void handle_existing_finetuning_request(BatchConfig &new_bc, BatchConfig const &old_bc, InferenceResult const &result, int inference_batch_size);
-  void update_pending_finetuning_requests_queue();
-  void add_new_finetuning_request_if_available(BatchConfig &new_bc, int &num_concurrent_adapters, int inference_batch_size);
+  void save_generated_inf_tokens(BatchConfig const &old_bc, InferenceResult const &result);
+  void handle_completed_inf_req(BatchConfig const &old_bc, int i);
+  void add_continuing_inf_req_to_new_batch(BatchConfig &new_bc, BatchConfig const &old_bc, int &num_active_req, int &num_concurrent_inf_adapters, int inference_batch_size, int i);
+  void add_new_inf_req(BatchConfig &new_bc, int &num_active_req, int &num_concurrent_inf_adapters, int i);
+  void handle_completed_finetuning_req(BatchConfig const &old_bc, int inference_batch_size);
+  void process_finetuning_req_fwd_progress(BatchConfig const &old_bc, InferenceResult const &result, int inference_batch_size);
+  void add_new_finetuning_req_fwd_batch(BatchConfig &new_bc, int inference_batch_size);
 
   BatchConfig prepare_next_batch(BatchConfig const &bc,
                                  InferenceResult const &result);
@@ -334,6 +341,8 @@ private:
   // peft benchmarking
   bool enable_peft_finetuning = false;
   static bool inference_finished;
+  int num_transformer_layers = 0;
+  int num_layers_per_finetuning_step = 0;
 
   // tree width in each speculative step, if not specified 1
   std::vector<int> spec_infer_tree_width;
