@@ -229,7 +229,7 @@ public:
   void process_finetuning_req_bwd_progress(BatchConfig const &old_bwd_bc);
   void process_work_from_old_batches(BatchConfig const &old_fwd_bc, BatchConfig const &old_bwd_bc, InferenceResult const &result);
   BatchConfig prepare_next_bwd_batch();
-  BatchConfig prepare_next_fwd_batch(BatchConfig const &old_fwd_bc, InferenceResult const &result)
+  BatchConfig prepare_next_fwd_batch(BatchConfig const &old_fwd_bc, InferenceResult const &result);
   std::pair<BatchConfigFuture, BatchConfigFuture> prepare_next_batch(std::tuple<BatchConfigFuture, BatchConfigFuture, InferenceResultFuture, FinetuningBwdFuture> &batch_pipeline_entry,
                                                                     Context ctx,
                                                                     Runtime *runtime);
@@ -310,11 +310,11 @@ public:
                              std::vector<Legion::PhysicalRegion> const &regions,
                              Legion::Context ctx,
                              Legion::Runtime *runtime);
-  static std::pair<BatchConfig, BatchConfig> RequestManager::prepare_next_batch_task(
-    Task const *task,
-    std::vector<PhysicalRegion> const &regions,
-    Context ctx,
-    Runtime *runtime);
+  static std::pair<BatchConfig, BatchConfig> prepare_next_batch_task(
+    Legion::Task const *task,
+      std::vector<Legion::PhysicalRegion> const &regions,
+      Legion::Context ctx,
+      Legion::Runtime *runtime);
 
   static BeamSearchBatchConfig prepare_next_batch_beam_task(
       Legion::Task const *task,
