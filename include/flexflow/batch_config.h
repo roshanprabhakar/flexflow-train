@@ -37,6 +37,7 @@ using InferenceResultFuture = Legion::Future;
 using BeamSearchBatchConfigFuture = Legion::Future;
 using TreeVerifyBatchConfigFuture = Legion::Future;
 using BeamInferenceResultFuture = Legion::Future;
+using FinetuningBwdFuture = Legion::Future;
 
 struct OptimizerTasks {
   bool compute_gradients = true;

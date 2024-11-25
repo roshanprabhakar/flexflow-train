@@ -380,9 +380,7 @@ void InferenceManager::init_operators_inference(FFModel *model) {
   }
 }
 
-FutureMap InferenceManager::inference(FFModel *model,
-                                      int index,
-                                      BatchConfig const &bc) {
+InferenceResultFuture InferenceManager::inference(FFModel *model, int index, BatchConfig const &bc) {
   if (bc.get_mode() == INC_DECODING_MODE) {
     BatchConfigFuture bcf = Future::from_value<BatchConfig>(bc);
     return inference(model, index, bcf);
@@ -405,9 +403,7 @@ FutureMap InferenceManager::inference(FFModel *model,
   }
 }
 
-FutureMap InferenceManager::inference(FFModel *model,
-                                      int index,
-                                      BatchConfigFuture const &bc) {
+InferenceResultFuture InferenceManager::inference(FFModel *model, int index, BatchConfigFuture const &bc) {
   // log_inf_mgr.print("mode(%d) num_active_infr_tokens(%d)
   // num_active_requests(%d)",
   //                   bc.get_mode(),
@@ -464,12 +460,12 @@ FutureMap InferenceManager::inference(FFModel *model,
     }
     fm = op->inference(*model, bc, inputs, outputs);
   }
-  return fm;
+  assert(fm.get_future_map_domain().get_volume() == 1);
+  InferenceResultFuture irf = fm.get_future(0);
+  return irf;
 };
 
-void InferenceManager::peft_bwd(FFModel *model,
-                                int index,
-                                BatchConfigFuture const &bc) {
+FinetuningBwdFuture InferenceManager::peft_bwd(FFModel *model, int index, BatchConfigFuture const &bc) {
   int batch_index = index % model->config.data_parallelism_degree;
   FutureMap fm;
   bool found_input_operator = false;
@@ -510,8 +506,11 @@ void InferenceManager::peft_bwd(FFModel *model,
       outputs[i] = tensor_buffer[op->outputs[i]][batch_index];
       assert(outputs[i]->parallel_is != IndexSpace::NO_SPACE);
     }
-    op->peft_bwd(*model, bc, inputs, outputs);
+    fm = op->peft_bwd(*model, bc, inputs, outputs);
   }
+  assert(fm.get_future_map_domain().get_volume() == 1);
+  FinetuningBwdFuture irf = fm.get_future(0);
+  return irf;
 };
 
 void InferenceManager::load_input_tokens_from_batch_config(
