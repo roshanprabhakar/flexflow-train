@@ -50,9 +50,12 @@ std::string LoadBytesFromFile(std::string const &path) {
   return data;
 }
 
+RequestGuid RequestManager::assign_next_guid() {
+  return next_available_guid++;
+}
+
 Request::Request(const Request& other)
     : req_type(other.req_type),
-      guid(next_available_guid++),
       max_length(other.max_length),
       max_new_tokens(other.max_new_tokens),
       benchmarking_tokens(other.benchmarking_tokens),
@@ -69,6 +72,7 @@ Request::Request(const Request& other)
       beam_trees(other.beam_trees) {
   
   RequestManager *rm = RequestManager::get_request_manager();
+  guid = rm->assign_next_guid();
   int max_seq_len = rm->get_max_sequence_length();
   if (req_type == RequestType::REQ_INFERENCE) {
     // both unset
@@ -93,8 +97,8 @@ Request::Request(const Request& other)
   }
 }
 
-void RequestManager::load_request_token_ids(Request &request) {
-  if (req_type == RequestType::REQ_INFERENCE) {
+bool RequestManager::load_request_token_ids(Request &request) {
+  if (request.req_type == RequestType::REQ_INFERENCE) {
     // load prompt token ids
     if (bos_token_id >= 0 && model_type != ModelType::FALCON && request.add_special_tokens) {
       request.tokens.push_back(bos_token_id);
@@ -116,14 +120,14 @@ void RequestManager::load_request_token_ids(Request &request) {
         std::cout << "Error: prompt (" << tokens.size()
                   << " tokens) exceeds max sequence length of "
                   << get_max_sequence_length() << ".\n";
-        return INVALID_GUID;
+        return false;
       }
       // 2. max_length should not exceed the max_sequence_length
       if (request.max_length >= get_max_sequence_length()) {
         std::cout << "Error: max_length (" << request.max_length
                   << ") exceeds max sequence length of "
                   << get_max_sequence_length() << ".\n";
-        return INVALID_GUID;
+        return false;
       }
       for (int i = 0; i < tokens.size(); i++) {
         std::cout << "[" << i << "]" << tokens.at(i) << "\n";
@@ -162,7 +166,7 @@ void RequestManager::load_request_token_ids(Request &request) {
       request.dataset.push_back(input_tokens);
     } else {
       using json = nlohmann::json;
-      std::ifstream file_handle(request.dataset_filepath);
+      std::ifstream file_handle(request.peft_finetuning_info.dataset_filepath);
       assert(file_handle.good() && "Dataset file does not exist.");
       json dataset_json = json::parse(file_handle,
                                       /*parser_callback_t */ nullptr,
@@ -182,23 +186,24 @@ void RequestManager::load_request_token_ids(Request &request) {
                     << input_tokens.size()
                     << " tokens long, exceeding the maximum sequence length of "
                     << get_max_sequence_length() << " tokens.\n";
-          return INVALID_GUID;
+          return false;
         } else {
           request.dataset.push_back(input_tokens);
         }
       }
     }
-    if (request.gradient_accumulation_steps == -1) {
-      request.gradient_accumulation_steps = request.dataset.size();
+    if (request.peft_finetuning_info.gradient_accumulation_steps == -1) {
+      request.peft_finetuning_info.gradient_accumulation_steps = request.dataset.size();
     }
-    assert(request.gradient_accumulation_steps > 0 &&
+    assert(request.peft_finetuning_info.gradient_accumulation_steps > 0 &&
          "Invalid gradient accumulation steps");
-    assert(request.gradient_accumulation_steps <= request.max_training_steps &&
+    assert(request.peft_finetuning_info.gradient_accumulation_steps <= request.peft_finetuning_info.max_training_steps &&
           "Gradient accumulation steps should be less than or equal to max "
           "training steps");
     }
     assert(get_num_ssms() == 0 && "Small speculative models not supported for "
                                 "PEFT finetuning requests");
+  return true;
 }
 
 template <typename T>
@@ -232,10 +237,10 @@ std::ostream &operator<<(std::ostream &os, Request const &req) {
     os << "    max_training_steps: " << req.peft_finetuning_info.max_training_steps << "\n";
     os << "    gradient_accumulation_steps: " << req.peft_finetuning_info.gradient_accumulation_steps << "\n";
     os << "    completed_training_steps: " << req.peft_finetuning_info.completed_training_steps << "\n";
-    os << "    finetuning_tokens_per_batch: " << req.peft_finetuning_info.finetuning_tokens_per_batch << "\n";
+    // os << "    finetuning_tokens_per_batch: " << req.peft_finetuning_info.finetuning_tokens_per_batch << "\n";
     os << "    finetuning_losses: " << req.peft_finetuning_info.finetuning_losses << "\n";
     os << "    dataset_filepath: " << req.peft_finetuning_info.dataset_filepath << "\n";
-    os << "    dataset: " << req.peft_finetuning_info.dataset.size() << " entries\n";
+    os << "    dataset: " << req.dataset.size() << " entries\n";
     os << "  }\n";
   }
   os << "  initial_len: " << req.initial_len << "\n";
@@ -495,12 +500,14 @@ PEFTModelID *
   return peft_model_id;
 }
 
-RequestManager::RequestGuid
+RequestGuid
     RequestManager::register_new_request(Request const &request_) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
   // Add a new request
   Request request(request_);
-  load_request_token_ids(request);
+  if (!load_request_token_ids(request)) {
+    return BatchConfig::INVALID_GUID;
+  }
 
   pending_infr_request_queue.push(request);
   all_requests[request.guid] = request;
@@ -533,12 +540,14 @@ RequestManager::RequestGuid
   return request.guid;
 }
 
-RequestManager::RequestGuid RequestManager::register_new_peft_request(Request const &request_) {
+RequestGuid RequestManager::register_new_peft_request(Request const &request_) {
   assert(enable_peft_finetuning && "PEFT finetuning is not enabled");
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
   // Add a new request
   Request request(request_);
-  load_request_token_ids(request);
+  if(!load_request_token_ids(request)) {
+    return BatchConfig::INVALID_GUID;
+  }
 
   pending_peft_request_queue.push(request);
   all_requests[request.guid] = request;
@@ -601,7 +610,7 @@ size_t RequestManager::get_num_processed_requests() {
   return num_processed_requests;
 }
 
-std::pair<BatchConfigFuture, BatchConfigFuture> RequestManager::prepare_next_batch(
+BatchConfigPairFuture RequestManager::prepare_next_batch(
   std::tuple<BatchConfigFuture, BatchConfigFuture, InferenceResultFuture, FinetuningBwdFuture> &batch_pipeline_entry,
   Context ctx,
   Runtime *runtime) {
@@ -947,7 +956,7 @@ void RequestManager::handle_completed_finetuning_req(BatchConfig const &old_fine
   // trigger completion, profiling, output
   GenerationResult &gr = request_generation_results[request.guid];
   assert(gr.guid == request.guid);
-  gr.finetuning_losses = request.finetuning_losses;
+  gr.finetuning_losses = request.peft_finetuning_info.finetuning_losses;
   trigger_request_completion_future(request.guid);
   num_processed_requests++;
 
@@ -956,35 +965,35 @@ void RequestManager::handle_completed_finetuning_req(BatchConfig const &old_fine
   total_request_run_time +=
       profile_info.finish_time - profile_info.start_time;
   profiling_requests[request.guid] = profile_info;
-  log_req_mgr.print("[%s] guid(%zu) completed_training_steps(%d) "
-                    "processed_finetuning_tokens(%lu) latency(%.1lf)",
-                    request.warmup ? "Warmup" : "Finetuning",
-                    request.guid,
-                    request.completed_training_steps,
-                    request.processed_finetuning_tokens,
-                    profile_info.finish_time - profile_info.start_time);
+  // log_req_mgr.print("[%s] guid(%zu) completed_training_steps(%d) "
+  //                   "processed_finetuning_tokens(%lu) latency(%.1lf)",
+  //                   request.warmup ? "Warmup" : "Finetuning",
+  //                   request.guid,
+  //                   request.peft_finetuning_info.completed_training_steps,
+  //                   request.processed_finetuning_tokens,
+  //                   profile_info.finish_time - profile_info.start_time);
   if (!output_filepath.empty()) {
     std::ofstream outputFile(output_filepath, std::ios::app);
     if (outputFile.is_open()) {
       std::string tokens_str = "[";
-      for (size_t i = 0; i < request.finetuning_tokens_per_batch.size();
-            i++) {
-        tokens_str +=
-            std::to_string(request.finetuning_tokens_per_batch[i]);
-        if (i != request.finetuning_tokens_per_batch.size() - 1) {
-          tokens_str += ", ";
-        }
-      }
+      // for (size_t i = 0; i < request.finetuning_tokens_per_batch.size();
+      //       i++) {
+      //   tokens_str +=
+      //       std::to_string(request.finetuning_tokens_per_batch[i]);
+      //   if (i != request.finetuning_tokens_per_batch.size() - 1) {
+      //     tokens_str += ", ";
+      //   }
+      // }
       tokens_str += "]";
-      outputFile << "[" << (request.warmup ? "Warmup" : "Finetuning")
-                  << "] guid(" << request.guid
-                  << ") completed_training_steps("
-                  << request.completed_training_steps
-                  << ") processed_finetuning_tokens("
-                  << request.processed_finetuning_tokens << ") latency("
-                  << std::fixed << std::setprecision(3)
-                  << (profile_info.finish_time - profile_info.start_time)
-                  << ") tokens_per_batch(" << tokens_str << ")\n";
+      // outputFile << "[" << (request.warmup ? "Warmup" : "Finetuning")
+      //             << "] guid(" << request.guid
+      //             << ") completed_training_steps("
+      //             << request.peft_finetuning_info.completed_training_steps
+      //             << ") processed_finetuning_tokens("
+      //             << request.processed_finetuning_tokens << ") latency("
+      //             << std::fixed << std::setprecision(3)
+      //             << (profile_info.finish_time - profile_info.start_time)
+      //             << ") tokens_per_batch(" << tokens_str << ")\n";
       outputFile.close();
     } else {
       std::cout << "Unable to open the output file: " << output_filepath
@@ -1001,13 +1010,13 @@ void RequestManager::add_finetuning_req_fwd_batch(BatchConfig &new_bc) {
   int inference_batch_size = BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
   assert(new_bc.request_completed[inference_batch_size] && "Finetuning request already present in new batch");
   Request &request = pending_peft_request_queue.front();
-  assert(request.req_type = RequestType::REQ_FINETUNING && "Found misplaced inference request");
+  assert(request.req_type == RequestType::REQ_FINETUNING && "Found misplaced inference request");
   assert(request.dataset.size() > 0 && "Empty dataset for finetuning request");
   assert(request.peft_finetuning_info.status == Request::FORWARD_PHASE && "Finetuning request is not in forward phase");
 
-  int dataset_entry = request.completed_training_steps % request.dataset.size();
+  int dataset_entry = request.peft_finetuning_info.completed_training_steps % request.dataset.size();
   int num_tokens_left_in_dataset_entry =
-      (int)request.dataset[dataset_entry].size() - request.dataset_entry_processed_tokens;
+      (int)request.dataset[dataset_entry].size() - request.peft_finetuning_info.dataset_entry_processed_tokens;
   int batch_capacity_left = get_max_tokens_per_batch() - new_bc.num_active_tokens();
   int num_peft_tokens = std::min(num_tokens_left_in_dataset_entry, batch_capacity_left);
   assert(num_peft_tokens > 0 && "No tokens left to add to the batch");
@@ -1015,7 +1024,7 @@ void RequestManager::add_finetuning_req_fwd_batch(BatchConfig &new_bc) {
   // general fields
   new_bc.request_completed[inference_batch_size] = false;
   // request info
-  new_bc.requestsInfo[inference_batch_size].first_token_depth_in_request = request.dataset_entry_processed_tokens;
+  new_bc.requestsInfo[inference_batch_size].first_token_depth_in_request = request.peft_finetuning_info.dataset_entry_processed_tokens;
   new_bc.requestsInfo[inference_batch_size].first_token_offset_in_batch = new_bc.num_active_tokens();
   new_bc.requestsInfo[inference_batch_size].num_tokens_in_batch = num_peft_tokens;
   new_bc.requestsInfo[inference_batch_size].max_length = request.max_length;
@@ -1027,12 +1036,12 @@ void RequestManager::add_finetuning_req_fwd_batch(BatchConfig &new_bc) {
   
   // set_optimizer_tasks(
   //     new_bc.requestsInfo[inference_batch_size].optimizer_tasks,
-  //     request.max_training_steps,
-  //     request.completed_training_steps,
-  //     request.gradient_accumulation_steps);
+  //     request.peft_finetuning_info.max_training_steps,
+  //     request.peft_finetuning_info.completed_training_steps,
+  //     request.peft_finetuning_info.gradient_accumulation_steps);
   
   // tokens info
-  for (size_t i = request.dataset_entry_processed_tokens; i < request.dataset_entry_processed_tokens + num_peft_tokens; i++) {
+  for (size_t i = request.peft_finetuning_info.dataset_entry_processed_tokens; i < request.peft_finetuning_info.dataset_entry_processed_tokens + num_peft_tokens; i++) {
     new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = i;
     new_bc.tokensInfo[new_bc.num_tokens].request_index = inference_batch_size;
     new_bc.tokensInfo[new_bc.num_tokens].token_id = request.dataset[dataset_entry][i];
@@ -1046,14 +1055,15 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
   assert(new_bc.num_tokens < get_max_tokens_per_batch() && "Trying to add a new finetuning request when the batch is full");
   assert(new_bc.request_completed[0] && "Finetuning request already present in new batch");
   Request &request = pending_peft_request_queue.front();
-  assert(request.req_type = RequestType::REQ_FINETUNING && "Found misplaced inference request");
+  assert(request.req_type == RequestType::REQ_FINETUNING && "Found misplaced inference request");
   assert(request.dataset.size() > 0 && "Empty dataset for finetuning request");
   assert(request.peft_finetuning_info.status == Request::BACKWARD_PHASE && "Finetuning request is not in backward phase");
 
-  int dataset_entry = request.completed_training_steps % request.dataset.size();
+  int dataset_entry = request.peft_finetuning_info.completed_training_steps % request.dataset.size();
   assert(request.dataset[dataset_entry].size() <= get_max_tokens_per_batch() && "Dataset entry does not fit in the batch size");
   
   // general fields
+  int inference_batch_size = BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
   new_bc.request_completed[inference_batch_size] = false;
   // request info
   new_bc.requestsInfo[inference_batch_size].first_token_depth_in_request = 0;
@@ -1072,9 +1082,9 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
   
   // set_optimizer_tasks(
   //     new_bc.requestsInfo[inference_batch_size].optimizer_tasks,
-  //     request.max_training_steps,
-  //     request.completed_training_steps,
-  //     request.gradient_accumulation_steps);
+  //     request.peft_finetuning_info.max_training_steps,
+  //     request.peft_finetuning_info.completed_training_steps,
+  //     request.peft_finetuning_info.gradient_accumulation_steps);
   
   // tokens info
   for (size_t i = 0; i < request.dataset[dataset_entry].size(); i++) {
@@ -1110,21 +1120,21 @@ void RequestManager::process_finetuning_req_fwd_progress(BatchConfig const &old_
   assert(old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch > 0 && "Trying to continue an empty finetuning request");
   Request &request = pending_peft_request_queue.front();
   assert(request.req_type == RequestType::REQ_FINETUNING && "Found misplaced inference request");
-  assert(request.completed_training_steps <= request.max_training_steps);
+  assert(request.peft_finetuning_info.completed_training_steps <= request.peft_finetuning_info.max_training_steps);
   assert(request.guid == old_fwd_bc.requestsInfo[inference_batch_size].request_guid && "Request GUID mismatch");
-  assert(request.dataset_entry_processed_tokens == old_fwd_bc.requestsInfo[inference_batch_size].first_token_depth_in_request && "Token depth mismatch");
+  assert(request.peft_finetuning_info.dataset_entry_processed_tokens == old_fwd_bc.requestsInfo[inference_batch_size].first_token_depth_in_request && "Token depth mismatch");
 
   request.peft_finetuning_info.dataset_entry_processed_tokens += old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch;
 
-  int dataset_entry = request.completed_training_steps % request.dataset.size();
-  bool first_fwd_dataset_entry = request.dataset_entry_processed_tokens == 0;
-  bool dataset_entry_finished = request.dataset_entry_processed_tokens + old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch == request.dataset[dataset_entry].size();
+  int dataset_entry = request.peft_finetuning_info.completed_training_steps % request.dataset.size();
+  bool first_fwd_dataset_entry = request.peft_finetuning_info.dataset_entry_processed_tokens == 0;
+  bool dataset_entry_finished = request.peft_finetuning_info.dataset_entry_processed_tokens + old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch == request.dataset[dataset_entry].size();
   
   float avg_loss = result.finetuning_loss * old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch / request.dataset[dataset_entry].size();
   if (first_fwd_dataset_entry) {
-    request.finetuning_losses.push_back(avg_loss);
+    request.peft_finetuning_info.finetuning_losses.push_back(avg_loss);
   } else {
-    request.finetuning_losses.back() += avg_loss;
+    request.peft_finetuning_info.finetuning_losses.back() += avg_loss;
   }
   
   if (dataset_entry_finished) {
@@ -1147,10 +1157,10 @@ void RequestManager::process_finetuning_req_bwd_progress(BatchConfig const &old_
   request.peft_finetuning_info.last_processed_layer = old_bwd_bc.requestsInfo[0].peft_bwd_first_layer;
   assert(request.peft_finetuning_info.last_processed_layer >= 0);
   if (request.peft_finetuning_info.last_processed_layer == 0) {
-    request.completed_training_step += 1;
+    request.peft_finetuning_info.completed_training_steps += 1;
     request.peft_finetuning_info.status = Request::FORWARD_PHASE;
   }
-  if (request.completed_training_step == request.max_training_steps) {
+  if (request.peft_finetuning_info.completed_training_steps == request.peft_finetuning_info.max_training_steps) {
     handle_completed_finetuning_req(old_bwd_bc);
   }
 }
@@ -2964,17 +2974,17 @@ std::vector<GenerationResult>
   RequestManager *rm = RequestManager::get_request_manager();
   // reset inference_finished flag
   rm->set_inference_finished(false);
-  std::vector<RequestManager::RequestGuid> inf_guids, peft_guids;
+  std::vector<RequestGuid> inf_guids, peft_guids;
   for (int i = 0; i < requests.size(); i++) {
-    RequestManager::RequestGuid guid;
+    RequestGuid guid;
     if (requests.at(i).req_type == RequestType::REQ_INFERENCE) {
       guid = rm->register_new_request(requests.at(i));
-      if (guid != RequestManager::INVALID_GUID) {
+      if (guid != BatchConfig::INVALID_GUID) {
         inf_guids.push_back(guid);
       }
     } else {
       guid = rm->register_new_peft_request(requests.at(i));
-      if (guid != RequestManager::INVALID_GUID) {
+      if (guid != BatchConfig::INVALID_GUID) {
         peft_guids.push_back(guid);
       }
     }
@@ -3124,7 +3134,7 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     last_bcf_fwd = Future::from_value<BatchConfig>(bc_fwd);
     last_bcf_bwd = Future::from_value<BatchConfig>(bc_bwd);
     last_irf = Future::from_value<InferenceResult>(ir);
-    last_bwd_f = Future::Future(void);
+    last_bwd_f = Future::from_value<bool>(true);
   }
 
   std::queue<std::tuple<BatchConfigFuture, BatchConfigFuture, InferenceResultFuture, FinetuningBwdFuture>> batch_pipeline;
@@ -3153,8 +3163,8 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     }
 
     runtime->begin_trace(ctx, 12346 /*trace_id*/);
-    auto const &batch_pipeline_entry = batch_pipeline.back();
-    std::pair<BatchConfigFuture, BatchConfigFuture> next_batches = prepare_next_batch(batch_pipeline_entry, ctx, runtime);
+    auto &batch_pipeline_entry = batch_pipeline.back();
+    BatchConfigPairFuture next_batches = prepare_next_batch(batch_pipeline_entry, ctx, runtime);
     BatchConfigFuture bcf_fwd = next_batches.first;
     BatchConfigFuture bcf_bwd = next_batches.second;
     InferenceResultFuture irf = im->inference(llm, 0, bcf_fwd);

@@ -375,8 +375,8 @@ void FlexFlow::top_level_task(Task const *task,
       fine_tuning_req.peft_model_id = (peft_model_id_finetuning != nullptr)
                                           ? *peft_model_id_finetuning
                                           : PEFTModelID::NO_ID;
-      fine_tuning_req.dataset_filepath = file_paths.dataset_file_path;
-      fine_tuning_req.max_training_steps = 2;
+      fine_tuning_req.peft_finetuning_info.dataset_filepath = file_paths.dataset_file_path;
+      fine_tuning_req.peft_finetuning_info.max_training_steps = 2;
       requests.push_back(fine_tuning_req);
     }
     std::vector<GenerationResult> result = model.generate(requests);

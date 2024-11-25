@@ -29,6 +29,7 @@ class FFModel;
 class BeamTree;
 class RequestManager;
 using tokenizers::Tokenizer;
+using RequestGuid = BatchConfig::RequestGuid;
 
 class InferenceManager {
 public:
@@ -85,7 +86,7 @@ struct Request {
     // std::vector<int> finetuning_tokens_per_batch;
   };
   RequestType req_type = REQ_INFERENCE;
-  BatchConfig::RequestGuid guid;
+  RequestGuid guid = BatchConfig::INVALID_GUID;
   int max_length = -1;
   int max_new_tokens = -1;
   int benchmarking_tokens = -1;
@@ -139,16 +140,14 @@ public:
     SERVING = 1002,
     TERMINATED = 1003,
   };
-  using RequestGuid = BatchConfig::RequestGuid;
   using TokenId = BatchConfig::TokenId;
 
-  static const RequestGuid INVALID_GUID = 0;
   RequestManager();
   static RequestManager *get_request_manager();
   size_t get_num_processed_requests();
   size_t get_num_ssms();
 
-  void load_request_token_ids(Request &request);
+  bool load_request_token_ids(Request &request);
 
   void set_max_requests_per_batch(int max_num_requests);
   int get_max_requests_per_batch();
@@ -196,6 +195,7 @@ public:
   void serve_incr_decoding(FFModel *model);
   void serve_spec_infer(FFModel *model);
   GenerationResult get_generation_result(RequestGuid const &guid);
+  RequestGuid assign_next_guid();
   RequestGuid register_new_request(Request const &request_);
   RequestGuid register_new_peft_request(Request const &request_);
 
@@ -230,9 +230,9 @@ public:
   void process_work_from_old_batches(BatchConfig const &old_fwd_bc, BatchConfig const &old_bwd_bc, InferenceResult const &result);
   BatchConfig prepare_next_bwd_batch();
   BatchConfig prepare_next_fwd_batch(BatchConfig const &old_fwd_bc, InferenceResult const &result);
-  std::pair<BatchConfigFuture, BatchConfigFuture> prepare_next_batch(std::tuple<BatchConfigFuture, BatchConfigFuture, InferenceResultFuture, FinetuningBwdFuture> &batch_pipeline_entry,
-                                                                    Context ctx,
-                                                                    Runtime *runtime);
+  BatchConfigPairFuture prepare_next_batch(std::tuple<BatchConfigFuture, BatchConfigFuture, InferenceResultFuture, FinetuningBwdFuture> &batch_pipeline_entry,
+                                          Context ctx,
+                                          Runtime *runtime);
   // BatchConfig prepare_next_batch(BatchConfig const &bc,
   //                                InferenceResult const &result);
   // BatchConfigFuture prepare_next_batch(BatchConfigFuture const &bc,

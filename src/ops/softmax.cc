@@ -414,7 +414,7 @@ FutureMap Softmax::inference(FFModel const &ff,
         RegionRequirement(batch_outputs[0]->part_grad,
                           0 /*projection id*/,
                           WRITE_ONLY,
-                          EXCLUSIVE,
+                          SIMULTANEOUS,
                           batch_outputs[0]->region_grad));
     launcher.add_field(2, FID_DATA);
   }

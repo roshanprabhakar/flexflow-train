@@ -38,6 +38,7 @@ using BeamSearchBatchConfigFuture = Legion::Future;
 using TreeVerifyBatchConfigFuture = Legion::Future;
 using BeamInferenceResultFuture = Legion::Future;
 using FinetuningBwdFuture = Legion::Future;
+using BatchConfigPairFuture = Legion::Future;
 
 struct OptimizerTasks {
   bool compute_gradients = true;
@@ -54,6 +55,7 @@ void set_optimizer_tasks(OptimizerTasks &tasks,
 class BatchConfig {
 public:
   using RequestGuid = size_t;
+  static const RequestGuid INVALID_GUID = 0;
   using TokenId = int;
   BatchConfig();
   int num_active_requests() const;
