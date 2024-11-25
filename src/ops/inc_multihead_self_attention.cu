@@ -654,19 +654,19 @@ __global__ void scaling_query_kernel(DT *input_ptr,
 template <typename DT>
 __global__ void
     apply_rotary_embedding_fwd(DT *input_ptr,
-                              cuFloatComplex *complex_input,
-                              BatchConfig::PerTokenInfo const *tokenInfos,
-                              float rope_theta,
-                              bool llama3_rope,
-                              float factor,
-                              float low_freq_factor,
-                              float high_freq_factor,
-                              int original_max_position_embeddings,
-                              int qProjSize,
-                              int kProjSize,
-                              int num_tokens,
-                              size_t q_array_size,
-                              int hidden_size) {
+                               cuFloatComplex *complex_input,
+                               BatchConfig::PerTokenInfo const *tokenInfos,
+                               float rope_theta,
+                               bool llama3_rope,
+                               float factor,
+                               float low_freq_factor,
+                               float high_freq_factor,
+                               int original_max_position_embeddings,
+                               int qProjSize,
+                               int kProjSize,
+                               int num_tokens,
+                               size_t q_array_size,
+                               int hidden_size) {
   CUDA_KERNEL_LOOP(i, num_tokens * hidden_size) {
     // create complex number
     bool q_tensor = i < (q_array_size / 2);
@@ -826,9 +826,9 @@ void compute_qkv_kernel(IncMultiHeadSelfAttentionMeta const *m,
     /*q&k*/
     parallelism = num_tokens * m->hidden_size;
     apply_rotary_embedding_fwd<<<GET_BLOCKS(parallelism),
-                                min(CUDA_NUM_THREADS, parallelism),
-                                0,
-                                stream>>>(
+                                 min(CUDA_NUM_THREADS, parallelism),
+                                 0,
+                                 stream>>>(
         output_ptr,
         m->complex_input,
         m->token_infos,

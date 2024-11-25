@@ -275,10 +275,11 @@ void FlexFlow::top_level_task(Task const *task,
     using json = nlohmann::json;
     std::ifstream file_handle(file_paths.prompt_file_path);
     assert(file_handle.good() && "Prompt file does not exist.");
-    nlohmann::ordered_json prompt_json = nlohmann::ordered_json::parse(file_handle,
-                                                                      /*parser_callback_t */ nullptr,
-                                                                      /*allow_exceptions */ true,
-                                                                      /*ignore_comments */ true);
+    nlohmann::ordered_json prompt_json =
+        nlohmann::ordered_json::parse(file_handle,
+                                      /*parser_callback_t */ nullptr,
+                                      /*allow_exceptions */ true,
+                                      /*ignore_comments */ true);
     file_handle.close();
     auto &metadata = prompt_json["metadata"];
     int num_warmup_requests = metadata["num_warmup_requests"];
@@ -289,7 +290,7 @@ void FlexFlow::top_level_task(Task const *task,
       int response_length = entry["response_length"];
       std::string text = entry["prompt"];
       bool is_warmup_request = total_requests < num_warmup_requests;
-      
+
       Request inference_req;
       inference_req.prompt = text;
       inference_req.add_special_tokens = false;
@@ -302,10 +303,11 @@ void FlexFlow::top_level_task(Task const *task,
         requests.push_back(inference_req);
         num_regular_requests++;
       }
-      
+
       total_requests++;
     }
-    std::vector<GenerationResult> warmup_result = model.generate(warmup_requests);
+    std::vector<GenerationResult> warmup_result =
+        model.generate(warmup_requests);
     std::vector<GenerationResult> result = model.generate(requests);
 
     assert(warmup_result.size() == warmup_requests.size());
@@ -313,7 +315,7 @@ void FlexFlow::top_level_task(Task const *task,
     assert(result.size() + warmup_result.size() == total_requests);
     int i = 0;
     for (auto &entry : prompt_json["entries"]) {
-      if (i<num_warmup_requests) {
+      if (i < num_warmup_requests) {
         i++;
         continue;
       }
@@ -337,7 +339,6 @@ void FlexFlow::top_level_task(Task const *task,
     } else {
       std::cerr << "Unable to open file for writing." << std::endl;
     }
-
   }
 
   // terminate the request manager by stopping the background thread

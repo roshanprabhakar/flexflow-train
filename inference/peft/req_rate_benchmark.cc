@@ -35,8 +35,8 @@ Legion::Logger log_app("llama");
 
 class ConcurrentQueue {
 public:
-  std::queue<RequestManager::RequestGuid> inf_queue;
-  std::queue<RequestManager::RequestGuid> peft_queue;
+  std::queue<BatchConfig::RequestGuid> inf_queue;
+  std::queue<BatchConfig::RequestGuid> peft_queue;
   std::mutex request_queue_mutex;
   bool producer_finished = false;
 };
@@ -58,7 +58,7 @@ void consume() {
   bool queue_is_empty = false;
   // int i=0;
   while (!producer_is_finished || !queue_is_empty) {
-    RequestManager::RequestGuid guid = RequestManager::INVALID_GUID;
+    BatchConfig::RequestGuid guid = BatchConfig::INVALID_GUID;
     {
       const std::lock_guard<std::mutex> lock(guids->request_queue_mutex);
       queue_is_empty = guids->inf_queue.empty();
@@ -68,7 +68,7 @@ void consume() {
         guids->inf_queue.pop();
       }
     }
-    if (guid != RequestManager::INVALID_GUID) {
+    if (guid != BatchConfig::INVALID_GUID) {
       GenerationResult result = rm->get_generation_result(guid);
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(nb_millisecs));
@@ -396,7 +396,7 @@ void FlexFlow::top_level_task(Task const *task,
     fine_tuning_req.warmup = true;
     fine_tuning_req.peft_model_id =
         (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
-    fine_tuning_req.max_training_steps = 1;
+    fine_tuning_req.peft_finetuning_info.max_training_steps = 1;
     requests.push_back(fine_tuning_req);
     std::vector<GenerationResult> result = model.generate(requests);
   }
@@ -459,10 +459,10 @@ void FlexFlow::top_level_task(Task const *task,
     fine_tuning_req.max_length = 1024;
     fine_tuning_req.peft_model_id =
         (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
-    fine_tuning_req.max_training_steps = 1000000000;
-    RequestManager::RequestGuid ft_guid =
+    fine_tuning_req.peft_finetuning_info.max_training_steps = 1000000000;
+    BatchConfig::RequestGuid ft_guid =
         rm->register_new_peft_request(fine_tuning_req);
-    if (ft_guid != RequestManager::INVALID_GUID) {
+    if (ft_guid != BatchConfig::INVALID_GUID) {
       const std::lock_guard<std::mutex> lock(guids->request_queue_mutex);
       guids->peft_queue.push(ft_guid);
     }
@@ -495,9 +495,9 @@ void FlexFlow::top_level_task(Task const *task,
       {
         const std::lock_guard<std::mutex> lock(guids->request_queue_mutex);
         for (int i = 0; i < requests.size(); i++) {
-          RequestManager::RequestGuid guid =
+          BatchConfig::RequestGuid guid =
               rm->register_new_request(requests.at(i));
-          if (guid != RequestManager::INVALID_GUID) {
+          if (guid != BatchConfig::INVALID_GUID) {
             guids->inf_queue.push(guid);
           }
         }

@@ -4690,14 +4690,14 @@ void register_flexflow_internal_tasks(Runtime *runtime,
     registrar.set_leaf();
     if (pre_register) {
       Runtime::preregister_task_variant<
-          BatchConfig,
+          std::pair<BatchConfig, BatchConfig>,
           RequestManager::prepare_next_batch_task>(
           registrar, "RequestManager Prepare Next Batch Task");
     } else {
       if (enable_control_replication) {
         registrar.global_registration = false;
       }
-      runtime->register_task_variant<BatchConfig,
+      runtime->register_task_variant<std::pair<BatchConfig, BatchConfig>,
                                      RequestManager::prepare_next_batch_task>(
           registrar);
     }

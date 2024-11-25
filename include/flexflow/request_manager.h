@@ -37,9 +37,12 @@ public:
   static InferenceManager *get_inference_manager();
   void compile_model_and_allocate_buffer(FFModel *model);
   void init_operators_inference(FFModel *model);
-  InferenceResultFuture inference(FFModel *model, int index, BatchConfig const &bc);
-  InferenceResultFuture inference(FFModel *model, int index, BatchConfigFuture const &bc);
-  FinetuningBwdFuture peft_bwd(FFModel *model, int index, BatchConfigFuture const &bc);
+  InferenceResultFuture
+      inference(FFModel *model, int index, BatchConfig const &bc);
+  InferenceResultFuture
+      inference(FFModel *model, int index, BatchConfigFuture const &bc);
+  FinetuningBwdFuture
+      peft_bwd(FFModel *model, int index, BatchConfigFuture const &bc);
   void load_input_tokens_from_batch_config(FFModel *model,
                                            BatchConfigFuture const &bc,
                                            ParallelTensor const input,
@@ -67,7 +70,7 @@ struct Request {
   };
   enum FinetuningStatus {
     FORWARD_PHASE = 201,
-    BACKWARD_PHASE = 202, 
+    BACKWARD_PHASE = 202,
   };
   struct PeftFinetuningInfo {
     FinetuningStatus status = FORWARD_PHASE;
@@ -80,8 +83,8 @@ struct Request {
     std::vector<float> finetuning_losses;
     // bwd state
     int last_processed_layer = INT_MAX;
-    // how many gradient accumulation steps to do before updating the weights. if
-    // left as -1, it will be set to the number of entries in the dataset
+    // how many gradient accumulation steps to do before updating the weights.
+    // if left as -1, it will be set to the number of entries in the dataset
     int gradient_accumulation_steps = -1;
     // std::vector<int> finetuning_tokens_per_batch;
   };
@@ -96,12 +99,12 @@ struct Request {
   // inference fields
   std::string prompt;
   std::vector<BatchConfig::TokenId> tokens;
-  
+
   // peft fields
   PEFTModelID peft_model_id = PEFTModelID::NO_ID;
   PeftFinetuningInfo peft_finetuning_info;
   std::vector<std::vector<BatchConfig::TokenId>> dataset;
-  
+
   // speculation fields
   int initial_len = 0;
   int ssm_cache_size = 0;
@@ -109,7 +112,7 @@ struct Request {
   std::vector<struct BeamTree> beam_trees;
 
   Request() = default;
-  Request(const Request& other);
+  Request(Request const &other);
   void load_token_ids();
 
   friend std::ostream &operator<<(std::ostream &os, Request const &req);
@@ -214,25 +217,40 @@ public:
   void add_peft_config_to_request_info(BatchConfig &bc,
                                        int req_idx,
                                        LoraLinearConfig const &peft_config);
-  
+
   // helpers for prepare_next_batch
-  void process_inf_req_progress(BatchConfig const &old_fwd_bc, InferenceResult const &result);
+  void process_inf_req_progress(BatchConfig const &old_fwd_bc,
+                                InferenceResult const &result);
   void handle_completed_inf_req(BatchConfig const &old_bc, int i);
-  void add_continuing_inf_req_to_new_batch(BatchConfig &new_bc, BatchConfig const &old_bc, int &num_active_req, int &num_concurrent_inf_adapters, int i);
-  void add_new_inf_req(BatchConfig &new_bc, int &num_active_req, int &num_concurrent_inf_adapters, int i);
+  void add_continuing_inf_req_to_new_batch(BatchConfig &new_bc,
+                                           BatchConfig const &old_bc,
+                                           int &num_active_req,
+                                           int &num_concurrent_inf_adapters,
+                                           int i);
+  void add_new_inf_req(BatchConfig &new_bc,
+                       int &num_active_req,
+                       int &num_concurrent_inf_adapters,
+                       int i);
   void handle_completed_finetuning_req(BatchConfig const &old_finetuning_bc);
   void add_finetuning_req_fwd_batch(BatchConfig &new_bc);
   void add_finetuning_req_bwd_batch(BatchConfig &new_bc);
   bool finetuning_fwd_work_available();
   bool finetuning_bwd_work_available();
-  void process_finetuning_req_fwd_progress(BatchConfig const &old_fwd_bc, InferenceResult const &result);
+  void process_finetuning_req_fwd_progress(BatchConfig const &old_fwd_bc,
+                                           InferenceResult const &result);
   void process_finetuning_req_bwd_progress(BatchConfig const &old_bwd_bc);
-  void process_work_from_old_batches(BatchConfig const &old_fwd_bc, BatchConfig const &old_bwd_bc, InferenceResult const &result);
+  void process_work_from_old_batches(BatchConfig const &old_fwd_bc,
+                                     BatchConfig const &old_bwd_bc,
+                                     InferenceResult const &result);
   BatchConfig prepare_next_bwd_batch();
-  BatchConfig prepare_next_fwd_batch(BatchConfig const &old_fwd_bc, InferenceResult const &result);
-  BatchConfigPairFuture prepare_next_batch(std::tuple<BatchConfigFuture, BatchConfigFuture, InferenceResultFuture, FinetuningBwdFuture> &batch_pipeline_entry,
-                                          Context ctx,
-                                          Runtime *runtime);
+  BatchConfig prepare_next_fwd_batch(BatchConfig const &old_fwd_bc,
+                                     InferenceResult const &result);
+  BatchConfigPairFuture
+      prepare_next_batch(std::tuple<BatchConfigPairFuture,
+                                    InferenceResultFuture,
+                                    FinetuningBwdFuture> &batch_pipeline_entry,
+                         Context ctx,
+                         Runtime *runtime);
   // BatchConfig prepare_next_batch(BatchConfig const &bc,
   //                                InferenceResult const &result);
   // BatchConfigFuture prepare_next_batch(BatchConfigFuture const &bc,
@@ -311,7 +329,7 @@ public:
                              Legion::Context ctx,
                              Legion::Runtime *runtime);
   static std::pair<BatchConfig, BatchConfig> prepare_next_batch_task(
-    Legion::Task const *task,
+      Legion::Task const *task,
       std::vector<Legion::PhysicalRegion> const &regions,
       Legion::Context ctx,
       Legion::Runtime *runtime);

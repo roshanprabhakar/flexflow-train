@@ -380,7 +380,9 @@ void InferenceManager::init_operators_inference(FFModel *model) {
   }
 }
 
-InferenceResultFuture InferenceManager::inference(FFModel *model, int index, BatchConfig const &bc) {
+InferenceResultFuture InferenceManager::inference(FFModel *model,
+                                                  int index,
+                                                  BatchConfig const &bc) {
   if (bc.get_mode() == INC_DECODING_MODE) {
     BatchConfigFuture bcf = Future::from_value<BatchConfig>(bc);
     return inference(model, index, bcf);
@@ -403,7 +405,9 @@ InferenceResultFuture InferenceManager::inference(FFModel *model, int index, Bat
   }
 }
 
-InferenceResultFuture InferenceManager::inference(FFModel *model, int index, BatchConfigFuture const &bc) {
+InferenceResultFuture InferenceManager::inference(FFModel *model,
+                                                  int index,
+                                                  BatchConfigFuture const &bc) {
   // log_inf_mgr.print("mode(%d) num_active_infr_tokens(%d)
   // num_active_requests(%d)",
   //                   bc.get_mode(),
@@ -465,7 +469,9 @@ InferenceResultFuture InferenceManager::inference(FFModel *model, int index, Bat
   return irf;
 };
 
-FinetuningBwdFuture InferenceManager::peft_bwd(FFModel *model, int index, BatchConfigFuture const &bc) {
+FinetuningBwdFuture InferenceManager::peft_bwd(FFModel *model,
+                                               int index,
+                                               BatchConfigFuture const &bc) {
   int batch_index = index % model->config.data_parallelism_degree;
   FutureMap fm;
   bool found_input_operator = false;

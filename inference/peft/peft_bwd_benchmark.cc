@@ -334,7 +334,7 @@ void FlexFlow::top_level_task(Task const *task,
     fine_tuning_req.warmup = true;
     fine_tuning_req.peft_model_id =
         (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
-    fine_tuning_req.max_training_steps = 1;
+    fine_tuning_req.peft_finetuning_info.max_training_steps = 1;
     requests.push_back(fine_tuning_req);
     std::vector<GenerationResult> result = model.generate(requests);
   }
@@ -377,7 +377,7 @@ void FlexFlow::top_level_task(Task const *task,
       fine_tuning_req.max_length = lengths[i];
       fine_tuning_req.peft_model_id =
           (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
-      fine_tuning_req.max_training_steps = 1;
+      fine_tuning_req.peft_finetuning_info.max_training_steps = 1;
       requests.push_back(fine_tuning_req);
     }
     std::vector<GenerationResult> result = model.generate(requests);
