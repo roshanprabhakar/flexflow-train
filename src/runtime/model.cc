@@ -4682,24 +4682,65 @@ void register_flexflow_internal_tasks(Runtime *runtime,
           registrar);
     }
   }
-  // RequestManager prepare_next_batch
+  // RequestManager process_work_from_old_batches_task
   {
-    TaskVariantRegistrar registrar(RM_PREPARE_NEXT_BATCH_TASK_ID,
-                                   "RequestManager Prepare Next Batch");
+    TaskVariantRegistrar registrar(
+        RM_PROCESS_WORK_FROM_OLD_BATCHES_TASK_ID,
+        "RequestManager Process Work from Old Batches");
     registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
     registrar.set_leaf();
     if (pre_register) {
       Runtime::preregister_task_variant<
-          std::pair<BatchConfig, BatchConfig>,
-          RequestManager::prepare_next_batch_task>(
-          registrar, "RequestManager Prepare Next Batch Task");
+          RequestManager::process_work_from_old_batches_task>(
+          registrar, "RequestManager Process Work from Old Batches Task");
     } else {
       if (enable_control_replication) {
         registrar.global_registration = false;
       }
-      runtime->register_task_variant<std::pair<BatchConfig, BatchConfig>,
-                                     RequestManager::prepare_next_batch_task>(
-          registrar);
+      runtime->register_task_variant<
+          RequestManager::process_work_from_old_batches_task>(registrar);
+    }
+  }
+  // RequestManager prepare_next_fwd_batch_task
+  {
+    TaskVariantRegistrar registrar(RM_PREPARE_NEXT_FWD_BATCH_TASK_ID,
+                                   "RequestManager Prepare Next FWB Batch");
+    registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+    registrar.set_leaf();
+    if (pre_register) {
+      Runtime::preregister_task_variant<
+          BatchConfig,
+          RequestManager::prepare_next_fwd_batch_task>(
+          registrar, "RequestManager Prepare Next FWD Batch Task");
+    } else {
+      if (enable_control_replication) {
+        registrar.global_registration = false;
+      }
+      runtime
+          ->register_task_variant<BatchConfig,
+                                  RequestManager::prepare_next_fwd_batch_task>(
+              registrar);
+    }
+  }
+  // RequestManager prepare_next_bwd_batch_task
+  {
+    TaskVariantRegistrar registrar(RM_PREPARE_NEXT_BWD_BATCH_TASK_ID,
+                                   "RequestManager Prepare Next BWD Batch");
+    registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
+    registrar.set_leaf();
+    if (pre_register) {
+      Runtime::preregister_task_variant<
+          BatchConfig,
+          RequestManager::prepare_next_bwd_batch_task>(
+          registrar, "RequestManager Prepare Next BWD Batch Task");
+    } else {
+      if (enable_control_replication) {
+        registrar.global_registration = false;
+      }
+      runtime
+          ->register_task_variant<BatchConfig,
+                                  RequestManager::prepare_next_bwd_batch_task>(
+              registrar);
     }
   }
   // RequestManager prepare_next_batch_beam

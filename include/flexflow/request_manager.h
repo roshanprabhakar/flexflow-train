@@ -245,12 +245,20 @@ public:
   BatchConfig prepare_next_bwd_batch();
   BatchConfig prepare_next_fwd_batch(BatchConfig const &old_fwd_bc,
                                      InferenceResult const &result);
-  BatchConfigPairFuture
-      prepare_next_batch(std::tuple<BatchConfigPairFuture,
-                                    InferenceResultFuture,
-                                    FinetuningBwdFuture> &batch_pipeline_entry,
-                         Context ctx,
-                         Runtime *runtime);
+  std::pair<BatchConfigFuture, BatchConfigFuture> prepare_next_batches(
+      std::tuple<BatchConfigFuture,
+                 BatchConfigFuture,
+                 InferenceResultFuture,
+                 FinetuningBwdFuture> &batch_pipeline_entry,
+      Legion::Context ctx,
+      Legion::Runtime *runtime);
+  // BatchConfigPairFuture
+  //     prepare_next_batch(std::tuple<BatchConfigPairFuture,
+  //                                   InferenceResultFuture,
+  //                                   FinetuningBwdFuture>
+  //                                   &batch_pipeline_entry,
+  //                        Context ctx,
+  //                        Runtime *runtime);
   // BatchConfig prepare_next_batch(BatchConfig const &bc,
   //                                InferenceResult const &result);
   // BatchConfigFuture prepare_next_batch(BatchConfigFuture const &bc,
@@ -328,7 +336,24 @@ public:
                              std::vector<Legion::PhysicalRegion> const &regions,
                              Legion::Context ctx,
                              Legion::Runtime *runtime);
-  static std::pair<BatchConfig, BatchConfig> prepare_next_batch_task(
+  // static std::pair<BatchConfig, BatchConfig> prepare_next_batch_task(
+  //     Legion::Task const *task,
+  //     std::vector<Legion::PhysicalRegion> const &regions,
+  //     Legion::Context ctx,
+  //     Legion::Runtime *runtime);
+  static void process_work_from_old_batches_task(
+      Legion::Task const *task,
+      std::vector<Legion::PhysicalRegion> const &regions,
+      Legion::Context ctx,
+      Legion::Runtime *runtime);
+
+  static BatchConfig prepare_next_fwd_batch_task(
+      Legion::Task const *task,
+      std::vector<Legion::PhysicalRegion> const &regions,
+      Legion::Context ctx,
+      Legion::Runtime *runtime);
+
+  static BatchConfig prepare_next_bwd_batch_task(
       Legion::Task const *task,
       std::vector<Legion::PhysicalRegion> const &regions,
       Legion::Context ctx,

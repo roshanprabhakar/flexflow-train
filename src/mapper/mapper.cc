@@ -280,7 +280,9 @@ void FFMapper::select_task_options(const MapperContext ctx,
     output.initial_proc = all_cpus[0];
     return;
   }
-  if ((task.task_id == RM_PREPARE_NEXT_BATCH_TASK_ID) ||
+  if ((task.task_id == RM_PROCESS_WORK_FROM_OLD_BATCHES_TASK_ID) ||
+      (task.task_id == RM_PREPARE_NEXT_FWD_BATCH_TASK_ID) ||
+      (task.task_id == RM_PREPARE_NEXT_BWD_BATCH_TASK_ID) ||
       (task.task_id == RM_PREPARE_NEXT_BATCH_INIT_TASK_ID) ||
       (task.task_id == RM_PREPARE_NEXT_BATCH_BEAM_TASK_ID) ||
       (task.task_id == RM_PREPARE_NEXT_BATCH_VERIFY_TASK_ID) ||
