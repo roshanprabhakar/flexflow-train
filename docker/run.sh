@@ -127,8 +127,7 @@ fi
 
 ssh_key_volume=""
 ssh_key_path="$HOME/.ssh/id_rsa"
-if [ -f "$ssh_key_path" ]; then
-  # If the token exists, add the volume mount to the Docker command
-  ssh_key_volume+="-v $ssh_key_path:/root/.ssh/id_rsa"
+if [ -f "$ssh_key_path" ] && [ -f "$ssh_key_path.pub" ]; then
+  ssh_key_volume="-v $ssh_key_path:/root/.ssh/id_rsa -v $ssh_key_path.pub:/root/.ssh/id_rsa.pub"
 fi
 eval docker run -it "$gpu_arg" "--shm-size=${SHM_SIZE}" "--cap-add=SYS_PTRACE" "${ssh_key_volume}" "${hf_token_volume}" "${port_forward_arg}" "${image}-${FF_GPU_BACKEND}${gpu_backend_version}:latest"
