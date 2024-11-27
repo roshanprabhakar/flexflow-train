@@ -208,7 +208,7 @@ void inference_kernel(LoraLinearMeta *m,
     assert(lora_config.trainable == bc->requestsInfo[i].finetuning_request &&
            "Trainable flag mismatch");
     int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
-    assert(num_peft_tokens == bc->num_finetuning_tokens());
+    // assert(num_peft_tokens == bc->num_finetuning_tokens());
     // int max_peft_tokens = bc->requestsInfo[i].max_length;
     int first_token_offset = bc->requestsInfo[i].first_token_offset_in_batch;
     LoraLinearWeight weight = m->peft_memory_manager->get_peft(

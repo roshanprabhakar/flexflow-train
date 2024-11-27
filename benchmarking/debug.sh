@@ -17,7 +17,7 @@ reset
 make -j install
 
 # python ../inference/utils/download_hf_model.py $MODEL_NAME
-# python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME
+python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME
 
 
 export LEGION_BACKTRACE=1
