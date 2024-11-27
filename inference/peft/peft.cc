@@ -194,6 +194,10 @@ void FlexFlow::top_level_task(Task const *task,
               << std::endl;
     assert(false);
   }
+  if (!enable_peft) {
+    std::cerr << "Running PEFT script with PEFT not enabled" << std::endl;
+    assert(false);
+  }
   if (enable_peft && peft_model_name.empty()) {
     std::cout << "PEFT enabled, but no PEFT model id passed" << std::endl;
     assert(false);
@@ -272,6 +276,7 @@ void FlexFlow::top_level_task(Task const *task,
 
   GenerationConfig generationConfig(do_sample, temperature, topp);
   RequestManager *rm = RequestManager::get_request_manager();
+  rm->set_verbose(verbose);
   rm->set_max_requests_per_batch(
       max_requests_per_batch +
       (int)enable_peft_finetuning); // add one slot for finetuning if needed

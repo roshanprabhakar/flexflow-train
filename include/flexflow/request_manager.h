@@ -112,8 +112,7 @@ struct Request {
   std::vector<struct BeamTree> beam_trees;
 
   Request() = default;
-  Request(Request const &other);
-  void load_token_ids();
+  static Request from_other(Request const &other);
 
   friend std::ostream &operator<<(std::ostream &os, Request const &req);
 };
@@ -152,6 +151,7 @@ public:
 
   bool load_request_token_ids(Request &request);
 
+  void set_verbose(bool verbose);
   void set_max_requests_per_batch(int max_num_requests);
   int get_max_requests_per_batch();
   void set_max_tokens_per_batch(int max_num_tokens);

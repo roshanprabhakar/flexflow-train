@@ -167,6 +167,20 @@ int BatchConfig::max_spec_tree_token_num() {
   return RequestManager::get_request_manager()->get_max_spec_tree_token_num();
 }
 
+// print InferenceResult
+std::ostream &operator<<(std::ostream &os, InferenceResult const &result) {
+  os << "InferenceResult {";
+  os << "MAX_NUM_TOKENS: " << InferenceResult::MAX_NUM_TOKENS << ", ";
+  os << "token_ids: [";
+  for (int i = 0; i < 16; i++) {
+    os << result.token_ids[i] << ", ";
+  }
+  os << "], ";
+  os << "finetuning_loss: " << result.finetuning_loss;
+  os << "}";
+  return os;
+}
+
 std::ostream &operator<<(std::ostream &os, BatchConfig const &bc) {
   os << "@@@@@@@@@@@@@@ Batch Config (mode " << bc.get_mode()
      << ") @@@@@@@@@@@@@@" << std::endl;

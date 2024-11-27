@@ -54,44 +54,36 @@ RequestGuid RequestManager::assign_next_guid() {
   return next_available_guid++;
 }
 
-Request::Request(Request const &other)
-    : req_type(other.req_type), max_length(other.max_length),
-      max_new_tokens(other.max_new_tokens),
-      benchmarking_tokens(other.benchmarking_tokens),
-      add_special_tokens(other.add_special_tokens), warmup(other.warmup),
-      status(Request::PENDING), prompt(other.prompt), tokens(other.tokens),
-      peft_model_id(other.peft_model_id),
-      peft_finetuning_info(other.peft_finetuning_info),
-      initial_len(other.initial_len), ssm_cache_size(other.ssm_cache_size),
-      llm_cache_size(other.llm_cache_size), beam_trees(other.beam_trees) {
-
+Request Request::from_other(Request const &other) {
   RequestManager *rm = RequestManager::get_request_manager();
-  guid = rm->assign_next_guid();
+  Request req = other;
+  req.guid = rm->assign_next_guid();
   int max_seq_len = rm->get_max_sequence_length();
-  if (req_type == RequestType::REQ_INFERENCE) {
+  if (req.req_type == RequestType::REQ_INFERENCE) {
     // both unset
-    if (max_length == -1 && max_new_tokens == -1) {
-      max_length = max_seq_len - 1;
+    if (req.max_length == -1 && req.max_new_tokens == -1) {
+      req.max_length = max_seq_len - 1;
     }
     // both set
-    if (max_length != -1 && max_new_tokens != -1) {
-      max_length = -1;
+    if (req.max_length != -1 && req.max_new_tokens != -1) {
+      req.max_length = -1;
       std::cout
-          << "Both `max_new_tokens` (=" << max_new_tokens
-          << ") and `max_length`(=" << max_length
+          << "Both `max_new_tokens` (=" << req.max_new_tokens
+          << ") and `max_length`(=" << req.max_length
           << ") seem to have been set. `max_new_tokens` will take precedence.";
     }
   } else {
-    if (max_new_tokens != -1) {
+    if (req.max_new_tokens != -1) {
       std::cerr
           << "Error: max_new_tokens is not allowed for PEFT finetuning requests"
           << std::endl;
       assert(false);
     }
-    if (max_length == -1) {
-      max_length = max_seq_len - 1;
+    if (req.max_length == -1) {
+      req.max_length = max_seq_len - 1;
     }
   }
+  return req;
 }
 
 bool RequestManager::load_request_token_ids(Request &request) {
@@ -163,6 +155,7 @@ bool RequestManager::load_request_token_ids(Request &request) {
                           request.benchmarking_tokens - (int)bos_added,
                           15); // insert random number
       request.dataset.push_back(input_tokens);
+      std::cout << "Creating dataset with benchmarking tokens. Size of dataset: " << request.dataset.size() << std::endl;
     } else {
       using json = nlohmann::json;
       std::ifstream file_handle(request.peft_finetuning_info.dataset_filepath);
@@ -190,6 +183,7 @@ bool RequestManager::load_request_token_ids(Request &request) {
           request.dataset.push_back(input_tokens);
         }
       }
+      std::cout << "Creating dataset from json file: " << request.peft_finetuning_info.dataset_filepath << ". Size of dataset: " << request.dataset.size() << std::endl;
     }
     if (request.peft_finetuning_info.gradient_accumulation_steps == -1) {
       request.peft_finetuning_info.gradient_accumulation_steps =
@@ -274,6 +268,8 @@ RequestManager::RequestManager()
   max_spec_tree_token_num = -1;
   max_sequence_length = -1;
 }
+
+void RequestManager::set_verbose(bool verbose_) { verbose = verbose_; }
 
 void RequestManager::set_max_requests_per_batch(int max_num_requests) {
   assert(max_requests_per_batch == -1 ||
@@ -438,6 +434,15 @@ void RequestManager::set_peft_config(PEFTModelID const &peft_model_id,
 
 LoraLinearConfig const &
     RequestManager::get_peft_config(PEFTModelID const &peft_model_id) {
+  if (peft_configs.find(peft_model_id) == peft_configs.end()) {
+    std::cout << "PEFT model ID not found" << std::endl;
+    std::cout << peft_model_id << std::endl;
+    // print all registerd peft model ids
+    std::cout << "Registered PEFT model IDs:" << std::endl;
+    for (auto const &pair : peft_configs) {
+      std::cout << pair.first << std::endl;
+    }
+  }
   assert(peft_configs.find(peft_model_id) != peft_configs.end() &&
          "PEFT model ID not found");
   return peft_configs[peft_model_id];
@@ -506,13 +511,15 @@ PEFTModelID *
   PEFTModelID *peft_model_id = new PEFTModelID(peft_model_global_guid++);
   RequestManager *rm = RequestManager::get_request_manager();
   rm->set_peft_config(*peft_model_id, peft_config);
+  std::cout << "Registered PEFT adapter with id: " << *peft_model_id
+            << std::endl;
   return peft_model_id;
 }
 
 RequestGuid RequestManager::register_new_request(Request const &request_) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
   // Add a new request
-  Request request(request_);
+  Request request = Request::from_other(request_);
   if (!load_request_token_ids(request)) {
     return BatchConfig::INVALID_GUID;
   }
@@ -524,13 +531,18 @@ RequestGuid RequestManager::register_new_request(Request const &request_) {
     request_to_promise[request.guid] = new std::promise<void>();
   }
 
-  {
-    std::string output = "New request tokens:";
-    output = "[" + std::to_string(request.guid) + "]" + output;
-    for (int i = 0; i < request.tokens.size(); i++) {
-      output = output + " " + std::to_string(request.tokens[i]);
-    }
-    log_req_mgr.print("%s", output.c_str());
+  // {
+  //   std::string output = "New request tokens:";
+  //   output = "[" + std::to_string(request.guid) + "]" + output;
+  //   for (int i = 0; i < request.tokens.size(); i++) {
+  //     output = output + " " + std::to_string(request.tokens[i]);
+  //   }
+  //   log_req_mgr.print("%s", output.c_str());
+  // }
+  if (verbose) {
+    std::cout << "Registered new request with guid: " << request.guid
+              << std::endl;
+    std::cout << request << std::endl;
   }
 
   GenerationResult gr;
@@ -552,7 +564,7 @@ RequestGuid RequestManager::register_new_peft_request(Request const &request_) {
   assert(enable_peft_finetuning && "PEFT finetuning is not enabled");
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
   // Add a new request
-  Request request(request_);
+  Request request = Request::from_other(request_);
   if (!load_request_token_ids(request)) {
     return BatchConfig::INVALID_GUID;
   }
@@ -564,12 +576,17 @@ RequestGuid RequestManager::register_new_peft_request(Request const &request_) {
     request_to_promise[request.guid] = new std::promise<void>();
   }
 
-  for (size_t r = 0; r < request.dataset.size(); r++) {
-    std::string input = "[" + std::to_string(r) + "] entry:";
-    for (size_t i = 0; i < request.dataset[r].size(); i++) {
-      input = input + " " + std::to_string(request.dataset[r][i]);
-    }
-    log_req_mgr.print("%s", input.c_str());
+  // for (size_t r = 0; r < request.dataset.size(); r++) {
+  //   std::string input = "[" + std::to_string(r) + "] entry:";
+  //   for (size_t i = 0; i < request.dataset[r].size(); i++) {
+  //     input = input + " " + std::to_string(request.dataset[r][i]);
+  //   }
+  //   log_req_mgr.print("%s", input.c_str());
+  // }
+  if (verbose) {
+    std::cout << "Registered new request with guid: " << request.guid
+              << std::endl;
+    std::cout << request << std::endl;
   }
 
   GenerationResult gr;
@@ -1349,6 +1366,13 @@ void RequestManager::process_work_from_old_batches(
     InferenceResult const &result) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
 
+  if (verbose) {
+    std::cout << "\n############### process_work_from_old_batches ###############\n";
+    std::cout << "old_fwd_bc: " << old_fwd_bc << std::endl;
+    std::cout << "old_bwd_bc: " << old_bwd_bc << std::endl;
+    std::cout << "result: " << result << std::endl;
+  }
+
   // Step 1: Inference. Process work from previous fwd iteration: save generated
   // inference tokens and update records of finetuning fwd progress
   process_inf_req_progress(old_fwd_bc, result);
@@ -1379,6 +1403,12 @@ BatchConfig
     RequestManager::prepare_next_fwd_batch(BatchConfig const &old_fwd_bc,
                                            InferenceResult const &result) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
+
+  if (verbose) {
+    std::cout << "\n############### prepare_next_fwd_batch ###############\n";
+    std::cout << "old_fwd_bc: " << old_fwd_bc << std::endl;
+    std::cout << "result: " << result << std::endl;
+  }
 
   // Step 1: Create new batch config
   BatchConfig new_bc;
@@ -3376,7 +3406,7 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     BatchConfigFuture bcf_fwd = next_batches.first;
     BatchConfigFuture bcf_bwd = next_batches.second;
     InferenceResultFuture irf = im->inference(llm, 0, bcf_fwd);
-    FinetuningBwdFuture bwd_f = im->peft_bwd(llm, 0, bcf_bwd);
+    FinetuningBwdFuture bwd_f = (llm->config.enable_peft) ? im->peft_bwd(llm, 0, bcf_bwd) : Future::from_value<bool>(true);
     batch_pipeline.push(std::make_tuple(bcf_fwd, bcf_bwd, irf, bwd_f));
     last_bcf_fwd = bcf_fwd;
     last_bcf_bwd = bcf_bwd;
