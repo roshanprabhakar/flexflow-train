@@ -4690,14 +4690,14 @@ void register_flexflow_internal_tasks(Runtime *runtime,
     registrar.add_constraint(ProcessorConstraint(Processor::LOC_PROC));
     registrar.set_leaf();
     if (pre_register) {
-      Runtime::preregister_task_variant<
+      Runtime::preregister_task_variant<bool,
           RequestManager::process_work_from_old_batches_task>(
           registrar, "RequestManager Process Work from Old Batches Task");
     } else {
       if (enable_control_replication) {
         registrar.global_registration = false;
       }
-      runtime->register_task_variant<
+      runtime->register_task_variant<bool,
           RequestManager::process_work_from_old_batches_task>(registrar);
     }
   }

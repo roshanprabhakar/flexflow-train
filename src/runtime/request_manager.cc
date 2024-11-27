@@ -672,7 +672,6 @@ std::pair<BatchConfigFuture, BatchConfigFuture>
   launcher3.add_future(std::get<3>(batch_pipeline_entry));
   launcher3.add_future(pwfobf);
   BatchConfigFuture bcbf = runtime->execute_task(ctx, launcher3);
-  // return pair of batch futures
   return std::make_pair(bcff, bcbf);
 }
 
@@ -680,7 +679,7 @@ std::pair<BatchConfigFuture, BatchConfigFuture>
 // future[1]: old_bwd_bc
 // future[2]: inference result
 // future[3]: wait for bwd to finish
-void RequestManager::process_work_from_old_batches_task(
+bool RequestManager::process_work_from_old_batches_task(
     Task const *task,
     std::vector<PhysicalRegion> const &regions,
     Context ctx,
@@ -693,6 +692,7 @@ void RequestManager::process_work_from_old_batches_task(
       Future(task->futures[2]).get_result<InferenceResult>();
   Future(task->futures[3]).get_void_result(); // wait until bwd is done
   rm->process_work_from_old_batches(*old_fwd_bc, *old_bwd_bc, result);
+  return true;
 }
 
 // future[0]: old_fwd_bc

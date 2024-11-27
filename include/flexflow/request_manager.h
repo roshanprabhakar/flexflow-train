@@ -341,7 +341,7 @@ public:
   //     std::vector<Legion::PhysicalRegion> const &regions,
   //     Legion::Context ctx,
   //     Legion::Runtime *runtime);
-  static void process_work_from_old_batches_task(
+  static bool process_work_from_old_batches_task(
       Legion::Task const *task,
       std::vector<Legion::PhysicalRegion> const &regions,
       Legion::Context ctx,

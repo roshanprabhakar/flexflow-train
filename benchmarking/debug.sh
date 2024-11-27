@@ -26,13 +26,14 @@ export FF_DEBG_NO_WEIGHTS=1
 gdb -ex run --args ./inference/incr_decoding/incr_decoding \
     -ll:cpu $NCPUS -ll:gpu $NGPUS -ll:util $NCPUS \
     -ll:fsize 20000 -ll:zsize 10000 \
-    --verbose -lg:prof 1 -lg:prof_logfile prof_%.gz \
-    -llm-model $MODEL_NAME \
+    -llm-model $MODEL_NAME --verbose \
     -prompt $PROMPT \
     -tensor-parallelism-degree $NGPUS \
     -log-file ../inference/output/test.out \
     -output-file ../inference/output/test.json \
     --max-requests-per-batch 1 --max-tokens-per-batch 3000 --max-sequence-length 3000
+
+#--verbose -lg:prof 1 -lg:prof_logfile prof_%.gz \
 
 # ./inference/peft/peft \
 #     -ll:cpu 4 -ll:gpu $NGPUS -ll:util 2 \
