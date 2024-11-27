@@ -121,10 +121,11 @@ void SigmoidSiluMulti::inference_kernel_wrapper(
     int in_dim = input1.domain.hi()[0] - input1.domain.lo()[0] + 1;
     int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
     assert(num_peft_tokens == bc->num_finetuning_tokens());
+    int max_peft_tokens = BatchConfig::max_sequence_length();
     int first_token_offset = bc->requestsInfo[i].first_token_offset_in_batch;
     size_t input_tensor_size =
         data_type_size(m->input_type[0]) * num_peft_tokens * in_dim;
-    assert(m->allocated_peft_buffer_size == 2 * input_tensor_size);
+    assert(m->allocated_peft_buffer_size == 2 * (data_type_size(m->input_type[0]) * max_peft_tokens * in_dim));
     // copy input activation
     if (m->input_type[0] == DT_FLOAT) {
       checkCUDA(

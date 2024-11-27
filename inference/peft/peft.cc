@@ -178,6 +178,8 @@ void FlexFlow::top_level_task(Task const *task,
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
+  
+  ffconfig.enable_peft_finetuning = enable_peft_finetuning;
 
   std::string config_filepath = join_path(
       {file_paths.cache_folder_path, "configs", llm_model_name, "config.json"});

@@ -126,12 +126,23 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
     int num_new_tokens = bc->requestsInfo[i].num_tokens_in_batch;
     int total_tokens = bc->requestsInfo[i].first_token_depth_in_request +
                        bc->requestsInfo[i].num_tokens_in_batch;
-    int max_peft_tokens = bc->requestsInfo[i].max_length;
+    int max_peft_tokens = BatchConfig::max_sequence_length();
     // Copy query to m->query_activation_buffer if we need to compute
     // PEFT backward
     if (bc->requestsInfo[i].finetuning_request) {
       size_t activation_size_needed =
           sizeof(DT) * max_peft_tokens * m->num_q_heads * m->qProjSize;
+      if (activation_size_needed != m->allocated_peft_buffer_size1) {
+        std::cout << "activation_size_needed: " << activation_size_needed
+                  << std::endl;
+        std::cout << "m->allocated_peft_buffer_size1: " << m->allocated_peft_buffer_size1
+                  << std::endl;
+        std::cout << "max_peft_tokens: " << max_peft_tokens << std::endl;
+        std::cout << "m->num_q_heads: " << m->num_q_heads << std::endl;
+        std::cout << "m->qProjSize: " << m->qProjSize << std::endl;
+        std::cout << "BatchConfig::max_sequence_length()" << BatchConfig::max_sequence_length() << std::endl;
+        std::cout << "sizeof(DT)" << sizeof(DT) << std::endl;
+      }
       assert(activation_size_needed == m->allocated_peft_buffer_size1);
       int parallelism = m->hidden_size * num_tokens;
       store_query_cache<<<GET_BLOCKS(parallelism),
@@ -1697,11 +1708,16 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
     size_t complex_size = (max_tokens_per_batch * (qProjSize * num_q_heads +
                                                    kProjSize * num_q_heads)) /
                           2;
-    allocated_peft_buffer_size1 = BatchConfig::max_sequence_length() *
-                                  num_q_heads * qProjSize * size_of_dt;
-    allocated_peft_buffer_size2 = BatchConfig::max_sequence_length() *
-                                  BatchConfig::max_sequence_length() *
-                                  num_q_heads * size_of_dt;
+    if (enable_peft_finetuning) {
+      allocated_peft_buffer_size1 = BatchConfig::max_sequence_length() *
+                                    num_q_heads * qProjSize * size_of_dt;
+      allocated_peft_buffer_size2 = BatchConfig::max_sequence_length() *
+                                    BatchConfig::max_sequence_length() *
+                                    num_q_heads * size_of_dt;
+    } else {
+      allocated_peft_buffer_size1 = 0;
+      allocated_peft_buffer_size2 = 0;
+    }
     size_t totalSize =
         (qkv_max_proj_size + key_cache_size + value_cache_size +
          2 * qk_prod_size + attn_heads_size) *
@@ -1791,8 +1807,6 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
              gpu_mem_allocator.reserved_allocated_size);
     }
   }
-  allocated_peft_buffer_size1 = 0;
-  allocated_peft_buffer_size2 = 0;
   cudaStreamSynchronize(stream);
 }
 
