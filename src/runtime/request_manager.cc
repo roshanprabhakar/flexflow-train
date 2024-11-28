@@ -636,106 +636,139 @@ size_t RequestManager::get_num_processed_requests() {
   return num_processed_requests;
 }
 
-std::pair<BatchConfigFuture, BatchConfigFuture>
-    RequestManager::prepare_next_batches(
-        std::tuple<BatchConfigFuture,
-                   BatchConfigFuture,
-                   InferenceResultFuture,
-                   FinetuningBwdFuture> &batch_pipeline_entry,
-        Context ctx,
-        Runtime *runtime) {
+// one batch future
+// one inference result
+// one finetuning bwd future -> this is necessary because we need to wait until bwd is done
+BatchConfigFuture
+    RequestManager::prepare_next_batch(BatchConfigFuture const &old_bc,
+                                       InferenceResultFuture const &result,
+                                       FinetuningBwdFuture const &bwd_f,
+                                       Context ctx,
+                                       Runtime *runtime) {
   RequestManager *rm = this;
-  // Process work from old batchs
-  TaskLauncher launcher1(RM_PROCESS_WORK_FROM_OLD_BATCHES_TASK_ID,
-                         TaskArgument(&rm, sizeof(RequestManager *)));
-  launcher1.add_future(std::get<0>(batch_pipeline_entry));
-  launcher1.add_future(std::get<1>(batch_pipeline_entry));
-  launcher1.add_future(std::get<2>(batch_pipeline_entry));
-  launcher1.add_future(std::get<3>(batch_pipeline_entry));
-  ProcessWorkFromOldBatchesFuture pwfobf =
-      runtime->execute_task(ctx, launcher1);
-  // Build new FWD batch
-  TaskLauncher launcher2(RM_PREPARE_NEXT_FWD_BATCH_TASK_ID,
-                         TaskArgument(&rm, sizeof(RequestManager *)));
-  launcher2.add_future(std::get<0>(batch_pipeline_entry));
-  launcher2.add_future(std::get<1>(batch_pipeline_entry));
-  launcher2.add_future(std::get<2>(batch_pipeline_entry));
-  launcher2.add_future(std::get<3>(batch_pipeline_entry));
-  launcher2.add_future(pwfobf);
-  BatchConfigFuture bcff = runtime->execute_task(ctx, launcher2);
-  // Build new BWD batch
-  TaskLauncher launcher3(RM_PREPARE_NEXT_BWD_BATCH_TASK_ID,
-                         TaskArgument(&rm, sizeof(RequestManager *)));
-  launcher3.add_future(std::get<0>(batch_pipeline_entry));
-  launcher3.add_future(std::get<1>(batch_pipeline_entry));
-  launcher3.add_future(std::get<2>(batch_pipeline_entry));
-  launcher3.add_future(std::get<3>(batch_pipeline_entry));
-  launcher3.add_future(pwfobf);
-  BatchConfigFuture bcbf = runtime->execute_task(ctx, launcher3);
-  return std::make_pair(bcff, bcbf);
+  TaskLauncher launcher(RM_PREPARE_NEXT_BATCH_TASK_ID,
+                        TaskArgument(&rm, sizeof(RequestManager *)));
+  launcher.add_future(old_bc);
+  launcher.add_future(result);
+  launcher.add_future(bwd_f);
+  return runtime->execute_task(ctx, launcher);
 }
+
+BatchConfig RequestManager::prepare_next_batch_task(
+    Task const *task,
+    std::vector<PhysicalRegion> const &regions,
+    Context ctx,
+    Runtime *runtime) {
+  RequestManager *rm = *((RequestManager **)task->args);
+  BatchConfig const *old_bc = BatchConfig::from_future(task->futures[0]);
+  InferenceResult const &result = Future(task->futures[1]).get_result<InferenceResult>();
+  Future(task->futures[2]).get_void_result(); // wait until bwd is done;
+  rm->process_work_from_old_batch(*old_bc, result);
+  BatchConfig new_bc = rm->prepare_next_fwd_batch(*old_bc, result);
+  new_bc = rm->prepare_next_bwd_batch(new_bc);
+  return new_bc;
+}
+
+// std::pair<BatchConfigFuture, BatchConfigFuture>
+//     RequestManager::prepare_next_batches(
+//         std::tuple<BatchConfigFuture,
+//                    BatchConfigFuture,
+//                    InferenceResultFuture,
+//                    FinetuningBwdFuture> &batch_pipeline_entry,
+//         Context ctx,
+//         Runtime *runtime) {
+//   RequestManager *rm = this;
+//   // Process work from old batchs
+//   TaskLauncher launcher1(RM_PROCESS_WORK_FROM_OLD_BATCHES_TASK_ID,
+//                          TaskArgument(&rm, sizeof(RequestManager *)));
+//   launcher1.add_future(std::get<0>(batch_pipeline_entry));
+//   launcher1.add_future(std::get<1>(batch_pipeline_entry));
+//   launcher1.add_future(std::get<2>(batch_pipeline_entry));
+//   launcher1.add_future(std::get<3>(batch_pipeline_entry));
+//   ProcessWorkFromOldBatchesFuture pwfobf =
+//       runtime->execute_task(ctx, launcher1);
+//   // Build new FWD batch
+//   TaskLauncher launcher2(RM_PREPARE_NEXT_FWD_BATCH_TASK_ID,
+//                          TaskArgument(&rm, sizeof(RequestManager *)));
+//   launcher2.add_future(std::get<0>(batch_pipeline_entry));
+//   launcher2.add_future(std::get<1>(batch_pipeline_entry));
+//   launcher2.add_future(std::get<2>(batch_pipeline_entry));
+//   launcher2.add_future(std::get<3>(batch_pipeline_entry));
+//   launcher2.add_future(pwfobf);
+//   BatchConfigFuture bcff = runtime->execute_task(ctx, launcher2);
+//   // Build new BWD batch
+//   TaskLauncher launcher3(RM_PREPARE_NEXT_BWD_BATCH_TASK_ID,
+//                          TaskArgument(&rm, sizeof(RequestManager *)));
+//   launcher3.add_future(std::get<0>(batch_pipeline_entry));
+//   launcher3.add_future(std::get<1>(batch_pipeline_entry));
+//   launcher3.add_future(std::get<2>(batch_pipeline_entry));
+//   launcher3.add_future(std::get<3>(batch_pipeline_entry));
+//   launcher3.add_future(pwfobf);
+//   BatchConfigFuture bcbf = runtime->execute_task(ctx, launcher3);
+//   return std::make_pair(bcff, bcbf);
+// }
 
 // future[0]: old_fwd_bc
 // future[1]: old_bwd_bc
 // future[2]: inference result
 // future[3]: wait for bwd to finish
-bool RequestManager::process_work_from_old_batches_task(
-    Task const *task,
-    std::vector<PhysicalRegion> const &regions,
-    Context ctx,
-    Runtime *runtime) {
+// bool RequestManager::process_work_from_old_batches_task(
+//     Task const *task,
+//     std::vector<PhysicalRegion> const &regions,
+//     Context ctx,
+//     Runtime *runtime) {
 
-  RequestManager *rm = *((RequestManager **)task->args);
-  BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
-  BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
-  InferenceResult const &result =
-      Future(task->futures[2]).get_result<InferenceResult>();
-  Future(task->futures[3]).get_void_result(); // wait until bwd is done
-  rm->process_work_from_old_batches(*old_fwd_bc, *old_bwd_bc, result);
-  return true;
-}
+//   RequestManager *rm = *((RequestManager **)task->args);
+//   BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
+//   BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
+//   InferenceResult const &result =
+//       Future(task->futures[2]).get_result<InferenceResult>();
+//   Future(task->futures[3]).get_void_result(); // wait until bwd is done
+//   rm->process_work_from_old_batches(*old_fwd_bc, *old_bwd_bc, result);
+//   return true;
+// }
 
 // future[0]: old_fwd_bc
 // future[1]: old_bwd_bc
 // future[2]: inference result
 // future[3]: wait for bwd to finish
 // future[4]: wait for process_work_from_old_batches to finish
-BatchConfig RequestManager::prepare_next_fwd_batch_task(
-    Task const *task,
-    std::vector<PhysicalRegion> const &regions,
-    Context ctx,
-    Runtime *runtime) {
-  RequestManager *rm = *((RequestManager **)task->args);
-  BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
-  BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
-  InferenceResult const &result =
-      Future(task->futures[2]).get_result<InferenceResult>();
-  Future(task->futures[3]).get_void_result(); // wait until bwd is done
-  Future(task->futures[4])
-      .get_void_result(); // wait until process_work_from_old_batches is done
-  return rm->prepare_next_fwd_batch(*old_fwd_bc, result);
-}
+// BatchConfig RequestManager::prepare_next_fwd_batch_task(
+//     Task const *task,
+//     std::vector<PhysicalRegion> const &regions,
+//     Context ctx,
+//     Runtime *runtime) {
+//   RequestManager *rm = *((RequestManager **)task->args);
+//   BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
+//   BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
+//   InferenceResult const &result =
+//       Future(task->futures[2]).get_result<InferenceResult>();
+//   Future(task->futures[3]).get_void_result(); // wait until bwd is done
+//   Future(task->futures[4])
+//       .get_void_result(); // wait until process_work_from_old_batches is done
+//   return rm->prepare_next_fwd_batch(*old_fwd_bc, result);
+// }
 
-// future[0]: old_fwd_bc
-// future[1]: old_bwd_bc
-// future[2]: inference result
-// future[3]: wait for bwd to finish
-// future[4]: wait for process_work_from_old_batches to finish
-BatchConfig RequestManager::prepare_next_bwd_batch_task(
-    Task const *task,
-    std::vector<PhysicalRegion> const &regions,
-    Context ctx,
-    Runtime *runtime) {
-  RequestManager *rm = *((RequestManager **)task->args);
-  BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
-  BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
-  InferenceResult const &result =
-      Future(task->futures[2]).get_result<InferenceResult>();
-  Future(task->futures[3]).get_void_result(); // wait until bwd is done
-  Future(task->futures[4])
-      .get_void_result(); // wait until process_work_from_old_batches is done
-  return rm->prepare_next_bwd_batch();
-}
+// // future[0]: old_fwd_bc
+// // future[1]: old_bwd_bc
+// // future[2]: inference result
+// // future[3]: wait for bwd to finish
+// // future[4]: wait for process_work_from_old_batches to finish
+// BatchConfig RequestManager::prepare_next_bwd_batch_task(
+//     Task const *task,
+//     std::vector<PhysicalRegion> const &regions,
+//     Context ctx,
+//     Runtime *runtime) {
+//   RequestManager *rm = *((RequestManager **)task->args);
+//   BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
+//   BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
+//   InferenceResult const &result =
+//       Future(task->futures[2]).get_result<InferenceResult>();
+//   Future(task->futures[3]).get_void_result(); // wait until bwd is done
+//   Future(task->futures[4])
+//       .get_void_result(); // wait until process_work_from_old_batches is done
+//   return rm->prepare_next_bwd_batch();
+// }
 
 bool RequestManager::is_eos_token(int token_id) {
   for (int eos_token : eos_token_ids) {
@@ -1067,7 +1100,9 @@ void RequestManager::handle_completed_finetuning_req(
     BatchConfig const &old_finetuning_bc) {
   assert(old_finetuning_bc.num_active_requests() == 1 &&
          "Number of active requests in a finetuning batch should be 1");
-  assert(!old_finetuning_bc.request_completed[0] &&
+  int inference_batch_size =
+      BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
+  assert(!old_finetuning_bc.request_completed[inference_batch_size] &&
          "Finetuning request not found in new batch");
 
   // sync metadata with all_requests
@@ -1076,7 +1111,7 @@ void RequestManager::handle_completed_finetuning_req(
   assert(request.req_type == RequestType::REQ_FINETUNING &&
          "Found misplaced inference request");
   assert(request.guid == pq_request.guid && "Request GUID mismatch");
-  assert(old_finetuning_bc.requestsInfo[0].request_guid == pq_request.guid &&
+  assert(old_finetuning_bc.requestsInfo[inference_batch_size].request_guid == pq_request.guid &&
          "Request GUID mismatch");
   request.status = Request::COMPLETED;
   request.peft_finetuning_info = pq_request.peft_finetuning_info;
@@ -1201,9 +1236,11 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
   assert(enable_peft_finetuning && "PEFT finetuning is not enabled");
   assert(!pending_peft_request_queue.empty() &&
          "Trying to add a new finetuning request when there are none");
-  assert(new_bc.num_tokens < get_max_tokens_per_batch() &&
+  assert(new_bc.num_tokens <= get_max_tokens_per_batch() &&
          "Trying to add a new finetuning request when the batch is full");
-  assert(new_bc.request_completed[0] &&
+  int inference_batch_size =
+      BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
+  assert(new_bc.request_completed[inference_batch_size] &&
          "Finetuning request already present in new batch");
   Request &request = pending_peft_request_queue.front();
   assert(request.req_type == RequestType::REQ_FINETUNING &&
@@ -1218,12 +1255,10 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
          "Dataset entry does not fit in the batch size");
 
   // general fields
-  int inference_batch_size =
-      BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
   new_bc.request_completed[inference_batch_size] = false;
   // request info
   new_bc.requestsInfo[inference_batch_size].first_token_depth_in_request = 0;
-  new_bc.requestsInfo[inference_batch_size].first_token_offset_in_batch = 0;
+  new_bc.requestsInfo[inference_batch_size].first_token_offset_in_batch = new_bc.num_active_tokens();
   new_bc.requestsInfo[inference_batch_size].num_tokens_in_batch =
       request.dataset[dataset_entry].size();
   new_bc.requestsInfo[inference_batch_size].max_length = request.max_length;
@@ -1250,13 +1285,13 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
   //     request.peft_finetuning_info.gradient_accumulation_steps);
 
   // tokens info
-  for (size_t i = 0; i < request.dataset[dataset_entry].size(); i++) {
-    new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = i;
-    new_bc.tokensInfo[new_bc.num_tokens].request_index = 0;
-    new_bc.tokensInfo[new_bc.num_tokens].token_id =
-        request.dataset[dataset_entry][i];
-    new_bc.num_tokens++;
-  }
+  // for (size_t i = 0; i < request.dataset[dataset_entry].size(); i++) {
+  //   new_bc.tokensInfo[new_bc.num_tokens].abs_depth_in_request = i;
+  //   new_bc.tokensInfo[new_bc.num_tokens].request_index = 0;
+  //   new_bc.tokensInfo[new_bc.num_tokens].token_id =
+  //       request.dataset[dataset_entry][i];
+  //   new_bc.num_tokens++;
+  // }
 }
 
 bool RequestManager::finetuning_fwd_work_available() {
@@ -1276,15 +1311,15 @@ bool RequestManager::finetuning_bwd_work_available() {
 }
 
 void RequestManager::process_finetuning_req_fwd_progress(
-    BatchConfig const &old_fwd_bc, InferenceResult const &result) {
-  if (old_fwd_bc.num_finetuning_requests() == 0) {
+    BatchConfig const &old_bc, InferenceResult const &result) {
+  if (old_bc.num_finetuning_requests() == 0) {
     return;
   }
   int inference_batch_size =
       BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
-  assert(!old_fwd_bc.request_completed[inference_batch_size] &&
+  assert(!old_bc.request_completed[inference_batch_size] &&
          "Finetuning request not found in new batch");
-  assert(old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch >
+  assert(old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch >
              0 &&
          "Trying to continue an empty finetuning request");
   Request &request = pending_peft_request_queue.front();
@@ -1293,15 +1328,15 @@ void RequestManager::process_finetuning_req_fwd_progress(
   assert(request.peft_finetuning_info.completed_training_steps <=
          request.peft_finetuning_info.max_training_steps);
   assert(request.guid ==
-             old_fwd_bc.requestsInfo[inference_batch_size].request_guid &&
+             old_bc.requestsInfo[inference_batch_size].request_guid &&
          "Request GUID mismatch");
   assert(request.peft_finetuning_info.dataset_entry_processed_tokens ==
-             old_fwd_bc.requestsInfo[inference_batch_size]
+             old_bc.requestsInfo[inference_batch_size]
                  .first_token_depth_in_request &&
          "Token depth mismatch");
 
   request.peft_finetuning_info.dataset_entry_processed_tokens +=
-      old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch;
+      old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch;
 
   int dataset_entry = request.peft_finetuning_info.completed_training_steps %
                       request.dataset.size();
@@ -1309,12 +1344,12 @@ void RequestManager::process_finetuning_req_fwd_progress(
       request.peft_finetuning_info.dataset_entry_processed_tokens == 0;
   bool dataset_entry_finished =
       request.peft_finetuning_info.dataset_entry_processed_tokens +
-          old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch ==
+          old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch ==
       request.dataset[dataset_entry].size();
 
   float avg_loss =
       result.finetuning_loss *
-      old_fwd_bc.requestsInfo[inference_batch_size].num_tokens_in_batch /
+      old_bc.requestsInfo[inference_batch_size].num_tokens_in_batch /
       request.dataset[dataset_entry].size();
   if (first_fwd_dataset_entry) {
     request.peft_finetuning_info.finetuning_losses.push_back(avg_loss);
@@ -1328,19 +1363,19 @@ void RequestManager::process_finetuning_req_fwd_progress(
   }
 }
 
-void RequestManager::process_finetuning_req_bwd_progress(
-    BatchConfig const &old_bwd_bc) {
-  assert(old_bwd_bc.num_active_requests() <= 1 &&
-         "More than 1 finetuning request in the batch");
-  if (old_bwd_bc.num_active_requests() == 0) {
+void RequestManager::process_finetuning_req_bwd_progress(BatchConfig const &old_bc) {
+  assert(old_bc.num_finetuning_requests() <= 1 && "More than 1 finetuning request in the batch");
+  if (old_bc.num_finetuning_requests() == 0) {
     return;
   }
-  assert(!old_bwd_bc.request_completed[0] &&
+  int inference_batch_size =
+      BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
+  assert(!old_bc.request_completed[inference_batch_size] &&
          "Finetuning request not found in new batch");
   // check that request in batch is the same as the first one in the pending
   // queue
   Request &request = pending_peft_request_queue.front();
-  assert(request.guid == old_bwd_bc.requestsInfo[0].request_guid &&
+  assert(request.guid == old_bc.requestsInfo[inference_batch_size].request_guid &&
          "Finetuning request in batch does not match the one in the pending "
          "queue");
   assert(request.req_type == RequestType::REQ_FINETUNING &&
@@ -1348,7 +1383,7 @@ void RequestManager::process_finetuning_req_bwd_progress(
   assert(request.peft_finetuning_info.status == Request::BACKWARD_PHASE &&
          "Finetuning request is not in backward phase");
   request.peft_finetuning_info.last_processed_layer =
-      old_bwd_bc.requestsInfo[0].peft_bwd_first_layer;
+      old_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer;
   assert(request.peft_finetuning_info.last_processed_layer >= 0);
   if (request.peft_finetuning_info.last_processed_layer == 0) {
     request.peft_finetuning_info.completed_training_steps += 1;
@@ -1356,57 +1391,47 @@ void RequestManager::process_finetuning_req_bwd_progress(
   }
   if (request.peft_finetuning_info.completed_training_steps ==
       request.peft_finetuning_info.max_training_steps) {
-    handle_completed_finetuning_req(old_bwd_bc);
+    handle_completed_finetuning_req(old_bc);
   }
 }
 
-void RequestManager::process_work_from_old_batches(
-    BatchConfig const &old_fwd_bc,
-    BatchConfig const &old_bwd_bc,
-    InferenceResult const &result) {
+void RequestManager::process_work_from_old_batch(BatchConfig const &old_bc, InferenceResult const &result) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
 
   if (verbose) {
     std::cout << "\n############### process_work_from_old_batches ###############\n";
-    std::cout << "old_fwd_bc: " << old_fwd_bc << std::endl;
-    std::cout << "old_bwd_bc: " << old_bwd_bc << std::endl;
+    std::cout << "old_bc: " << old_bc << std::endl;
     std::cout << "result: " << result << std::endl;
   }
 
   // Step 1: Inference. Process work from previous fwd iteration: save generated
   // inference tokens and update records of finetuning fwd progress
-  process_inf_req_progress(old_fwd_bc, result);
+  process_inf_req_progress(old_bc, result);
 
   // Step 2: Finetuning. Process work from previous bwd iteration: update
   // records of finetuning bwd progress
   if (enable_peft_finetuning) {
-    // check that we did either fwd or bwd, not both
-    assert((old_bwd_bc.num_finetuning_requests() == 0 ||
-            old_fwd_bc.num_finetuning_requests() == 0) &&
-           "Both finetuning fwd and bwd requests are present in the batch");
-    process_finetuning_req_fwd_progress(old_fwd_bc, result);
-    process_finetuning_req_bwd_progress(old_bwd_bc);
+    process_finetuning_req_fwd_progress(old_bc, result);
+    process_finetuning_req_bwd_progress(old_bc);
   }
 }
 
-BatchConfig RequestManager::prepare_next_bwd_batch() {
+BatchConfig RequestManager::prepare_next_bwd_batch(BatchConfig &new_bc) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
 
-  BatchConfig new_bc;
   if (finetuning_bwd_work_available() && !inference_finished) {
     add_finetuning_req_bwd_batch(new_bc);
   }
   return new_bc;
 }
 
-BatchConfig
-    RequestManager::prepare_next_fwd_batch(BatchConfig const &old_fwd_bc,
+BatchConfig RequestManager::prepare_next_fwd_batch(BatchConfig const &old_bc,
                                            InferenceResult const &result) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
 
   if (verbose) {
     std::cout << "\n############### prepare_next_fwd_batch ###############\n";
-    std::cout << "old_fwd_bc: " << old_fwd_bc << std::endl;
+    std::cout << "old_bc: " << old_bc << std::endl;
     std::cout << "result: " << result << std::endl;
   }
 
@@ -1422,10 +1447,10 @@ BatchConfig
 
   // Step 2: prepare the next batch for existing inference requests
   for (int req_idx = 0; req_idx < inference_batch_size; req_idx++) {
-    if (!old_fwd_bc.request_completed[req_idx] &&
-        !inf_req_completed(old_fwd_bc, req_idx)) {
+    if (!old_bc.request_completed[req_idx] &&
+        !inf_req_completed(old_bc, req_idx)) {
       add_continuing_inf_req_to_new_batch(new_bc,
-                                          old_fwd_bc,
+                                          old_bc,
                                           num_active_req,
                                           num_concurrent_inf_adapters,
                                           req_idx);
@@ -3354,31 +3379,27 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
   // init operators
   im->init_operators_inference(llm);
   // Legion futures for inc_decoding and spec_infer
-  BatchConfigFuture last_bcf_fwd, last_bcf_bwd;
+  BatchConfigFuture last_bcf;
   InferenceResultFuture last_irf;
   FinetuningBwdFuture last_bwd_f;
   {
     // Initialize futures for incr decoding
-    BatchConfig bc_fwd, bc_bwd;
+    BatchConfig bc;
     InferenceResult ir;
-    last_bcf_fwd = Future::from_value<BatchConfig>(bc_fwd);
-    last_bcf_bwd = Future::from_value<BatchConfig>(bc_bwd);
+    last_bcf = Future::from_value<BatchConfig>(bc);
     last_irf = Future::from_value<InferenceResult>(ir);
     last_bwd_f = Future::from_value<bool>(true);
   }
 
   std::queue<std::tuple<BatchConfigFuture,
-                        BatchConfigFuture,
                         InferenceResultFuture,
                         FinetuningBwdFuture>>
       batch_pipeline;
-  // tuple[0]: fwd batch
-  // tuple[1]: bwd batch
-  // tuple[2]: inference result
-  // tuple[3]: bwd future
+  // tuple[0]: batch config
+  // tuple[1]: inference result
+  // tuple[2]: bwd future
   {
-    batch_pipeline.push(
-        std::make_tuple(last_bcf_fwd, last_bcf_bwd, last_irf, last_bwd_f));
+    batch_pipeline.push(std::make_tuple(last_bcf, last_irf, last_bwd_f));
   }
 
   while (!is_background_server_terminated()) {
@@ -3386,13 +3407,13 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     if (batch_pipeline.size() >= 4) {
       // Block here to avoid launching too many batches
       auto const &batch = batch_pipeline.front();
+      std::get<1>(batch).get_void_result();
       std::get<2>(batch).get_void_result();
-      std::get<3>(batch).get_void_result();
     }
     // deque finished batches
     while (batch_pipeline.size() > 1) {
       auto const &batch = batch_pipeline.front();
-      if (std::get<2>(batch).is_ready() && std::get<3>(batch).is_ready()) {
+      if (std::get<1>(batch).is_ready() && std::get<2>(batch).is_ready()) {
         batch_pipeline.pop();
       } else {
         break;
@@ -3401,15 +3422,12 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
 
     runtime->begin_trace(ctx, 12346 /*trace_id*/);
     auto &batch_pipeline_entry = batch_pipeline.back();
-    std::pair<BatchConfigFuture, BatchConfigFuture> next_batches =
-        prepare_next_batches(batch_pipeline_entry, ctx, runtime);
-    BatchConfigFuture bcf_fwd = next_batches.first;
-    BatchConfigFuture bcf_bwd = next_batches.second;
-    InferenceResultFuture irf = im->inference(llm, 0, bcf_fwd);
-    FinetuningBwdFuture bwd_f = (llm->config.enable_peft) ? im->peft_bwd(llm, 0, bcf_bwd) : Future::from_value<bool>(true);
-    batch_pipeline.push(std::make_tuple(bcf_fwd, bcf_bwd, irf, bwd_f));
-    last_bcf_fwd = bcf_fwd;
-    last_bcf_bwd = bcf_bwd;
+    BatchConfigFuture bcf =
+        prepare_next_batch(std::get<0>(batch_pipeline_entry), std::get<1>(batch_pipeline_entry), std::get<2>(batch_pipeline_entry), ctx, runtime);
+    InferenceResultFuture irf = im->inference(llm, 0, bcf);
+    FinetuningBwdFuture bwd_f = (llm->config.enable_peft) ? im->peft_bwd(llm, 0, bcf) : Future::from_value<bool>(true);
+    batch_pipeline.push(std::make_tuple(bcf, irf, bwd_f));
+    last_bcf = bcf;
     last_irf = irf;
     last_bwd_f = bwd_f;
     runtime->end_trace(ctx, 12346 /*trace_id*/);

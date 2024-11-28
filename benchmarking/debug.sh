@@ -38,15 +38,15 @@ export CUDA_VISIBLE_DEVICES=1
 #--verbose -lg:prof 1 -lg:prof_logfile prof_%.gz \
 
 ./inference/peft/peft \
-    -ll:cpu 4 -ll:gpu $NGPUS -ll:util 2 \
+    -ll:cpu 4 -ll:gpu $NGPUS -ll:util 4 \
     -ll:fsize 20000 -ll:zsize 10000 \
     --fusion \
     -llm-model $MODEL_NAME \
     -enable-peft -peft-model $PEFT_MODEL_NAME \
-    -prompt /usr/FlexFlow/inference/prompt/peft.json \
     -finetuning-dataset /usr/FlexFlow/inference/prompt/peft_dataset.json \
     -tensor-parallelism-degree $NGPUS \
     -output-file ../inference/output/test.json \
     --max-requests-per-batch 1 --max-tokens-per-batch 3000 --max-sequence-length 3000
 
 # -lg:prof 1 -lg:prof_logfile prof_%.gz --verbose --inference-debugging \
+## -prompt /usr/FlexFlow/inference/prompt/peft.json \
