@@ -72,6 +72,7 @@ struct FFHandler {
 #if defined(FF_USE_CUDA) || defined(FF_USE_HIP_CUDA)
   cudnnHandle_t dnn;
   cublasHandle_t blas;
+  cudaDeviceProp* device_prop;
 #else
   miopenHandle_t dnn;
   hipblasHandle_t blas;
@@ -97,7 +98,6 @@ struct FFHandler {
   bool allowTensorOpMathConversion;
   int num_devices;
   int device_id;
-  cudaDeviceProp* device_prop;
 #ifdef FF_USE_NCCL
   ncclComm_t ncclComm;
 #endif
