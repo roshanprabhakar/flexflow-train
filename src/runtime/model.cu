@@ -213,10 +213,15 @@ FFHandler
   }
 
   // checkCUDA(cudaMalloc(&handle.workSpace, handle.workSpaceSize));
-#ifdef FF_USE_NCCL
-  handle.ncclComm = NULL;
   handle.num_devices = 0;
   handle.device_id = 0;
+  // We may not use all devices, so physical_device may not be successive
+  int physical_device;
+  checkCUDA(cudaGetDevice(&physical_device));
+  handle.device_prop = new cudaDeviceProp;
+  checkCUDA(cudaGetDeviceProperties(handle.device_prop, physical_device));
+#ifdef FF_USE_NCCL
+  handle.ncclComm = NULL;
 #endif
   return handle;
 }

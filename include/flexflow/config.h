@@ -95,10 +95,11 @@ struct FFHandler {
   size_t offload_reserve_space_size;
   DataType quantization_type;
   bool allowTensorOpMathConversion;
-#ifdef FF_USE_NCCL
-  ncclComm_t ncclComm;
   int num_devices;
   int device_id;
+  cudaDeviceProp* device_prop;
+#ifdef FF_USE_NCCL
+  ncclComm_t ncclComm;
 #endif
 };
 
