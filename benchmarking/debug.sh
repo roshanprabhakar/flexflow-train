@@ -46,7 +46,7 @@ export CUDA_VISIBLE_DEVICES=1
 gdb -ex run --args ./inference/peft/peft \
     -ll:cpu 4 -ll:gpu $NGPUS -ll:util 4 \
     -ll:fsize 20000 -ll:zsize 10000 \
-    --fusion \
+    --verbose \
     -llm-model $MODEL_NAME \
     -enable-peft -peft-model $PEFT_MODEL_NAME \
     -finetuning-dataset /usr/FlexFlow/inference/prompt/peft_dataset.json \

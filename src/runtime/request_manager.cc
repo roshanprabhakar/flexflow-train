@@ -662,7 +662,7 @@ BatchConfig RequestManager::prepare_next_batch_task(
   RequestManager *rm = *((RequestManager **)task->args);
   BatchConfig const *old_bc = BatchConfig::from_future(task->futures[0]);
   InferenceResult const &result = Future(task->futures[1]).get_result<InferenceResult>();
-  Future(task->futures[2]).get_void_result(); // wait until bwd is done;
+  bool bwd_done = Future(task->futures[2]).get_result<bool>(); // wait until bwd is done;
   rm->process_work_from_old_batch(*old_bc, result);
   BatchConfig new_bc = rm->prepare_next_fwd_batch(*old_bc, result);
   new_bc = rm->prepare_next_bwd_batch(new_bc);
@@ -1298,7 +1298,7 @@ void RequestManager::process_work_from_old_batch(BatchConfig const &old_bc, Infe
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
 
   if (verbose) {
-    std::cout << "\n############### process_work_from_old_batches ###############\n";
+    std::cout << "\n############### process_work_from_old_batch ###############\n";
     std::cout << "old_bc: " << old_bc << std::endl;
     std::cout << "result: " << result << std::endl;
   }
@@ -3285,8 +3285,10 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     // Initialize futures for incr decoding
     BatchConfig bc;
     InferenceResult ir;
+    bool bwd_r = true;
     last_bcf = Future::from_value<BatchConfig>(bc);
     last_irf = Future::from_value<InferenceResult>(ir);
+    last_bwd_f = Future::from_value<bool>(bwd_r);
   }
 
   std::queue<std::tuple<BatchConfigFuture,
@@ -3318,20 +3320,22 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
       }
     }
 
-    // runtime->begin_trace(ctx, 12346 /*trace_id*/);
-    auto &batch_pipeline_entry = batch_pipeline.back();
+    runtime->begin_trace(ctx, 12346 /*trace_id*/);
+    auto const &next_batch = batch_pipeline.back();
     BatchConfigFuture bcf =
-        prepare_next_batch(std::get<0>(batch_pipeline_entry), std::get<1>(batch_pipeline_entry), std::get<2>(batch_pipeline_entry), ctx, runtime);
+        prepare_next_batch(std::get<0>(next_batch), std::get<1>(next_batch), std::get<2>(next_batch), ctx, runtime);
     InferenceResultFuture irf = im->inference(llm, 0, bcf);
     FinetuningBwdFuture bwd_f;
     if (llm->config.enable_peft) {
       bwd_f = im->peft_bwd(llm, 0, bcf);
-    } 
+    } else {
+      bwd_f = Future::from_value<bool>(true);
+    }
     batch_pipeline.push(std::make_tuple(bcf, irf, bwd_f));
     last_bcf = bcf;
     last_irf = irf;
     last_bwd_f = bwd_f;
-    // runtime->end_trace(ctx, 12346 /*trace_id*/);
+    runtime->end_trace(ctx, 12346 /*trace_id*/);
   }
 }
 

@@ -674,7 +674,7 @@ __host__ void
   regions[...](I): weights
   regions[...](O): outputs
 */
-__host__ void FusedOp::peft_bwd_task(Task const *task,
+__host__ bool FusedOp::peft_bwd_task(Task const *task,
                                      std::vector<PhysicalRegion> const &regions,
                                      Context ctx,
                                      Runtime *runtime) {
@@ -1230,6 +1230,7 @@ __host__ void FusedOp::peft_bwd_task(Task const *task,
                                               false);
     }
   }
+  return true;
 }
 
 /*

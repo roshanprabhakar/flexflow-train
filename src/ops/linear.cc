@@ -615,6 +615,8 @@ void Linear::inference_task(Task const *task,
       ctx, task->regions[0].region.get_index_space());
   LinearMeta *m = *((LinearMeta **)task->local_args);
   BatchConfig const *bc = BatchConfig::from_future(task->futures[0]);
+  std::string op_name_without_uid = get_op_name_without_uid(m);
+  std::cout << "Linear INF " << op_name_without_uid << std::endl;
   if (bc->num_tokens == 0) {
     return;
   }
@@ -735,6 +737,8 @@ void Linear::peft_bwd_task(Task const *task,
       ctx, task->regions[0].region.get_index_space());
   LinearMeta *m = *((LinearMeta **)task->local_args);
   BatchConfig const *bc = BatchConfig::from_future(task->futures[0]);
+  std::string op_name_without_uid = get_op_name_without_uid(m);
+  std::cout << "Linear PEFT BWD " << op_name_without_uid << std::endl;
   if (!bc->peft_bwd_applies_to_this_layer(m->layer_guid.transformer_layer_id)) {
     return;
   }

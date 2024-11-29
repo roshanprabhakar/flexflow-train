@@ -23,7 +23,9 @@ using Legion::Domain;
 
 SoftmaxMeta::SoftmaxMeta(FFHandler handler,
                          Softmax const *softmax,
-                         Domain const &input_domain)
+                         Domain const &input_domain,
+                         bool is_last_op,
+                         MemoryAllocator &gpu_mem_allocator)
     : OpMeta(handler, softmax) {
   checkCUDNN(cudnnCreateTensorDescriptor(&inputTensor));
   checkCUDNN(cudnnSetTensorDescriptorFromDomain4SoftMax(
@@ -35,6 +37,14 @@ SoftmaxMeta::SoftmaxMeta(FFHandler handler,
   profiling = softmax->profiling;
   inference_debugging = softmax->inference_debugging;
   enable_peft_finetuning = softmax->enable_peft_finetuning;
+  if (enable_peft_finetuning && is_last_op) {
+    allocated_peft_buffer_size = input_domain.get_volume() * data_type_size(softmax->data_type);
+    gpu_mem_allocator.create_legion_instance(reserveInst, allocated_peft_buffer_size);
+    output_grad_ptr = gpu_mem_allocator.allocate_instance_untyped(allocated_peft_buffer_size);
+  } else {
+    allocated_peft_buffer_size = 0;
+    output_grad_ptr = nullptr;
+  }
   std::strcpy(op_name, softmax->name);
 }
 
@@ -123,8 +133,7 @@ void inference_kernel_wrapper(SoftmaxMeta const *m,
                               BatchConfig const *bc,
                               bool is_last_op,
                               GenericTensorAccessorR const &input,
-                              GenericTensorAccessorW const &output,
-                              GenericTensorAccessorW const &output_grad) {
+                              GenericTensorAccessorW const &output) {
   cudaStream_t stream;
   checkCUDA(get_legion_stream(&stream));
   cudaEvent_t t_start, t_end;
@@ -141,8 +150,8 @@ void inference_kernel_wrapper(SoftmaxMeta const *m,
                                output.get_float_ptr(),
                                num_classes,
                                stream);
-    if (is_last_op) {
-      checkCUDA(cudaMemcpyAsync(output_grad.get_float_ptr(),
+    if (is_last_op && m->enable_peft_finetuning) {
+      checkCUDA(cudaMemcpyAsync(m->output_grad_ptr,
                                 output.get_float_ptr(),
                                 output.domain.get_volume() * sizeof(float),
                                 cudaMemcpyDeviceToDevice,
@@ -155,8 +164,8 @@ void inference_kernel_wrapper(SoftmaxMeta const *m,
                                output.get_half_ptr(),
                                num_classes,
                                stream);
-    if (is_last_op) {
-      checkCUDA(cudaMemcpyAsync(output_grad.get_half_ptr(),
+    if (is_last_op && m->enable_peft_finetuning) {
+      checkCUDA(cudaMemcpyAsync(m->output_grad_ptr,
                                 output.get_half_ptr(),
                                 output.domain.get_volume() * sizeof(half),
                                 cudaMemcpyDeviceToDevice,
@@ -182,8 +191,7 @@ void inference_kernel_wrapper(SoftmaxMeta const *m,
 
 void peft_bwd_kernel_wrapper(SoftmaxMeta const *m,
                              BatchConfig const *bc,
-                             GenericTensorAccessorW const &input_grad,
-                             GenericTensorAccessorR const &output_grad) {
+                             GenericTensorAccessorW const &input_grad) {
   cudaStream_t stream;
   checkCUDA(get_legion_stream(&stream));
   cudaEvent_t t_start, t_end;
@@ -193,19 +201,17 @@ void peft_bwd_kernel_wrapper(SoftmaxMeta const *m,
     cudaEventRecord(t_start, stream);
   }
 
-  int num_classes = output_grad.domain.hi()[0] - output_grad.domain.lo()[0] + 1;
+  int num_classes = input_grad.domain.hi()[0] - input_grad.domain.lo()[0] + 1;
   if (m->output_type[0] == DT_FLOAT) {
     Internal::peft_bwd_kernel(m,
                               bc,
                               input_grad.get_float_ptr(),
-                              output_grad.get_float_ptr(),
                               num_classes,
                               stream);
   } else if (m->output_type[0] == DT_HALF) {
     Internal::peft_bwd_kernel(m,
                               bc,
                               input_grad.get_half_ptr(),
-                              output_grad.get_half_ptr(),
                               num_classes,
                               stream);
   } else {
@@ -309,7 +315,6 @@ template <typename DT>
 void peft_bwd_kernel(SoftmaxMeta const *m,
                      BatchConfig const *bc,
                      DT *input_grad_ptr,
-                     DT const *output_grad_ptr,
                      int num_classes,
                      cudaStream_t stream) {
   BatchConfig::TokenId token_ids[BatchConfig::MAX_NUM_TOKENS];
@@ -345,7 +350,7 @@ void peft_bwd_kernel(SoftmaxMeta const *m,
       CUDA_NUM_THREADS,
       0,
       stream>>>(input_grad_ptr + tokens_previous_requests * num_classes,
-                output_grad_ptr + tokens_previous_requests * num_classes,
+                static_cast<DT*>(m->output_grad_ptr) + tokens_previous_requests * num_classes,
                 static_cast<BatchConfig::TokenId const *>(m->handle.workSpace),
                 num_bwd_tokens,
                 num_classes);
