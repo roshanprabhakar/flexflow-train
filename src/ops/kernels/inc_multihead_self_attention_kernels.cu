@@ -187,25 +187,20 @@ void compute_qkv(IncMultiHeadSelfAttentionMeta const *m,
     // matrix B's layout: [hidden_size (hidden_dim), num_new_tokens]
     // matrix C: devQKVProjArray
     // matrix B's layout: [qk_dim, num_heads, 3, num_new_tokens]
-    checkCUDA(cublasGemmEx(m->handle.blas,
-                           CUBLAS_OP_T,
-                           CUBLAS_OP_N,
-                           m_,
-                           n,
-                           k,
-                           &alpha,
-                           weight_ptr,
-                           cublas_data_type,
-                           lda,
-                           input_ptr,
-                           cublas_data_type,
-                           ldb,
-                           &beta,
-                           output_ptr,
-                           cublas_data_type,
-                           ldc,
-                           compute_type,
-                           CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    m->handle.gemm_engine->gemm_internal(CUBLAS_OP_T,
+                                          CUBLAS_OP_N,
+                                          m_,
+                                          n,
+                                          k,
+                                          alpha,
+                                          weight_ptr,
+                                          lda,
+                                          input_ptr,
+                                          ldb,
+                                          beta,
+                                          output_ptr,
+                                          ldc,
+                                          stream);
   }
 
   //   checkCUDA(cudaEventRecord(t_end, stream));
@@ -812,25 +807,20 @@ void compute_o_prod_bias(IncMultiHeadSelfAttentionMeta const *m,
     // matrix B's layout: [o_dim, num_new_tokens]
     DT *C = static_cast<DT *>(output_ptr);
 
-    checkCUDA(cublasGemmEx(m->handle.blas,
-                           CUBLAS_OP_T,
-                           CUBLAS_OP_N,
-                           m_,
-                           n,
-                           k,
-                           &alpha,
-                           A,
-                           cublas_data_type,
-                           lda,
-                           B,
-                           cublas_data_type,
-                           ldb,
-                           &beta,
-                           C,
-                           cublas_data_type,
-                           ldc,
-                           compute_type,
-                           CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    m->handle.gemm_engine->gemm_internal(CUBLAS_OP_T,
+                                          CUBLAS_OP_N,
+                                          m_,
+                                          n,
+                                          k,
+                                          alpha,
+                                          A,
+                                          lda,
+                                          B,
+                                          ldb,
+                                          beta,
+                                          C,
+                                          ldc,
+                                          stream);
   }
   // Add final output bias
   if (*m->final_bias && shard_id == 0) {

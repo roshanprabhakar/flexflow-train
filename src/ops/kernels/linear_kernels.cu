@@ -264,14 +264,6 @@ __global__ void AddBiasWithReLU(DT *output_ptr,
   }
 }
 
-template <typename Dtype>
-inline void gemm_internal_cublas(cublasHandle_t handle, cudaDeviceProp* prop,
-      cublasOperation_t transa, cublasOperation_t transb, int64_t m, int64_t n, int64_t k, Dtype alpha,
-      const Dtype *a, int64_t lda, const Dtype *b, int64_t ldb, Dtype beta,
-      Dtype *c, int64_t ldc) {
-  static_assert(false && sizeof(Dtype), "at::cuda::blas::gemm_internal_cublas: not implemented");
-}
-
 template <typename DT>
 void forward_kernel(LinearMeta const *m,
                     void const *input_ptr,
@@ -345,21 +337,20 @@ void forward_kernel(LinearMeta const *m,
     compute_type = CUBLAS_COMPUTE_32F_FAST_16F;
   }
 #endif
-  gemm_internal_cublas(m->handle.blas,
-                       m->handle.device_prop,
-                       CUBLAS_OP_T,
-                       CUBLAS_OP_N,
-                       out_dim,
-                       batch_size,
-                       in_dim,
-                       alpha,
-                       weight_p,
-                       in_dim,
-                       input_p,
-                       in_dim,
-                       beta,
-                       output_p,
-                       out_dim);
+  m->handle.gemm_engine->gemm_internal(CUBLAS_OP_T,
+                                        CUBLAS_OP_N,
+                                        out_dim,
+                                        batch_size,
+                                        in_dim,
+                                        alpha,
+                                        weight_p,
+                                        in_dim,
+                                        input_p,
+                                        in_dim,
+                                        beta,
+                                        output_p,
+                                        out_dim,
+                                        stream);
   // use_bias = True
   if (bias_ptr != NULL) {
     // fuse bias and relu
@@ -551,81 +542,6 @@ template <typename DT>
 __global__ void build_one_ptr(DT *one_ptr, int batch_size) {
   CUDA_KERNEL_LOOP(i, batch_size) {
     one_ptr[i] = static_cast<DT>(1.0f);
-  }
-}
-
-template <>
-void gemm_internal_cublas<double>(cublasHandle_t handle, cudaDeviceProp* prop,
-      cublasOperation_t transa, cublasOperation_t transb, int64_t m, int64_t n, int64_t k, double alpha,
-      const double *a, int64_t lda, const double *b, int64_t ldb, double beta,
-      double *c, int64_t ldc) {
-  checkCUDA(cublasDgemm(
-      handle, transa, transb, m, n, k, &alpha, a, lda, b, ldb, &beta, c, ldc));
-}
-
-template <>
-void gemm_internal_cublas<float>(cublasHandle_t handle, cudaDeviceProp* prop,
-      cublasOperation_t transa, cublasOperation_t transb, int64_t m, int64_t n, int64_t k, float alpha,
-      const float *a, int64_t lda, const float *b, int64_t ldb, float beta,
-      float *c, int64_t ldc) {
-  checkCUDA(cublasSgemm(
-      handle, transa, transb, m, n, k, &alpha, a, lda, b, ldb, &beta, c, ldc));
-}
-
-template <>
-void gemm_internal_cublas<half>(cublasHandle_t handle, cudaDeviceProp* prop,
-      cublasOperation_t transa, cublasOperation_t transb, int64_t m, int64_t n, int64_t k, half alpha,
-      const half *a, int64_t lda, const half *b, int64_t ldb, half beta,
-      half *c, int64_t ldc) {
-  if (prop->major >= 5) {
-    // Disallow fp16 reductions that could lead to unexpected overflow issues.
-    // cublasMath_t cublas_flags = CUBLAS_DEFAULT_MATH;
-    // if (!at::globalContext().allowFP16ReductionCuBLAS()) {
-    //   cublas_flags = static_cast<cublasMath_t>(cublas_flags | CUBLAS_MATH_DISALLOW_REDUCED_PRECISION_REDUCTION);
-    // }
-    // checkCUDA(cublasSetMathMode(handle, cublas_flags));
-    checkCUDA(cublasGemmEx(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        &alpha,
-        a,
-        CUDA_R_16F,
-        lda,
-        b,
-        CUDA_R_16F,
-        ldb,
-        &beta,
-        c,
-        CUDA_R_16F,
-        ldc,
-        CUBLAS_COMPUTE_16F,
-        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-    // checkCUDA(cublasSetMathMode(handle, CUBLAS_DEFAULT_MATH));
-  } else {
-    float falpha = alpha;
-    float fbeta = beta;
-    checkCUDA(cublasSgemmEx(
-        handle,
-        transa,
-        transb,
-        m,
-        n,
-        k,
-        &falpha,
-        a,
-        CUDA_R_16F,
-        lda,
-        b,
-        CUDA_R_16F,
-        ldb,
-        &fbeta,
-        c,
-        CUDA_R_16F,
-        ldc));
   }
 }
 

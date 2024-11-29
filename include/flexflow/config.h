@@ -18,11 +18,13 @@
 #include "ffconst.h"
 #include "flexflow/attention_config.h"
 #include "flexflow/batch_config.h"
+#include "flexflow/ops/kernels/gemm_impl.h"
 #include "legion.h"
 #include <cstddef>
 #include <cstring>
 #if defined(FF_USE_CUDA) || defined(FF_USE_HIP_CUDA)
 #include <cublas_v2.h>
+#include <cublasLt.h>
 #include <cudnn.h>
 #elif defined(FF_USE_HIP_ROCM)
 #include <hipblas/hipblas.h>
@@ -72,7 +74,8 @@ struct FFHandler {
 #if defined(FF_USE_CUDA) || defined(FF_USE_HIP_CUDA)
   cudnnHandle_t dnn;
   cublasHandle_t blas;
-  cudaDeviceProp* device_prop;
+  cublasLtHandle_t blasLt;
+  Internal::GemmEngine *gemm_engine;
 #else
   miopenHandle_t dnn;
   hipblasHandle_t blas;
