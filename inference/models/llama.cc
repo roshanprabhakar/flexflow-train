@@ -170,7 +170,7 @@ void LLAMA::create_llama_model(FFModel &ff,
             1.0f,  /*scaling factor*/
             true,  /*qk_prod_scaling*/
             false, /*position_bias*/
-            std::string("layers." + std::to_string(i) + ".self_attn")
+            std::string("layers." + std::to_string(i) + ".self_attn") log
                 .c_str() /*name*/
         );
         break;
