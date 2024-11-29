@@ -130,6 +130,6 @@ ssh_key_path="$HOME/.ssh/id_rsa"
 if [ -f "$ssh_key_path" ] && [ -f "$ssh_key_path.pub" ]; then
   ssh_key_volume="-v $ssh_key_path:/root/.ssh/id_rsa -v $ssh_key_path.pub:/root/.ssh/id_rsa.pub"
 fi
-docker_command="docker run -v my-volume:/ -it $gpu_arg --shm-size=${SHM_SIZE} --cap-add=SYS_PTRACE ${ssh_key_volume} ${hf_token_volume} ${port_forward_arg} ${image}-${FF_GPU_BACKEND}${gpu_backend_version}:latest"
+docker_command="docker run -v my-volume:/home -it $gpu_arg --shm-size=${SHM_SIZE} --cap-add=SYS_PTRACE ${ssh_key_volume} ${hf_token_volume} ${port_forward_arg} ${image}-${FF_GPU_BACKEND}${gpu_backend_version}:latest"
 echo "$docker_command"
 eval "$docker_command"
