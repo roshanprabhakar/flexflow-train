@@ -129,7 +129,7 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
     int max_peft_tokens = BatchConfig::max_sequence_length();
     // Copy query to m->query_activation_buffer if we need to compute
     // PEFT backward
-    if (bc->requestsInfo[i].finetuning_request) {
+    if (bc->requestsInfo[i].finetuning_request && !bc->requestsInfo[i].finetuning_backward_phase) {
       size_t activation_size_needed =
           sizeof(DT) * max_peft_tokens * m->num_q_heads * m->qProjSize;
       if (activation_size_needed != m->allocated_peft_buffer_size1) {

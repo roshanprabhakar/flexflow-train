@@ -759,7 +759,7 @@ void Linear::peft_bwd_task(Task const *task,
   int out_dim = output_grad.domain.hi()[0] - output_grad.domain.lo()[0] + 1;
 
   int num_infr_tokens = bc->num_active_tokens();
-  int num_peft_tokens = bc->num_finetuning_tokens();
+  int num_peft_tokens = bc->num_finetuning_bwd_tokens();
   if (m->inference_debugging) {
     assert(task->index_point.get_dim() == 1);
     int shard_id = task->index_point.point_data[0];

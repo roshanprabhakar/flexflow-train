@@ -676,7 +676,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
   // BatchConfig const *bc = (BatchConfig *)task->args;
   BatchConfig const *bc = BatchConfig::from_future(task->futures[0]);
   // Return if no active PEFT bwd tokens
-  if (bc->num_finetuning_tokens() == 0) {
+  if (bc->num_finetuning_bwd_tokens() == 0) {
     return false;
   }
 
@@ -850,7 +850,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         assert(m->input_type[0] == my_input_grad_accessor[0].data_type);
         assert(m->input_type[0] == my_output_grad_accessor[0].data_type);
         int num_infr_tokens = bc->num_active_tokens();
-        int num_peft_tokens = bc->num_finetuning_tokens();
+        int num_peft_tokens = bc->num_finetuning_bwd_tokens();
         Kernels::Linear::peft_bwd_kernel_wrapper(m,
                                                  bc,
                                                  my_input_grad_accessor[0].ptr,

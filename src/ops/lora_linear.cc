@@ -428,7 +428,7 @@ void LoraLinear::inference_task(Task const *task,
   int out_dim = output.domain.hi()[0] - output.domain.lo()[0] + 1;
 
   // int num_infr_tokens = bc->num_active_tokens();
-  // int num_peft_tokens = bc->num_finetuning_tokens();
+  // int num_peft_tokens = bc->num_finetuning_fwd_tokens();
   inference_kernel_wrapper(m, bc, input, output);
 
   if (m->inference_debugging) {
@@ -836,7 +836,7 @@ void LoraLinear::peft_bwd_task(Task const *task,
   int in_dim = input_grad.domain.hi()[0] - input_grad.domain.lo()[0] + 1;
   int out_dim = output_grad.domain.hi()[0] - output_grad.domain.lo()[0] + 1;
   // int num_infr_tokens = bc->num_active_tokens();
-  // int num_peft_tokens = bc->num_finetuning_tokens();
+  // int num_peft_tokens = bc->num_finetuning_bwd_tokens();
   peft_bwd_kernel_wrapper(
       ctx, runtime, m, bc, shard_id, input_grad, output_grad);
 

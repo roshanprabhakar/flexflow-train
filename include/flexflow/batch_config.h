@@ -62,8 +62,10 @@ public:
   int num_active_tokens() const;
 
   int finetuning_request_index() const;
-  int num_finetuning_requests() const;
-  int num_finetuning_tokens() const;
+  int num_finetuning_fwd_requests() const;
+  int num_finetuning_fwd_tokens() const;
+  int num_finetuning_bwd_requests() const;
+  int num_finetuning_bwd_tokens() const;
   bool peft_bwd_applies_to_this_layer(int layer) const;
 
   static int max_requests_per_batch();

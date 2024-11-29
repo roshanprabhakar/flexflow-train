@@ -238,9 +238,9 @@ void inference_kernel_wrapper(LinearMeta *m,
 
   if (m->activation == AC_MODE_RELU || m->activation == AC_MODE_SIGMOID) {
     // save input activation if needed for PEFT
-    if (bc->num_finetuning_tokens() > 0) {
+    if (bc->num_finetuning_bwd_requests() > 0) {
       // Check that we have at most one request that requires peft_bwd
-      assert(bc->num_finetuning_requests() == 1);
+      assert(bc->num_finetuning_bwd_tokens() >= 1);
       int i = bc->finetuning_request_index();
       assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
       assert(!bc->requestsInfo[i].finetuning_backward_phase);
@@ -251,7 +251,7 @@ void inference_kernel_wrapper(LinearMeta *m,
       assert(m->allocated_peft_buffer_size == activation_size_needed);
 
       int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
-      assert(num_peft_tokens == bc->num_finetuning_tokens());
+      assert(num_peft_tokens == bc->num_finetuning_fwd_tokens());
       int first_token_offset = bc->requestsInfo[i].first_token_offset_in_batch;
       if (m->output_type[0] == DT_FLOAT) {
         checkCUDA(cudaMemcpyAsync(
@@ -621,7 +621,7 @@ void peft_bwd_kernel(LinearMeta const *m,
   DT beta = m->reset_input_grads[0] ? 0.0f : 1.0f;
 
   // ensure that we only have one finetuning request, with a single lora
-  assert(bc->num_finetuning_requests() == 1);
+  assert(bc->num_finetuning_bwd_requests() == 1);
   std::string peft_model_config_str =
       std::string(bc->requestsInfo[i].peft_model_config_str);
   LoraLinearConfig lora_config =

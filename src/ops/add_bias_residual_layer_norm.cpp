@@ -210,9 +210,9 @@ void AddBiasResidualLayerNorm::inference_kernel_wrapper(
   }
 
   // save input activation if needed for PEFT
-  if (bc->num_finetuning_tokens() > 0) {
+  if (bc->num_finetuning_bwd_requests() > 0) {
     // Check that we have at most one request that requires peft_bwd
-    assert(bc->num_finetuning_requests() == 1);
+    assert(bc->num_finetuning_bwd_tokens() >= 1);
     int i = bc->finetuning_request_index();
     assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
     assert(!bc->requestsInfo[i].finetuning_backward_phase);
@@ -222,7 +222,7 @@ void AddBiasResidualLayerNorm::inference_kernel_wrapper(
            data_type_size(m->input_type[0]) *
                BatchConfig::max_sequence_length() * in_dim);
     int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
-    assert(num_peft_tokens == bc->num_finetuning_tokens());
+    assert(num_peft_tokens == bc->num_finetuning_fwd_tokens());
     int first_token_offset = bc->requestsInfo[i].first_token_offset_in_batch;
     // copy input activation
     if (m->input_type[0] == DT_FLOAT) {

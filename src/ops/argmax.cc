@@ -401,7 +401,7 @@ InferenceResult
   InferenceResult ir;
   ir.finetuning_loss = loss;
 
-  if (bc->num_finetuning_tokens() > 0) {
+  if (bc->num_finetuning_fwd_tokens() > 0) {
     printf("Loss: %.4f\n", loss);
   }
 

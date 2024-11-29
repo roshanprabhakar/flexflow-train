@@ -119,14 +119,36 @@ int BatchConfig::finetuning_request_index() const {
   return max_requests_per_batch() - 1;
 }
 
-int BatchConfig::num_finetuning_requests() const {
-  return requestsInfo[finetuning_request_index()].finetuning_request ? 1 : 0;
+int BatchConfig::num_finetuning_fwd_requests() const {
+  if (request_completed[finetuning_request_index()] || 
+      !requestsInfo[finetuning_request_index()].finetuning_request || 
+      requestsInfo[finetuning_request_index()].finetuning_backward_phase) {
+    return 0;
+  }
+  return 1;
 }
 
-int BatchConfig::num_finetuning_tokens() const {
-  return requestsInfo[finetuning_request_index()].finetuning_request
-             ? requestsInfo[finetuning_request_index()].num_tokens_in_batch
-             : 0;
+int BatchConfig::num_finetuning_fwd_tokens() const {
+  if (num_finetuning_fwd_requests() == 0) {
+    return 0;
+  }
+  return requestsInfo[finetuning_request_index()].num_tokens_in_batch;
+}
+
+int BatchConfig::num_finetuning_bwd_requests() const {
+  if (request_completed[finetuning_request_index()] || 
+      !requestsInfo[finetuning_request_index()].finetuning_request || 
+      !requestsInfo[finetuning_request_index()].finetuning_backward_phase) {
+    return 0;
+  }
+  return 1;
+}
+
+int BatchConfig::num_finetuning_bwd_tokens() const {
+  if (num_finetuning_bwd_requests() == 0) {
+    return 0;
+  }
+  return requestsInfo[finetuning_request_index()].num_tokens_in_batch;
 }
 
 bool BatchConfig::peft_bwd_applies_to_this_layer(int layer) const {
@@ -189,12 +211,14 @@ std::ostream &operator<<(std::ostream &os, BatchConfig const &bc) {
   os << "Max number of tokens: " << bc.max_tokens_per_batch() << std::endl;
   os << "Max sequence length: " << bc.max_sequence_length() << std::endl;
   // Current values
-  os << "Number of active tokens: " << bc.num_active_tokens() << std::endl;
-  os << "Number of inference tokens: " << bc.num_active_tokens() << std::endl;
-  os << "Number of peft tokens: " << bc.num_finetuning_tokens() << std::endl;
   os << "Number of requests: " << bc.num_active_requests() << std::endl;
+  os << "Number of peft fwd requests: " << bc.num_finetuning_fwd_requests() << std::endl;
+  os << "Number of peft bwd requests: " << bc.num_finetuning_bwd_requests() << std::endl;
+  os << "Number of active tokens: " << bc.num_active_tokens() << std::endl;
   os << "Number of generation tokens: " << bc.num_generation_tokens
      << std::endl;
+  os << "Number of peft fwd tokens: " << bc.num_finetuning_fwd_tokens() << std::endl;
+  os << "Number of peft bwd tokens: " << bc.num_finetuning_bwd_tokens() << std::endl;
 
   // Per-request info
   os << "Per-request info:\n";

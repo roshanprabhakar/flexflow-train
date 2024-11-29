@@ -138,7 +138,7 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
   assert(data_type_size(m->output_type[0]) == sizeof(DT));
   hipblasDatatype_t compute_type = cublas_data_type;
 
-  int num_tokens = bc->num_active_tokens();
+  nt num_tokens = bc->num_active_tokens();
   int tokens_previous_requests = 0;
   int q_block_size = m->qProjSize;
   int kt_block_size = m->kProjSize;
@@ -150,23 +150,24 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
   assert(m->qProjSize == m->kProjSize);
 
   for (int i = 0; i < bc->max_requests_per_batch(); i++) {
-    if (bc->request_completed[i] || is_inf_req_decoding_mode(bc, i) ||
-        is_finetuning_req_bwd_phase(bc, i)) {
+    if (bc->request_completed[i] || (!bc->requestsInfo[i].prompt_phase &&
+                                     !bc->requestsInfo[i].finetuning_request)) {
       continue;
     }
     int num_new_tokens = bc->requestsInfo[i].num_tokens_in_batch;
     int total_tokens = bc->requestsInfo[i].first_token_depth_in_request +
                        bc->requestsInfo[i].num_tokens_in_batch;
-    int max_peft_tokens = bc->requestsInfo[i].max_length;
+    int max_peft_tokens = BatchConfig::max_sequence_length();
     // Copy query to m->query_activation_buffer if we need to compute
     // PEFT backward
-    if (bc->requestsInfo[i].finetuning_request) {
+    if (bc->requestsInfo[i].finetuning_request && !bc->requestsInfo[i].finetuning_backward_phase) {
       // Check that we have at most one request that requires peft_bwd
-      assert(bc->num_finetuning_requests() == 1);
+      assert(bc->num_finetuning_fwd_requests() == 1);
+      assert(bc->num_finetuning_bwd_requests() == 1);
       assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
       assert(!is_finetuning_req_bwd_phase(bc, i));
       int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
-      assert(num_peft_tokens == bc->num_finetuning_tokens());
+      assert(num_peft_tokens == bc->num_finetuning_fwd_tokens());
       size_t activation_size_needed =
           sizeof(DT) * max_peft_tokens * m->num_q_heads * m->qProjSize;
       assert(m->allocated_peft_buffer_size1 == activation_size_needed);
@@ -316,11 +317,12 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
     // PEFT backward
     if (bc->requestsInfo[i].finetuning_request) {
       // Check that we have at most one request that requires peft_bwd
-      assert(bc->num_finetuning_requests() == 1);
+      assert(bc->num_finetuning_fwd_requests() == 1);
+      assert(bc->num_finetuning_bwd_requests() == 0);
       assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
       assert(!is_finetuning_req_bwd_phase(bc, i));
       int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
-      assert(num_peft_tokens == bc->num_finetuning_tokens());
+      assert(num_peft_tokens == bc->num_finetuning_fwd_tokens());
       size_t activation_size_needed =
           sizeof(DT) * max_peft_tokens * max_peft_tokens * m->num_q_heads;
       assert(activation_size_needed == m->allocated_peft_buffer_size2);
