@@ -491,7 +491,7 @@ FutureMap Softmax::peft_bwd(FFModel const &ff,
       RegionRequirement(batch_outputs[0]->part_grad,
                         0 /*projection id*/,
                         READ_ONLY,
-                        EXCLUSIVE,
+                        SIMULTANEOUS,
                         batch_outputs[0]->region_grad));
   launcher.add_field(1, FID_DATA);
   return runtime->execute_index_space(ctx, launcher);

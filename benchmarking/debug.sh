@@ -19,8 +19,14 @@ make -j install
 # python ../inference/utils/download_hf_model.py $MODEL_NAME
 python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME
 
+mkdir -p ../inference/prompt
+echo '["Two things are infinite: "]' > ../inference/prompt/peft.json
+echo '["“Two things are infinite: the universe and human stupidity; and I'\''m not sure about the universe.”"]' > ../inference/prompt/peft_dataset.json
+# Create output folder
+mkdir -p ../inference/output
 
-export LEGION_BACKTRACE=1
+
+# export LEGION_BACKTRACE=1
 export FF_DEBG_NO_WEIGHTS=1
 
 export CUDA_VISIBLE_DEVICES=1
@@ -37,7 +43,7 @@ export CUDA_VISIBLE_DEVICES=1
 
 #--verbose -lg:prof 1 -lg:prof_logfile prof_%.gz \
 
-./inference/peft/peft \
+gdb -ex run --args ./inference/peft/peft \
     -ll:cpu 4 -ll:gpu $NGPUS -ll:util 4 \
     -ll:fsize 20000 -ll:zsize 10000 \
     --fusion \

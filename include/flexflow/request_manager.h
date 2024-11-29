@@ -244,22 +244,6 @@ public:
   BatchConfig prepare_next_bwd_batch(BatchConfig &new_bc);
   BatchConfig prepare_next_fwd_batch(BatchConfig const &old_bc,
                                      InferenceResult const &result);
-  // std::pair<BatchConfigFuture, BatchConfigFuture> prepare_next_batches(
-  //     std::tuple<BatchConfigFuture,
-  //                BatchConfigFuture,
-  //                InferenceResultFuture,
-  //                FinetuningBwdFuture> &batch_pipeline_entry,
-  //     Legion::Context ctx,
-  //     Legion::Runtime *runtime);
-  // BatchConfigPairFuture
-  //     prepare_next_batch(std::tuple<BatchConfigPairFuture,
-  //                                   InferenceResultFuture,
-  //                                   FinetuningBwdFuture>
-  //                                   &batch_pipeline_entry,
-  //                        Context ctx,
-  //                        Runtime *runtime);
-  // BatchConfig prepare_next_batch(BatchConfig const &old_bc,
-  //                                InferenceResult const &result);
   BatchConfigFuture prepare_next_batch(BatchConfigFuture const &old_bc,
                                        InferenceResultFuture const &result,
                                        FinetuningBwdFuture const &bwd_f,
@@ -341,23 +325,6 @@ public:
       std::vector<Legion::PhysicalRegion> const &regions,
       Legion::Context ctx,
       Legion::Runtime *runtime);
-  // static bool process_work_from_old_batches_task(
-  //     Legion::Task const *task,
-  //     std::vector<Legion::PhysicalRegion> const &regions,
-  //     Legion::Context ctx,
-  //     Legion::Runtime *runtime);
-
-  // static BatchConfig prepare_next_fwd_batch_task(
-  //     Legion::Task const *task,
-  //     std::vector<Legion::PhysicalRegion> const &regions,
-  //     Legion::Context ctx,
-  //     Legion::Runtime *runtime);
-
-  // static BatchConfig prepare_next_bwd_batch_task(
-  //     Legion::Task const *task,
-  //     std::vector<Legion::PhysicalRegion> const &regions,
-  //     Legion::Context ctx,
-  //     Legion::Runtime *runtime);
 
   static BeamSearchBatchConfig prepare_next_batch_beam_task(
       Legion::Task const *task,

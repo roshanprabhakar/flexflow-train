@@ -669,107 +669,6 @@ BatchConfig RequestManager::prepare_next_batch_task(
   return new_bc;
 }
 
-// std::pair<BatchConfigFuture, BatchConfigFuture>
-//     RequestManager::prepare_next_batches(
-//         std::tuple<BatchConfigFuture,
-//                    BatchConfigFuture,
-//                    InferenceResultFuture,
-//                    FinetuningBwdFuture> &batch_pipeline_entry,
-//         Context ctx,
-//         Runtime *runtime) {
-//   RequestManager *rm = this;
-//   // Process work from old batchs
-//   TaskLauncher launcher1(RM_PROCESS_WORK_FROM_OLD_BATCHES_TASK_ID,
-//                          TaskArgument(&rm, sizeof(RequestManager *)));
-//   launcher1.add_future(std::get<0>(batch_pipeline_entry));
-//   launcher1.add_future(std::get<1>(batch_pipeline_entry));
-//   launcher1.add_future(std::get<2>(batch_pipeline_entry));
-//   launcher1.add_future(std::get<3>(batch_pipeline_entry));
-//   ProcessWorkFromOldBatchesFuture pwfobf =
-//       runtime->execute_task(ctx, launcher1);
-//   // Build new FWD batch
-//   TaskLauncher launcher2(RM_PREPARE_NEXT_FWD_BATCH_TASK_ID,
-//                          TaskArgument(&rm, sizeof(RequestManager *)));
-//   launcher2.add_future(std::get<0>(batch_pipeline_entry));
-//   launcher2.add_future(std::get<1>(batch_pipeline_entry));
-//   launcher2.add_future(std::get<2>(batch_pipeline_entry));
-//   launcher2.add_future(std::get<3>(batch_pipeline_entry));
-//   launcher2.add_future(pwfobf);
-//   BatchConfigFuture bcff = runtime->execute_task(ctx, launcher2);
-//   // Build new BWD batch
-//   TaskLauncher launcher3(RM_PREPARE_NEXT_BWD_BATCH_TASK_ID,
-//                          TaskArgument(&rm, sizeof(RequestManager *)));
-//   launcher3.add_future(std::get<0>(batch_pipeline_entry));
-//   launcher3.add_future(std::get<1>(batch_pipeline_entry));
-//   launcher3.add_future(std::get<2>(batch_pipeline_entry));
-//   launcher3.add_future(std::get<3>(batch_pipeline_entry));
-//   launcher3.add_future(pwfobf);
-//   BatchConfigFuture bcbf = runtime->execute_task(ctx, launcher3);
-//   return std::make_pair(bcff, bcbf);
-// }
-
-// future[0]: old_fwd_bc
-// future[1]: old_bwd_bc
-// future[2]: inference result
-// future[3]: wait for bwd to finish
-// bool RequestManager::process_work_from_old_batches_task(
-//     Task const *task,
-//     std::vector<PhysicalRegion> const &regions,
-//     Context ctx,
-//     Runtime *runtime) {
-
-//   RequestManager *rm = *((RequestManager **)task->args);
-//   BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
-//   BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
-//   InferenceResult const &result =
-//       Future(task->futures[2]).get_result<InferenceResult>();
-//   Future(task->futures[3]).get_void_result(); // wait until bwd is done
-//   rm->process_work_from_old_batches(*old_fwd_bc, *old_bwd_bc, result);
-//   return true;
-// }
-
-// future[0]: old_fwd_bc
-// future[1]: old_bwd_bc
-// future[2]: inference result
-// future[3]: wait for bwd to finish
-// future[4]: wait for process_work_from_old_batches to finish
-// BatchConfig RequestManager::prepare_next_fwd_batch_task(
-//     Task const *task,
-//     std::vector<PhysicalRegion> const &regions,
-//     Context ctx,
-//     Runtime *runtime) {
-//   RequestManager *rm = *((RequestManager **)task->args);
-//   BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
-//   BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
-//   InferenceResult const &result =
-//       Future(task->futures[2]).get_result<InferenceResult>();
-//   Future(task->futures[3]).get_void_result(); // wait until bwd is done
-//   Future(task->futures[4])
-//       .get_void_result(); // wait until process_work_from_old_batches is done
-//   return rm->prepare_next_fwd_batch(*old_fwd_bc, result);
-// }
-
-// // future[0]: old_fwd_bc
-// // future[1]: old_bwd_bc
-// // future[2]: inference result
-// // future[3]: wait for bwd to finish
-// // future[4]: wait for process_work_from_old_batches to finish
-// BatchConfig RequestManager::prepare_next_bwd_batch_task(
-//     Task const *task,
-//     std::vector<PhysicalRegion> const &regions,
-//     Context ctx,
-//     Runtime *runtime) {
-//   RequestManager *rm = *((RequestManager **)task->args);
-//   BatchConfig const *old_fwd_bc = BatchConfig::from_future(task->futures[0]);
-//   BatchConfig const *old_bwd_bc = BatchConfig::from_future(task->futures[1]);
-//   InferenceResult const &result =
-//       Future(task->futures[2]).get_result<InferenceResult>();
-//   Future(task->futures[3]).get_void_result(); // wait until bwd is done
-//   Future(task->futures[4])
-//       .get_void_result(); // wait until process_work_from_old_batches is done
-//   return rm->prepare_next_bwd_batch();
-// }
-
 bool RequestManager::is_eos_token(int token_id) {
   for (int eos_token : eos_token_ids) {
     if (token_id == eos_token) {
@@ -3388,7 +3287,6 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     InferenceResult ir;
     last_bcf = Future::from_value<BatchConfig>(bc);
     last_irf = Future::from_value<InferenceResult>(ir);
-    last_bwd_f = Future::from_value<bool>(true);
   }
 
   std::queue<std::tuple<BatchConfigFuture,
@@ -3420,17 +3318,20 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
       }
     }
 
-    runtime->begin_trace(ctx, 12346 /*trace_id*/);
+    // runtime->begin_trace(ctx, 12346 /*trace_id*/);
     auto &batch_pipeline_entry = batch_pipeline.back();
     BatchConfigFuture bcf =
         prepare_next_batch(std::get<0>(batch_pipeline_entry), std::get<1>(batch_pipeline_entry), std::get<2>(batch_pipeline_entry), ctx, runtime);
     InferenceResultFuture irf = im->inference(llm, 0, bcf);
-    FinetuningBwdFuture bwd_f = (llm->config.enable_peft) ? im->peft_bwd(llm, 0, bcf) : Future::from_value<bool>(true);
+    FinetuningBwdFuture bwd_f;
+    if (llm->config.enable_peft) {
+      bwd_f = im->peft_bwd(llm, 0, bcf);
+    } 
     batch_pipeline.push(std::make_tuple(bcf, irf, bwd_f));
     last_bcf = bcf;
     last_irf = irf;
     last_bwd_f = bwd_f;
-    runtime->end_trace(ctx, 12346 /*trace_id*/);
+    // runtime->end_trace(ctx, 12346 /*trace_id*/);
   }
 }
 
