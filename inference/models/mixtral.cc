@@ -85,6 +85,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
           token_att_norm,
           mixtral_config.rms_norm_eps,
           mixtral_config.hidden_size,
+          false, // inplace_residual
           DT_NONE,
           std::string("layers." + std::to_string(i) + ".input_layernorm")
               .c_str());
