@@ -51,6 +51,7 @@ void parse_input_args(char **argv,
                       int &max_requests_per_batch,
                       int &max_tokens_per_batch,
                       int &max_sequence_length,
+                      int &max_training_steps,
                       int &num_layers_per_finetuning_step) {
   for (int i = 1; i < argc; i++) {
     // llm model type
@@ -125,6 +126,10 @@ void parse_input_args(char **argv,
       max_sequence_length = std::stoi(argv[++i]);
       continue;
     }
+    if (!strcmp(argv[i], "--max-training-steps")) {
+      max_training_steps = std::stoi(argv[++i]);
+      continue;
+    }
     if (!strcmp(argv[i], "--num-layers-per-finetuning-step")) {
       num_layers_per_finetuning_step = std::stoi(argv[++i]);
       continue;
@@ -161,6 +166,7 @@ void FlexFlow::top_level_task(Task const *task,
   int max_requests_per_batch = 1;
   int max_tokens_per_batch = 128;
   int max_sequence_length = 256;
+  int max_training_steps = 2;
   bool enable_peft_finetuning = true;
   int num_layers_per_finetuning_step = -1;
 
@@ -181,6 +187,7 @@ void FlexFlow::top_level_task(Task const *task,
                    max_requests_per_batch,
                    max_tokens_per_batch,
                    max_sequence_length,
+                    max_training_steps,
                    num_layers_per_finetuning_step);
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
@@ -372,7 +379,7 @@ void FlexFlow::top_level_task(Task const *task,
         printf("Inference prompt[%d]: %s\n", total_num_requests, text.c_str());
         Request inference_req;
         inference_req.prompt = text;
-        inference_req.max_new_tokens = 128;
+        inference_req.max_new_tokens = 4;
         inference_req.peft_model_id =
             (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
         requests.push_back(inference_req);
@@ -393,7 +400,7 @@ void FlexFlow::top_level_task(Task const *task,
                                           : PEFTModelID::NO_ID;
       fine_tuning_req.peft_finetuning_info.dataset_filepath =
           file_paths.dataset_file_path;
-      fine_tuning_req.peft_finetuning_info.max_training_steps = 2;
+      fine_tuning_req.peft_finetuning_info.max_training_steps = max_training_steps;
       requests.push_back(fine_tuning_req);
     }
     std::vector<GenerationResult> result = model.generate(requests);
