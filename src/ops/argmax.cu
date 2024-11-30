@@ -104,8 +104,8 @@ void ArgMax::forward_kernel(ArgMaxMeta const *m,
   // compute cross-entropy loss if there is a finetuning request
   assert(loss != nullptr);
   BatchConfig::TokenId token_ids[BatchConfig::MAX_NUM_TOKENS];
-  if (bc->num_finetuning_bwd_requests() > 0) {
-    assert(bc->num_finetuning_bwd_tokens() >= 1);
+  if (bc->num_finetuning_fwd_requests() > 0) {
+    assert(bc->num_finetuning_fwd_tokens() >= 1);
     int i = bc->finetuning_request_index();
     assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
     assert(!bc->requestsInfo[i].finetuning_backward_phase);

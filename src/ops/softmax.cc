@@ -18,6 +18,7 @@
 #include "flexflow/ops/kernels/softmax_kernels.h"
 #include "flexflow/utils/hash_utils.h"
 #include "legion/legion_utilities.h"
+#include "flexflow/ops/fused.h"
 
 namespace FlexFlow {
 // declare Legion names
@@ -192,7 +193,16 @@ void Softmax::init_inference(FFModel const &ff,
   while (ff.operators[last_op]->op_type == OP_WEIGHT && last_op > 0) {
     last_op -= 1;
   }
-  bool is_last_op = (ff.operators[last_op] == this);
+  bool is_last_op = false;
+  if (ff.operators[last_op] == this) {
+    is_last_op = true;
+  } else if (ff.operators[last_op]->op_type == OP_FUSED) {
+    FusedOp *fused_op = static_cast<FusedOp*>(ff.operators[last_op]);
+    // for (int i = 0; i < fused_op->numOperators; i++) {
+    //   std::cout << "Operator " << i << " " << fused_op->operators[i]->name << std::endl;
+    // }
+    is_last_op = fused_op->operators[fused_op->numOperators - 1] == this;
+  }
 
   SoftMaxInitMeta meta;
   meta.softmax = this;

@@ -44,6 +44,7 @@ SoftmaxMeta::SoftmaxMeta(FFHandler handler,
   } else {
     allocated_peft_buffer_size = 0;
     output_grad_ptr = nullptr;
+    assert(false);
   }
   std::strcpy(op_name, softmax->name);
 }
@@ -151,6 +152,8 @@ void inference_kernel_wrapper(SoftmaxMeta const *m,
                                num_classes,
                                stream);
     if (is_last_op && m->enable_peft_finetuning) {
+      assert(m->output_grad_ptr != nullptr);
+      assert(m->allocated_peft_buffer_size == output.domain.get_volume() * sizeof(float));
       checkCUDA(cudaMemcpyAsync(m->output_grad_ptr,
                                 output.get_float_ptr(),
                                 output.domain.get_volume() * sizeof(float),
@@ -165,6 +168,8 @@ void inference_kernel_wrapper(SoftmaxMeta const *m,
                                num_classes,
                                stream);
     if (is_last_op && m->enable_peft_finetuning) {
+      assert(m->output_grad_ptr != nullptr);
+      assert(m->allocated_peft_buffer_size == output.domain.get_volume() * sizeof(half));
       checkCUDA(cudaMemcpyAsync(m->output_grad_ptr,
                                 output.get_half_ptr(),
                                 output.domain.get_volume() * sizeof(half),
