@@ -32,6 +32,14 @@ public:
         try {
           json model_config;
           config_file >> model_config;
+
+          try {
+            max_position_embeddings = model_config.at("max_position_embeddings");
+          } catch (json::exception const &e) {
+            std::cerr << "Error reading 'max_position_embeddings': " << e.what() << std::endl;
+            assert(false);
+          }
+
           try {
             num_hidden_layers = model_config.at("num_hidden_layers");
           } catch (json::exception const &e) {
