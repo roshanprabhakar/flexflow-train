@@ -468,6 +468,7 @@ int RequestManager::get_max_concurrent_adapters() {
 
 void RequestManager::set_num_transformer_layers(int num_transformer_layers_) {
   num_transformer_layers = num_transformer_layers_;
+  num_layers_per_finetuning_step = num_transformer_layers_;
 }
 
 int RequestManager::get_num_transformer_layers() {
@@ -1037,13 +1038,13 @@ void RequestManager::handle_completed_finetuning_req(
   profile_info.finish_time = Realm::Clock::current_time_in_microseconds();
   total_request_run_time += profile_info.finish_time - profile_info.start_time;
   profiling_requests[request.guid] = profile_info;
-  // log_req_mgr.print("[%s] guid(%zu) completed_training_steps(%d) "
-  //                   "processed_finetuning_tokens(%lu) latency(%.1lf)",
-  //                   request.warmup ? "Warmup" : "Finetuning",
-  //                   request.guid,
-  //                   request.peft_finetuning_info.completed_training_steps,
-  //                   request.processed_finetuning_tokens,
-  //                   profile_info.finish_time - profile_info.start_time);
+  log_req_mgr.print("[%s] guid(%zu) completed_training_steps(%d) "
+                    "loss(%f) latency(%.1lf)",
+                    request.warmup ? "Warmup" : "Finetuning",
+                    request.guid,
+                    request.peft_finetuning_info.completed_training_steps,
+                    request.peft_finetuning_info.finetuning_losses.back(),
+                    profile_info.finish_time - profile_info.start_time);
   if (!output_filepath.empty()) {
     std::ofstream outputFile(output_filepath, std::ios::app);
     if (outputFile.is_open()) {

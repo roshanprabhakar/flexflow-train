@@ -10,7 +10,7 @@ cd "${BASH_SOURCE[0]%/*}/../build"
 PROMPT="/usr/FlexFlow/inference/prompt/peft.json"
 MODEL_NAME="JackFram/llama-160m"
 PEFT_MODEL_NAME="goliaro/llama-160m-lora"
-NGPUS=4
+NGPUS=1
 NCPUS=4
 
 reset
@@ -42,16 +42,16 @@ export CUDA_VISIBLE_DEVICES=1,2,3,4
 
 #--verbose -lg:prof 1 -lg:prof_logfile prof_%.gz \
 
-gdb -ex run --args ./inference/peft/peft \
+./inference/peft/peft \
     -ll:cpu 4 -ll:gpu $NGPUS -ll:util 4 \
     -ll:fsize 20000 -ll:zsize 10000 \
-    -llm-model $MODEL_NAME \
+    -llm-model $MODEL_NAME --fusion \
     -enable-peft -peft-model $PEFT_MODEL_NAME \
     -prompt $PROMPT \
+    -finetuning-dataset /usr/FlexFlow/inference/prompt/peft_dataset.json \
     -tensor-parallelism-degree $NGPUS \
     -output-file ../inference/output/test.json \
     --max-requests-per-batch 1 --max-tokens-per-batch 3000 --max-sequence-length 3000
 
 # -lg:prof 1 -lg:prof_logfile prof_%.gz --verbose --inference-debugging \
 ## -prompt /usr/FlexFlow/inference/prompt/peft.json \
-# -finetuning-dataset /usr/FlexFlow/inference/prompt/peft_dataset.json

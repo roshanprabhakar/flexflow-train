@@ -50,7 +50,8 @@ void parse_input_args(char **argv,
                       float &topp,
                       int &max_requests_per_batch,
                       int &max_tokens_per_batch,
-                      int &max_sequence_length) {
+                      int &max_sequence_length,
+                      int &num_layers_per_finetuning_step) {
   for (int i = 1; i < argc; i++) {
     // llm model type
     if (!strcmp(argv[i], "-llm-model")) {
@@ -124,6 +125,10 @@ void parse_input_args(char **argv,
       max_sequence_length = std::stoi(argv[++i]);
       continue;
     }
+    if (!strcmp(argv[i], "--num-layers-per-finetuning-step")) {
+      num_layers_per_finetuning_step = std::stoi(argv[++i]);
+      continue;
+    }
   }
   if (paths.cache_folder_path.empty()) {
     char const *ff_cache_path = std::getenv("FF_CACHE_PATH");
@@ -157,6 +162,7 @@ void FlexFlow::top_level_task(Task const *task,
   int max_tokens_per_batch = 128;
   int max_sequence_length = 256;
   bool enable_peft_finetuning = true;
+  int num_layers_per_finetuning_step = -1;
 
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
   char **argv = command_args.argv;
@@ -174,7 +180,8 @@ void FlexFlow::top_level_task(Task const *task,
                    topp,
                    max_requests_per_batch,
                    max_tokens_per_batch,
-                   max_sequence_length);
+                   max_sequence_length,
+                   num_layers_per_finetuning_step);
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
@@ -329,7 +336,9 @@ void FlexFlow::top_level_task(Task const *task,
     assert(false && "unknow model type");
   }
   rm->set_num_transformer_layers(model.current_transformer_layer_id+1);
-  rm->set_num_layers_per_finetuning_step(2);
+  if (num_layers_per_finetuning_step > 0) {
+    rm->set_num_layers_per_finetuning_step(num_layers_per_finetuning_step);
+  }
 
   // Start background server
   rm->start_background_server(&model);

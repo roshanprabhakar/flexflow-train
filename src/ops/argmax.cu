@@ -109,33 +109,33 @@ void ArgMax::forward_kernel(ArgMaxMeta const *m,
     int i = bc->finetuning_request_index();
     assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
     assert(!bc->requestsInfo[i].finetuning_backward_phase);
-    int num_bwd_tokens = bc->requestsInfo[i].num_tokens_in_batch - 1;
-    assert(num_bwd_tokens + 1 == bc->num_finetuning_fwd_tokens());
+    int num_finetuning_tokens = bc->requestsInfo[i].num_tokens_in_batch - 1;
+    assert(num_finetuning_tokens + 1 == bc->num_finetuning_fwd_tokens());
     int first_token_offset = bc->requestsInfo[i].first_token_offset_in_batch;
-    for (int j = 0; j < num_bwd_tokens; j++) {
+    for (int j = 0; j < num_finetuning_tokens; j++) {
       token_ids[j] = bc->tokensInfo[j + first_token_offset + 1].token_id;
     }
     checkCUDA(cudaMemcpyAsync(m->handle.workSpace,
                               token_ids,
-                              sizeof(BatchConfig::TokenId) * num_bwd_tokens,
+                              sizeof(BatchConfig::TokenId) * num_finetuning_tokens,
                               cudaMemcpyHostToDevice,
                               stream));
     // copy loss to d_loss
     checkCUDA(cudaMemsetAsync(m->d_loss, 0, sizeof(float), stream));
-    compute_sparse_categorical_crossentropy_loss<<<GET_BLOCKS(num_bwd_tokens),
+    compute_sparse_categorical_crossentropy_loss<<<GET_BLOCKS(num_finetuning_tokens),
                                                    min(CUDA_NUM_THREADS,
-                                                       num_bwd_tokens),
+                                                       num_finetuning_tokens),
                                                    0,
                                                    stream>>>(
-        input_ptr,
+        input_ptr+first_token_offset*length,
         static_cast<BatchConfig::TokenId *>(m->handle.workSpace),
         m->d_loss,
-        num_bwd_tokens,
+        num_finetuning_tokens,
         length);
     // copy value from d_loss to loss
     checkCUDA(cudaMemcpyAsync(
         loss, m->d_loss, sizeof(float), cudaMemcpyDeviceToHost, stream));
-    *loss = *loss / (float)num_bwd_tokens;
+    *loss = *loss / (float)num_finetuning_tokens;
   }
 }
 
