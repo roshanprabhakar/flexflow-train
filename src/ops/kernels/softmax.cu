@@ -44,7 +44,6 @@ SoftmaxMeta::SoftmaxMeta(FFHandler handler,
   } else {
     allocated_peft_buffer_size = 0;
     output_grad_ptr = nullptr;
-    assert(false);
   }
   std::strcpy(op_name, softmax->name);
 }

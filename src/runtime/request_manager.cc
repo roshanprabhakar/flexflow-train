@@ -644,7 +644,7 @@ size_t RequestManager::get_num_processed_requests() {
 BatchConfigFuture
     RequestManager::prepare_next_batch(BatchConfigFuture const &old_bc,
                                        InferenceResultFuture const &result,
-                                       FinetuningBwdFuture const &bwd_f,
+                                       std::vector<FinetuningBwdFuture> const &bwd_f,
                                        Context ctx,
                                        Runtime *runtime) {
   RequestManager *rm = this;
@@ -652,7 +652,10 @@ BatchConfigFuture
                         TaskArgument(&rm, sizeof(RequestManager *)));
   launcher.add_future(old_bc);
   launcher.add_future(result);
-  launcher.add_future(bwd_f);
+  for (auto const &f : bwd_f) {
+    launcher.add_future(f);
+  }
+  // launcher.add_future(bwd_f);
   return runtime->execute_task(ctx, launcher);
 }
 
@@ -664,7 +667,11 @@ BatchConfig RequestManager::prepare_next_batch_task(
   RequestManager *rm = *((RequestManager **)task->args);
   BatchConfig const *old_bc = BatchConfig::from_future(task->futures[0]);
   InferenceResult const &result = Future(task->futures[1]).get_result<InferenceResult>();
-  bool bwd_done = Future(task->futures[2]).get_result<bool>(); // wait until bwd is done;
+  bool bwd_done = true;
+  for (int i = 0; i < task->futures.size() - 2; i++) {
+    bwd_done = bwd_done && Future(task->futures[i + 2]).get_result<bool>();
+  }
+  // bool bwd_done = Future(task->futures[2]).get_result<bool>(); // wait until bwd is done;
   rm->process_work_from_old_batch(*old_bc, result);
   BatchConfig new_bc = rm->prepare_next_fwd_batch(*old_bc, result);
   new_bc = rm->prepare_next_bwd_batch(new_bc);
@@ -999,8 +1006,8 @@ void RequestManager::add_new_inf_req(BatchConfig &new_bc,
 
 void RequestManager::handle_completed_finetuning_req(
     BatchConfig const &old_finetuning_bc) {
-  assert(old_finetuning_bc.num_active_requests() == 1 &&
-         "Number of active requests in a finetuning batch should be 1");
+  assert(old_finetuning_bc.num_finetuning_bwd_requests() == 1 &&
+         "Number of active peft bwd requests in a finetuning batch should be 1");
   int inference_batch_size =
       BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
   assert(!old_finetuning_bc.request_completed[inference_batch_size] &&
@@ -1325,6 +1332,12 @@ BatchConfig RequestManager::prepare_next_bwd_batch(BatchConfig &new_bc) {
   if (finetuning_bwd_work_available() && !inference_finished) {
     add_finetuning_req_bwd_batch(new_bc);
   }
+
+  if (verbose) {
+    std::cout << "\n############### prepare_next_bwd_batch ###############\n";
+    std::cout << "new_bc: " << new_bc << std::endl;
+  }
+
   return new_bc;
 }
 
@@ -3284,7 +3297,8 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
   // Legion futures for inc_decoding and spec_infer
   BatchConfigFuture last_bcf;
   InferenceResultFuture last_irf;
-  FinetuningBwdFuture last_bwd_f;
+  int tp_degree = llm->config.tensor_parallelism_degree;
+  std::vector<FinetuningBwdFuture> last_bwd_f;
   {
     // Initialize futures for incr decoding
     BatchConfig bc;
@@ -3292,12 +3306,15 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     bool bwd_r = true;
     last_bcf = Future::from_value<BatchConfig>(bc);
     last_irf = Future::from_value<InferenceResult>(ir);
-    last_bwd_f = Future::from_value<bool>(bwd_r);
+    for (int i = 0; i < tp_degree; i++) {
+      last_bwd_f.push_back(Future::from_value<bool>(bwd_r));
+    }
+    // last_bwd_f = Future::from_value<bool>(bwd_r);
   }
 
   std::queue<std::tuple<BatchConfigFuture,
                         InferenceResultFuture,
-                        FinetuningBwdFuture>>
+                        std::vector<FinetuningBwdFuture>>>
       batch_pipeline;
   // tuple[0]: batch config
   // tuple[1]: inference result
@@ -3312,12 +3329,19 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
       // Block here to avoid launching too many batches
       auto const &batch = batch_pipeline.front();
       std::get<1>(batch).get_void_result();
-      std::get<2>(batch).get_void_result();
+      for (int i=0; i<tp_degree; i++) {
+        std::get<2>(batch)[i].get_void_result();
+      }
+      // std::get<2>(batch).get_void_result();
     }
     // deque finished batches
     while (batch_pipeline.size() > 1) {
       auto const &batch = batch_pipeline.front();
-      if (std::get<1>(batch).is_ready() && std::get<2>(batch).is_ready()) {
+      bool bwd_ready = true;
+      for (int i=0; i<tp_degree; i++) {
+        bwd_ready = bwd_ready && std::get<2>(batch)[i].is_ready();
+      }
+      if (std::get<1>(batch).is_ready() && bwd_ready) {
         batch_pipeline.pop();
       } else {
         break;
@@ -3329,11 +3353,14 @@ void RequestManager::serve_incr_decoding(FFModel *llm) {
     BatchConfigFuture bcf =
         prepare_next_batch(std::get<0>(next_batch), std::get<1>(next_batch), std::get<2>(next_batch), ctx, runtime);
     InferenceResultFuture irf = im->inference(llm, 0, bcf);
-    FinetuningBwdFuture bwd_f;
+    std::vector<FinetuningBwdFuture> bwd_f;
     if (llm->config.enable_peft) {
       bwd_f = im->peft_bwd(llm, 0, bcf);
     } else {
-      bwd_f = Future::from_value<bool>(true);
+      for (int i = 0; i < tp_degree; i++) {
+        bwd_f.push_back(Future::from_value<bool>(true));
+      }
+      // bwd_f = Future::from_value<bool>(true);
     }
     batch_pipeline.push(std::make_tuple(bcf, irf, bwd_f));
     last_bcf = bcf;

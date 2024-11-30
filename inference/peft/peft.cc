@@ -178,7 +178,7 @@ void FlexFlow::top_level_task(Task const *task,
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
-  
+  enable_peft_finetuning = file_paths.dataset_file_path.empty() ? false : true;
   ffconfig.enable_peft_finetuning = enable_peft_finetuning;
 
   std::string config_filepath = join_path(
@@ -266,7 +266,7 @@ void FlexFlow::top_level_task(Task const *task,
     optim_config = new LoraSGDOptimizerConfig(sgd_learning_rate);
   }
   LoraLinearConfig peft_config_finetuning =
-      peft_model_name.empty()
+      !enable_peft_finetuning
           ? LoraLinearConfig::EmptyConfig
           : LoraLinearConfig(file_paths.cache_folder_path,
                              peft_model_name,
@@ -329,7 +329,7 @@ void FlexFlow::top_level_task(Task const *task,
     assert(false && "unknow model type");
   }
   rm->set_num_transformer_layers(model.current_transformer_layer_id+1);
-  rm->set_num_layers_per_finetuning_step(model.current_transformer_layer_id+1);
+  rm->set_num_layers_per_finetuning_step(2);
 
   // Start background server
   rm->start_background_server(&model);

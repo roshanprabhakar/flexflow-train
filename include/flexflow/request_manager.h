@@ -41,7 +41,7 @@ public:
       inference(FFModel *model, int index, BatchConfig const &bc);
   InferenceResultFuture
       inference(FFModel *model, int index, BatchConfigFuture const &bc);
-  FinetuningBwdFuture
+  std::vector<FinetuningBwdFuture>
       peft_bwd(FFModel *model, int index, BatchConfigFuture const &bc);
   void load_input_tokens_from_batch_config(FFModel *model,
                                            BatchConfigFuture const &bc,
@@ -246,7 +246,7 @@ public:
                                      InferenceResult const &result);
   BatchConfigFuture prepare_next_batch(BatchConfigFuture const &old_bc,
                                        InferenceResultFuture const &result,
-                                       FinetuningBwdFuture const &bwd_f,
+                                       std::vector<FinetuningBwdFuture> const &bwd_f,
                                        Legion::Context ctx,
                                        Legion::Runtime *runtime);
   BeamSearchBatchConfig
