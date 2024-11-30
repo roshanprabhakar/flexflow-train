@@ -1179,11 +1179,11 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
       get_num_layers_per_finetuning_step() + 1; //inclusive
   assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer >= 0);
 
-  // set_optimizer_tasks(
-  //     new_bc.requestsInfo[inference_batch_size].optimizer_tasks,
-  //     request.peft_finetuning_info.max_training_steps,
-  //     request.peft_finetuning_info.completed_training_steps,
-  //     request.peft_finetuning_info.gradient_accumulation_steps);
+  set_optimizer_tasks(
+      new_bc.requestsInfo[inference_batch_size].optimizer_tasks,
+      request.peft_finetuning_info.max_training_steps,
+      request.peft_finetuning_info.completed_training_steps,
+      request.peft_finetuning_info.gradient_accumulation_steps);
 
   // tokens info
   // for (size_t i = 0; i < request.dataset[dataset_entry].size(); i++) {

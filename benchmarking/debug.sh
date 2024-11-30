@@ -28,7 +28,6 @@ mkdir -p ../inference/output
 
 # export LEGION_BACKTRACE=1
 export FF_DEBG_NO_WEIGHTS=1
-
 export CUDA_VISIBLE_DEVICES=1
 
 # gdb -ex run --args ./inference/incr_decoding/incr_decoding \

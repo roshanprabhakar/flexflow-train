@@ -893,6 +893,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
             shard_id,
             my_input_grad_accessor[0],
             my_output_grad_accessor[0]);
+        Kernels::LoraLinear::save_peft_weights_if_needed(m, bc, in_dim, out_dim, shard_id);
         break;
       }
       case OP_BATCHMATMUL: {

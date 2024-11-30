@@ -749,7 +749,7 @@ void save_peft_to_file(DT const *weight_ptr,
   out.close();
 }
 
-void save_peft_weights_if_needed(LoraLinearMeta *m,
+void Kernels::LoraLinear::save_peft_weights_if_needed(LoraLinearMeta *m,
                                  BatchConfig const *bc,
                                  int in_dim,
                                  int out_dim,
