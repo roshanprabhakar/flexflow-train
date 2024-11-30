@@ -245,6 +245,10 @@ std::ostream &operator<<(std::ostream &os, BatchConfig const &bc) {
          << std::endl;
       os << "    Finetuning backward phase: "
          << bc.requestsInfo[i].finetuning_backward_phase << std::endl;
+      os << "    PEFT backward first layer: "
+         << bc.requestsInfo[i].peft_bwd_first_layer << std::endl;
+      os << "    PEFT backward last layer: "
+          << bc.requestsInfo[i].peft_bwd_last_layer << std::endl;
       os << "    optimizer_tasks: {"
          << "compute_gradients: " << std::boolalpha
          << bc.requestsInfo[i].optimizer_tasks.compute_gradients

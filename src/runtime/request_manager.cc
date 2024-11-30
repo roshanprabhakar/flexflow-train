@@ -1176,7 +1176,7 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
   assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer >= 0);
   new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer =
       new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer -
-      get_num_layers_per_finetuning_step();
+      get_num_layers_per_finetuning_step() + 1; //inclusive
   assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer >= 0);
 
   // set_optimizer_tasks(
@@ -1290,6 +1290,7 @@ void RequestManager::process_finetuning_req_bwd_progress(BatchConfig const &old_
   if (request.peft_finetuning_info.last_processed_bwd_layer == 0) {
     request.peft_finetuning_info.completed_training_steps += 1;
     request.peft_finetuning_info.status = Request::FORWARD_PHASE;
+    request.peft_finetuning_info.last_processed_bwd_layer = INT_MAX;
   }
   if (request.peft_finetuning_info.completed_training_steps ==
       request.peft_finetuning_info.max_training_steps) {
