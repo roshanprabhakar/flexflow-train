@@ -196,3 +196,7 @@ tests/inference/python_test_configs/*.json
 
 core.*
 fine_grained_alignment_config.json
+
+# CLion
+.idea/
+cmake-build-debug
