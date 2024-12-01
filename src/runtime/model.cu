@@ -178,7 +178,9 @@ FFHandler
     Realm::RegionInstance workspaceInst;
     handle.peft_activation_allocator = new MemoryAllocator(gpu_mem);
     handle.peft_activation_allocator->create_legion_instance(
-        workspaceInst, info->peft_activation_reserve_space_size);
+        workspaceInst,
+        info->peft_activation_reserve_space_size,
+        "PEFT Activation Reserve Space");
   } else {
     handle.peft_activation_allocator = nullptr;
   }

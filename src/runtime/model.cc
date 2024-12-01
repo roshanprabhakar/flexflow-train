@@ -4303,6 +4303,7 @@ struct DefaultConfig {
   const static int epochs = 1;
   // const static int iterations = 1;
   const static int batchSize = 64;
+  static bool const log_instance_creation = false;
   const static bool profiling = false;
   const static bool benchmarking = false;
   const static bool inference_debugging = false;
@@ -4346,6 +4347,7 @@ FFConfig::FFConfig() {
   // iterations = DefaultConfig::iterations;
   batchSize = DefaultConfig::batchSize;
   profiling = DefaultConfig::profiling;
+  log_instance_creation = DefaultConfig::log_instance_creation;
   benchmarking = DefaultConfig::benchmarking;
   inference_debugging = DefaultConfig::inference_debugging;
   learningRate = DefaultConfig::learningRate;
@@ -4543,6 +4545,10 @@ void FFConfig::parse_args(char **argv, int argc) {
     }
     if (!strcmp(argv[i], "-ll:cpu")) {
       cpusPerNode = atoi(argv[++i]);
+      continue;
+    }
+    if ((!strcmp(argv[i], "--log-instance-creation"))) {
+      log_instance_creation = true;
       continue;
     }
     if (!strcmp(argv[i], "--profiling")) {
