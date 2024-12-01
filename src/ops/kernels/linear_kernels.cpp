@@ -41,7 +41,7 @@ LinearMeta::LinearMeta(FFHandler handler,
   }
   // Allocate an all-one's vector
   gpu_mem_allocator.create_legion_instance(
-      reserveInst, data_type_size(data_type) * batch_size);
+      reserveInst, data_type_size(data_type) * batch_size, "LinearMeta");
   one_ptr = gpu_mem_allocator.allocate_instance_untyped(
       data_type_size(data_type) * batch_size);
   int parallelism = batch_size;

@@ -48,7 +48,7 @@ LinearMeta::LinearMeta(FFHandler handler,
                              : 0;
   size_t totalSize =
       data_type_size(data_type) * batch_size + allocated_peft_buffer_size;
-  gpu_mem_allocator.create_legion_instance(reserveInst, totalSize);
+  gpu_mem_allocator.create_legion_instance(reserveInst, totalSize, "LinearMeta");
   // Allocate an all-one's vector
   one_ptr = gpu_mem_allocator.allocate_instance_untyped(
       data_type_size(data_type) * batch_size);

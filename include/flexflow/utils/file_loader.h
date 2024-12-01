@@ -23,7 +23,6 @@ using namespace std;
 using namespace FlexFlow;
 using namespace Legion;
 
-
 class FileDataLoader {
 public:
   FileDataLoader(std::string _prompts_filepath,
