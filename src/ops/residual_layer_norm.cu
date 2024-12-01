@@ -42,7 +42,7 @@ ResidualLayerNormMeta::ResidualLayerNormMeta(FFHandler handle,
   size_t in_dim = ln->inputs[0]->dims[0].size / ln->inputs[0]->dims[0].degree;
   allocated_peft_buffer_size =
       enable_peft_finetuning ? (data_type_size(data_type) *
-                                BatchConfig::max_sequence_length() * in_dim)
+                                BatchConfig::max_finetuning_sequence_length() * in_dim)
                              : 0;
   size_t totalSize = effective_batch_size * data_type_size(data_type) * 3 +
                      allocated_peft_buffer_size;
@@ -267,16 +267,16 @@ void ResidualLayerNorm::inference_kernel_wrapper(
   }
 
   // save input activation if needed for PEFT
-  if (bc->num_finetuning_bwd_requests() > 0) {
+  if (bc->num_finetuning_fwd_requests() > 0) {
     // Check that we have at most one request that requires peft_bwd
-    assert(bc->num_finetuning_bwd_tokens() >= 1);
+    assert(bc->num_finetuning_fwd_tokens() >= 1);
     int i = bc->finetuning_request_index();
     assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
     assert(!bc->requestsInfo[i].finetuning_backward_phase);
     int in_dim = input.domain.hi()[0] - input.domain.lo()[0] + 1;
     assert(m->allocated_peft_buffer_size ==
            data_type_size(m->input_type[0]) *
-               BatchConfig::max_sequence_length() * in_dim);
+               BatchConfig::max_finetuning_sequence_length() * in_dim);
     int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
     assert(num_peft_tokens == bc->num_finetuning_fwd_tokens());
     int first_token_offset = bc->requestsInfo[i].first_token_offset_in_batch;

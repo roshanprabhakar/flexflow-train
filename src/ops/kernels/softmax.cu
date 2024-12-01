@@ -39,7 +39,7 @@ SoftmaxMeta::SoftmaxMeta(FFHandler handler,
   enable_peft_finetuning = softmax->enable_peft_finetuning;
   if (enable_peft_finetuning && is_last_op) {
     allocated_peft_buffer_size = input_domain.get_volume() * data_type_size(softmax->data_type);
-    gpu_mem_allocator.create_legion_instance(reserveInst, allocated_peft_buffer_size);
+    gpu_mem_allocator.create_legion_instance(reserveInst, allocated_peft_buffer_size, "SoftmaxMeta");
     output_grad_ptr = gpu_mem_allocator.allocate_instance_untyped(allocated_peft_buffer_size);
   } else {
     allocated_peft_buffer_size = 0;

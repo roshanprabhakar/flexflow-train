@@ -157,10 +157,10 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
     int num_new_tokens = bc->requestsInfo[i].num_tokens_in_batch;
     int total_tokens = bc->requestsInfo[i].first_token_depth_in_request +
                        bc->requestsInfo[i].num_tokens_in_batch;
-    int max_peft_tokens = BatchConfig::max_sequence_length();
     // Copy query to m->query_activation_buffer if we need to compute
     // PEFT backward
     if (bc->requestsInfo[i].finetuning_request && !bc->requestsInfo[i].finetuning_backward_phase) {
+      int max_peft_tokens = BatchConfig::max_finetuning_sequence_length();
       // Check that we have at most one request that requires peft_bwd
       assert(bc->num_finetuning_fwd_requests() == 1);
       assert(bc->num_finetuning_bwd_requests() == 1);
@@ -316,6 +316,7 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
     // Copy C_softmax to m->softmax_activation_buffer if we need to compute
     // PEFT backward
     if (bc->requestsInfo[i].finetuning_request) {
+      int max_peft_tokens = BatchConfig::max_finetuning_sequence_length();
       // Check that we have at most one request that requires peft_bwd
       assert(bc->num_finetuning_fwd_requests() == 1);
       assert(bc->num_finetuning_bwd_requests() == 0);
@@ -1127,10 +1128,10 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
   assert(num_tokens == num_total_tokens);
   int kt_block_size = m->kProjSize;
   int kt_req_block_size =
-      kt_block_size * m->num_q_heads * BatchConfig::max_sequence_length();
+      kt_block_size * m->num_q_heads * BatchConfig::max_finetuning_sequence_length();
   int vt_block_size = m->vProjSize;
   int vt_req_block_size =
-      vt_block_size * m->num_q_heads * BatchConfig::max_sequence_length();
+      vt_block_size * m->num_q_heads * BatchConfig::max_finetuning_sequence_length();
   assert(m->qProjSize == m->kProjSize && m->kProjSize == m->vProjSize);
   // Step 1: copy gradient before final projection into workspace
   {
@@ -1751,13 +1752,13 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
                                                    kProjSize * num_q_heads)) /
                           2;
     allocated_peft_buffer_size1 = enable_peft_finetuning
-                                      ? (BatchConfig::max_sequence_length() *
+                                      ? (BatchConfig::max_finetuning_sequence_length() *
                                          num_q_heads * qProjSize * size_of_dt)
                                       : 0;
     allocated_peft_buffer_size2 =
         enable_peft_finetuning
-            ? (BatchConfig::max_sequence_length() *
-               BatchConfig::max_sequence_length() * num_q_heads * size_of_dt)
+            ? (BatchConfig::max_finetuning_sequence_length() *
+               BatchConfig::max_finetuning_sequence_length() * num_q_heads * size_of_dt)
             : 0;
     size_t totalSize =
         (qkv_max_proj_size + key_cache_size + value_cache_size +

@@ -42,7 +42,7 @@ ResidualRMSNormMeta::ResidualRMSNormMeta(FFHandler handler,
   size_t in_dim = rms->inputs[0]->dims[0].size / rms->inputs[0]->dims[0].degree;
   allocated_peft_buffer_size =
       enable_peft_finetuning ? (data_type_size(data_type) *
-                                BatchConfig::max_sequence_length() * in_dim)
+                                BatchConfig::max_finetuning_sequence_length() * in_dim)
                              : 0;
   size_t totalSize =
       (rms_ptr_size + norm_ptr_size) * data_type_size(data_type) +
@@ -265,7 +265,7 @@ void inference_kernel_wrapper(ResidualRMSNormMeta *m,
     int in_dim = input1.domain.hi()[0] - input1.domain.lo()[0] + 1;
     assert(m->allocated_peft_buffer_size ==
            data_type_size(m->input_type[0]) *
-               BatchConfig::max_sequence_length() * in_dim);
+               BatchConfig::max_finetuning_sequence_length() * in_dim);
     int num_peft_tokens = bc->requestsInfo[i].num_tokens_in_batch;
     assert(num_peft_tokens == bc->num_finetuning_fwd_tokens());
     int first_token_offset = bc->requestsInfo[i].first_token_offset_in_batch;

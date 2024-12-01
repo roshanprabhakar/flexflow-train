@@ -126,10 +126,10 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
     int num_new_tokens = bc->requestsInfo[i].num_tokens_in_batch;
     int total_tokens = bc->requestsInfo[i].first_token_depth_in_request +
                        bc->requestsInfo[i].num_tokens_in_batch;
-    int max_peft_tokens = BatchConfig::max_sequence_length();
     // Copy query to m->query_activation_buffer if we need to compute
     // PEFT backward
     if (bc->requestsInfo[i].finetuning_request && !bc->requestsInfo[i].finetuning_backward_phase) {
+      int max_peft_tokens = BatchConfig::max_finetuning_sequence_length();
       size_t activation_size_needed =
           sizeof(DT) * max_peft_tokens * m->num_q_heads * m->qProjSize;
       if (activation_size_needed != m->allocated_peft_buffer_size1) {
@@ -140,7 +140,7 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
         std::cout << "max_peft_tokens: " << max_peft_tokens << std::endl;
         std::cout << "m->num_q_heads: " << m->num_q_heads << std::endl;
         std::cout << "m->qProjSize: " << m->qProjSize << std::endl;
-        std::cout << "BatchConfig::max_sequence_length()" << BatchConfig::max_sequence_length() << std::endl;
+        std::cout << "BatchConfig::max_finetuning_sequence_length()" << BatchConfig::max_finetuning_sequence_length() << std::endl;
         std::cout << "sizeof(DT)" << sizeof(DT) << std::endl;
       }
       assert(activation_size_needed == m->allocated_peft_buffer_size1);
@@ -288,6 +288,7 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
     // Copy C_softmax to m->softmax_activation_buffer if we need to compute
     // PEFT backward
     if (bc->requestsInfo[i].finetuning_request) {
+      int max_peft_tokens = BatchConfig::max_finetuning_sequence_length();
       DT *C_softmax = static_cast<DT *>(m->qk_prods_softmax);
       size_t activation_size_needed =
           sizeof(DT) * max_peft_tokens * max_peft_tokens * m->num_q_heads;
@@ -1084,10 +1085,10 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
   assert(num_tokens == num_total_tokens);
   int kt_block_size = m->kProjSize;
   int kt_req_block_size =
-      kt_block_size * m->num_q_heads * BatchConfig::max_sequence_length();
+      kt_block_size * m->num_q_heads * BatchConfig::max_finetuning_sequence_length();
   int vt_block_size = m->vProjSize;
   int vt_req_block_size =
-      vt_block_size * m->num_q_heads * BatchConfig::max_sequence_length();
+      vt_block_size * m->num_q_heads * BatchConfig::max_finetuning_sequence_length();
   assert(m->qProjSize == m->kProjSize && m->kProjSize == m->vProjSize);
   // Step 1: copy gradient before final projection into workspace
   {
@@ -1709,10 +1710,10 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
                                                    kProjSize * num_q_heads)) /
                           2;
     if (enable_peft_finetuning) {
-      allocated_peft_buffer_size1 = BatchConfig::max_sequence_length() *
+      allocated_peft_buffer_size1 = BatchConfig::max_finetuning_sequence_length() *
                                     num_q_heads * qProjSize * size_of_dt;
-      allocated_peft_buffer_size2 = BatchConfig::max_sequence_length() *
-                                    BatchConfig::max_sequence_length() *
+      allocated_peft_buffer_size2 = BatchConfig::max_finetuning_sequence_length() *
+                                    BatchConfig::max_finetuning_sequence_length() *
                                     num_q_heads * size_of_dt;
     } else {
       allocated_peft_buffer_size1 = 0;

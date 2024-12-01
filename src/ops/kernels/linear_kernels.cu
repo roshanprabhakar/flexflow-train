@@ -44,7 +44,7 @@ LinearMeta::LinearMeta(FFHandler handler,
       li->outputs[0]->dims[0].size / li->outputs[0]->dims[0].degree;
   allocated_peft_buffer_size =
       enable_peft_finetuning ? (data_type_size(data_type) *
-                                BatchConfig::max_sequence_length() * out_dim)
+                                BatchConfig::max_finetuning_sequence_length() * out_dim)
                              : 0;
   size_t totalSize =
       data_type_size(data_type) * batch_size + allocated_peft_buffer_size;
@@ -238,15 +238,15 @@ void inference_kernel_wrapper(LinearMeta *m,
 
   if (m->activation == AC_MODE_RELU || m->activation == AC_MODE_SIGMOID) {
     // save input activation if needed for PEFT
-    if (bc->num_finetuning_bwd_requests() > 0) {
+    if (bc->num_finetuning_fwd_requests() > 0) {
       // Check that we have at most one request that requires peft_bwd
-      assert(bc->num_finetuning_bwd_tokens() >= 1);
+      assert(bc->num_finetuning_fwd_tokens() >= 1);
       int i = bc->finetuning_request_index();
       assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
       assert(!bc->requestsInfo[i].finetuning_backward_phase);
 
       size_t activation_size_needed = data_type_size(m->output_type[0]) *
-                                      BatchConfig::max_sequence_length() *
+                                      BatchConfig::max_finetuning_sequence_length() *
                                       out_dim;
       assert(m->allocated_peft_buffer_size == activation_size_needed);
 

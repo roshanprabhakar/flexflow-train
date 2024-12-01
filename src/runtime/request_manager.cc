@@ -269,6 +269,7 @@ RequestManager::RequestManager()
   max_tokens_per_batch = -1;
   max_spec_tree_token_num = -1;
   max_sequence_length = -1;
+  max_finetuning_sequence_length = -1;
 }
 
 void RequestManager::set_verbose(bool verbose_) { verbose = verbose_; }
@@ -322,6 +323,16 @@ void RequestManager::set_max_sequence_length(int max_seq_length) {
 int RequestManager::get_max_sequence_length() {
   assert(max_sequence_length > 0);
   return max_sequence_length;
+}
+
+void RequestManager::set_max_finetuning_sequence_length(int max_seq_length) {
+  assert(max_finetuning_sequence_length == -1 || max_finetuning_sequence_length == max_seq_length);
+  max_finetuning_sequence_length = max_seq_length;
+}
+
+int RequestManager::get_max_finetuning_sequence_length() {
+  assert(max_finetuning_sequence_length > 0);
+  return max_finetuning_sequence_length;
 }
 
 void RequestManager::push_spec_infer_tree_width(int tree_width) {
@@ -1380,7 +1391,8 @@ BatchConfig RequestManager::prepare_next_fwd_batch(BatchConfig const &old_bc,
   // they are available
   if (!pending_infr_request_queue.empty()) {
     for (int req_idx = 0; req_idx < inference_batch_size &&
-                          new_bc.num_tokens < get_max_tokens_per_batch();
+                          new_bc.num_tokens < get_max_tokens_per_batch() &&
+                          !pending_infr_request_queue.empty();
          req_idx++) {
       if (new_bc.request_completed[req_idx]) {
         add_new_inf_req(

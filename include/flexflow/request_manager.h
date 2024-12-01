@@ -159,9 +159,11 @@ public:
   void set_max_spec_tree_token_num(int max_num_tokens);
   int get_max_spec_tree_token_num();
   int get_max_verify_tokens_per_batch();
-  void set_max_sequence_length(int max_seq_length);
-  void push_spec_infer_tree_width(int tree_width);
   int get_max_sequence_length();
+  void set_max_sequence_length(int max_seq_length);
+  int get_max_finetuning_sequence_length();
+  void set_max_finetuning_sequence_length(int max_seq_length);
+  void push_spec_infer_tree_width(int tree_width);
   void set_enable_peft_finetuning(bool enable_peft_finetuning_);
   static void set_inference_finished(bool finished = true);
   int register_ssm_model(FFModel *model);
@@ -350,6 +352,7 @@ private:
   int max_tokens_per_batch;
   int max_spec_tree_token_num;
   int max_sequence_length;
+  int max_finetuning_sequence_length;
   Status request_manager_status;
 
   // peft

@@ -30,9 +30,9 @@ SigmoidSiluMultiMeta::SigmoidSiluMultiMeta(FFHandler handle,
   if (enable_peft_finetuning) {
     size_t in_dim = ln->inputs[0]->dims[0].size / ln->inputs[0]->dims[0].degree;
     allocated_peft_buffer_size = 2 * data_type_size(data_type) *
-                                 BatchConfig::max_sequence_length() * in_dim;
+                                 BatchConfig::max_finetuning_sequence_length() * in_dim;
     gpu_mem_allocator.create_legion_instance(reserveInst,
-                                             allocated_peft_buffer_size);
+                                             allocated_peft_buffer_size, "SigmoidSiluMultiMeta");
     input_activation =
         gpu_mem_allocator.allocate_instance_untyped(allocated_peft_buffer_size);
   }
@@ -112,9 +112,9 @@ void SigmoidSiluMulti::inference_kernel_wrapper(
   }
 
   // save input activation if needed for PEFT
-  if (bc->num_finetuning_bwd_requests() > 0) {
+  if (bc->num_finetuning_fwd_requests() > 0) {
     // Check that we have at most one request that requires peft_bwd
-    assert(bc->num_finetuning_bwd_tokens() >= 1);
+    assert(bc->num_finetuning_fwd_tokens() >= 1);
     int i = bc->finetuning_request_index();
     assert(bc->requestsInfo[i].peft_model_id != PEFTModelID::NO_ID);
     assert(!bc->requestsInfo[i].finetuning_backward_phase);
