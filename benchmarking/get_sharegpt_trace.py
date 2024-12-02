@@ -182,11 +182,16 @@ if __name__ == "__main__":
     # Change directory to that holding this script
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    num_entries=125
+    num_entries=2048
     num_warmup_requests=10
     seed=123456
 
     trace = build_trace("meta-llama/Llama-3.1-70B-Instruct", num_entries, num_warmup_requests, seed)
     print(trace.metadata)
     # Save prompts list to a json file
-    save_trace(trace, "sharegpt.json")
+    num_above_2048 = 0
+    for entry in trace.entries:
+        if entry.prompt_length + entry.response_length > 2048:
+            num_above_2048 += 1
+    print(f"Number of entries above 2048 tokens: {num_above_2048}")
+    # save_trace(trace, "sharegpt.json")

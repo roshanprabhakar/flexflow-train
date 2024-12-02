@@ -272,97 +272,97 @@ void FlexFlow::top_level_task(Task const *task,
   }
 
   rm->start_background_server(&model);
-  {
-    using json = nlohmann::json;
-    std::ifstream file_handle(file_paths.prompt_file_path);
-    assert(file_handle.good() && "Prompt file does not exist.");
-    nlohmann::ordered_json prompt_json =
-        nlohmann::ordered_json::parse(file_handle,
-                                      /*parser_callback_t */ nullptr,
-                                      /*allow_exceptions */ true,
-                                      /*ignore_comments */ true);
-    file_handle.close();
-    auto &metadata = prompt_json["metadata"];
-    int num_warmup_requests = metadata["num_warmup_requests"];
-    int num_regular_requests = 0, total_requests = 0;
-    std::vector<Request> warmup_requests, requests;
-    for (auto &entry : prompt_json["entries"]) {
-      int prompt_length = entry["prompt_length"];
-      int response_length = entry["response_length"];
-      std::string text = entry["prompt"];
-      bool is_warmup_request = total_requests < num_warmup_requests;
-
-      Request inference_req;
-      inference_req.prompt = text;
-      inference_req.add_special_tokens = false;
-      inference_req.max_new_tokens = response_length;
-
-      if (is_warmup_request) {
-        warmup_requests.push_back(inference_req);
-      } else {
-        printf("Prompt[%d]: %s\n", total_requests, text.c_str());
-        requests.push_back(inference_req);
-        num_regular_requests++;
-      }
-
-      total_requests++;
-    }
-    std::vector<GenerationResult> warmup_result =
-        model.generate(warmup_requests);
-    std::vector<GenerationResult> result = model.generate(requests);
-
-    assert(warmup_result.size() == warmup_requests.size());
-    assert(result.size() == requests.size());
-    assert(result.size() + warmup_result.size() == total_requests);
-    int i = 0;
-    for (auto &entry : prompt_json["entries"]) {
-      if (i < num_warmup_requests) {
-        i++;
-        continue;
-      }
-      int index = i - num_warmup_requests;
-      entry["original_response"] = entry["response"];
-      entry["original_response_length"] = entry["response_length"];
-      std::string ff_out = result[index].output_text;
-      int tot_length = result[index].output_text.length();
-      entry["response"] = ff_out;
-      entry["response_length"] = result[index].output_tokens.size();
-      i++;
-    }
-
-    // Write the modified JSON to a file
-    std::ofstream output_file(file_paths.output_file_path);
-    if (output_file.is_open()) {
-      output_file << prompt_json.dump(2);
-      output_file.close();
-      std::cout << "Modified JSON has been saved to "
-                << file_paths.output_file_path << std::endl;
-    } else {
-      std::cerr << "Unable to open file for writing." << std::endl;
-    }
-  }
-  // int total_num_requests = 0;
   // {
   //   using json = nlohmann::json;
   //   std::ifstream file_handle(file_paths.prompt_file_path);
   //   assert(file_handle.good() && "Prompt file does not exist.");
-  //   json prompt_json = json::parse(file_handle,
-  //                                  /*parser_callback_t */ nullptr,
-  //                                  /*allow_exceptions */ true,
-  //                                  /*ignore_comments */ true);
+  //   nlohmann::ordered_json prompt_json =
+  //       nlohmann::ordered_json::parse(file_handle,
+  //                                     /*parser_callback_t */ nullptr,
+  //                                     /*allow_exceptions */ true,
+  //                                     /*ignore_comments */ true);
+  //   file_handle.close();
+  //   auto &metadata = prompt_json["metadata"];
+  //   int num_warmup_requests = metadata["num_warmup_requests"];
+  //   int num_regular_requests = 0, total_requests = 0;
+  //   std::vector<Request> warmup_requests, requests;
+  //   for (auto &entry : prompt_json["entries"]) {
+  //     int prompt_length = entry["prompt_length"];
+  //     int response_length = entry["response_length"];
+  //     std::string text = entry["prompt"];
+  //     bool is_warmup_request = total_requests < num_warmup_requests;
 
-  //   std::vector<Request> requests;
-  //   for (auto &prompt : prompt_json) {
-  //     std::string text = prompt.get<std::string>();
-  //     printf("Prompt[%d]: %s\n", total_num_requests, text.c_str());
   //     Request inference_req;
   //     inference_req.prompt = text;
-  //     inference_req.max_length = 128;
-  //     requests.push_back(inference_req);
-  //     total_num_requests++;
+  //     inference_req.add_special_tokens = false;
+  //     inference_req.max_new_tokens = response_length;
+
+  //     if (is_warmup_request) {
+  //       warmup_requests.push_back(inference_req);
+  //     } else {
+  //       printf("Prompt[%d]: %s\n", total_requests, text.c_str());
+  //       requests.push_back(inference_req);
+  //       num_regular_requests++;
+  //     }
+
+  //     total_requests++;
   //   }
+  //   std::vector<GenerationResult> warmup_result =
+  //       model.generate(warmup_requests);
   //   std::vector<GenerationResult> result = model.generate(requests);
+
+  //   assert(warmup_result.size() == warmup_requests.size());
+  //   assert(result.size() == requests.size());
+  //   assert(result.size() + warmup_result.size() == total_requests);
+  //   int i = 0;
+  //   for (auto &entry : prompt_json["entries"]) {
+  //     if (i < num_warmup_requests) {
+  //       i++;
+  //       continue;
+  //     }
+  //     int index = i - num_warmup_requests;
+  //     entry["original_response"] = entry["response"];
+  //     entry["original_response_length"] = entry["response_length"];
+  //     std::string ff_out = result[index].output_text;
+  //     int tot_length = result[index].output_text.length();
+  //     entry["response"] = ff_out;
+  //     entry["response_length"] = result[index].output_tokens.size();
+  //     i++;
+  //   }
+
+  //   // Write the modified JSON to a file
+  //   std::ofstream output_file(file_paths.output_file_path);
+  //   if (output_file.is_open()) {
+  //     output_file << prompt_json.dump(2);
+  //     output_file.close();
+  //     std::cout << "Modified JSON has been saved to "
+  //               << file_paths.output_file_path << std::endl;
+  //   } else {
+  //     std::cerr << "Unable to open file for writing." << std::endl;
+  //   }
   // }
+  int total_num_requests = 0;
+  {
+    using json = nlohmann::json;
+    std::ifstream file_handle(file_paths.prompt_file_path);
+    assert(file_handle.good() && "Prompt file does not exist.");
+    json prompt_json = json::parse(file_handle,
+                                   /*parser_callback_t */ nullptr,
+                                   /*allow_exceptions */ true,
+                                   /*ignore_comments */ true);
+
+    std::vector<Request> requests;
+    for (auto &prompt : prompt_json) {
+      std::string text = prompt.get<std::string>();
+      printf("Prompt[%d]: %s\n", total_num_requests, text.c_str());
+      Request inference_req;
+      inference_req.prompt = text;
+      inference_req.max_length = 128;
+      requests.push_back(inference_req);
+      total_num_requests++;
+    }
+    std::vector<GenerationResult> result = model.generate(requests);
+  }
 
   // terminate the request manager by stopping the background thread
   rm->terminate_background_server();
