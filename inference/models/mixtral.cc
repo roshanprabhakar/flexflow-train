@@ -291,7 +291,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
           ff.sigmoid_silu_multi(w1,
                                 w3,
                                 DT_NONE,
-                                std::string("layers_" + std::to_string(i) +
+                                std::string("layers." + std::to_string(i) +
                                             "_block_sparse_moe_experts_" +
                                             std::to_string(expert_idx) + "ssm")
                                     .c_str());
@@ -306,7 +306,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                            nullptr,
                            REG_MODE_NONE,
                            0.0f,
-                           std::string("layers_" + std::to_string(i) +
+                           std::string("layers." + std::to_string(i) +
                                        "_block_sparse_moe_experts_" +
                                        std::to_string(expert_idx) + "_w2")
                                .c_str());
@@ -322,8 +322,8 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
     mlp_out = ff.aggregate(aggregate_inputs,
                            mixtral_config.num_local_experts,
                            0.0f,
-                           std::string("layers_" + std::to_string(i) +
-                                       "_block_sparse_moe_experts_aggregate")
+                           std::string("layers." + std::to_string(i) +
+                                       ".block_sparse_moe_experts_aggregate")
                                .c_str());
   }
   // final normalization and linear
