@@ -323,7 +323,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                            mixtral_config.num_local_experts,
                            0.0f,
                            std::string("layers_" + std::to_string(i) +
-                                       ".block_sparse_moe_experts_aggregate")
+                                       "_block_sparse_moe_experts_aggregate")
                                .c_str());
   }
   // final normalization and linear
