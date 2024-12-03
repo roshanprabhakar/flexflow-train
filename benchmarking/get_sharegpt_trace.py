@@ -184,6 +184,7 @@ if __name__ == "__main__":
 
     num_entries=2048
     num_warmup_requests=10
+    max_length=2048
     seed=123456
 
     trace = build_trace("meta-llama/Llama-3.1-70B-Instruct", num_entries, num_warmup_requests, seed)

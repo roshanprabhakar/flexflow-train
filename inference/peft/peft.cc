@@ -225,7 +225,7 @@ void FlexFlow::top_level_task(Task const *task,
   int max_requests_per_batch = 1;
   int max_tokens_per_batch = 128;
   int max_sequence_length = 256;
-  int max_training_steps = 2;
+  int max_training_steps = -1;
   bool enable_peft_finetuning = true;
   int num_layers_per_finetuning_step = -1;
 
@@ -423,7 +423,7 @@ void FlexFlow::top_level_task(Task const *task,
 
   // Run workload
   {
-    std::vector<Request> warmup_requests = make_warmup_requests(10, 10, peft_model_id_finetuning);
+    std::vector<Request> warmup_requests = make_warmup_requests(10, 1000, peft_model_id_finetuning);
     std::vector<Request> requests = parse_trace_file(file_paths.prompt_file_path);
 
     // run warmup
@@ -442,7 +442,7 @@ void FlexFlow::top_level_task(Task const *task,
     finetuning_req.peft_finetuning_info.max_training_steps = max_training_steps;
     requests.push_back(finetuning_req);
 
-    std::vector<GenerationResult> result = model.generate(warmup_requests);
+    std::vector<GenerationResult> result = model.generate(requests);
   }
 
   // terminate the request manager by stopping the background thread

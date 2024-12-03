@@ -99,6 +99,16 @@ bool RequestManager::load_request_token_ids(Request &request) {
       request.tokens.insert(request.tokens.end(),
                             request.benchmarking_tokens,
                             15); // insert random number
+      // from here on, we will only use the max_length parameter
+      if (request.max_new_tokens != -1) {
+        request.max_length = request.tokens.size() + request.max_new_tokens;
+      }
+      if (request.max_length >= get_max_sequence_length()) {
+        std::cout << "Error: max_length (" << request.max_length
+                  << ") exceeds max sequence length of "
+                  << get_max_sequence_length() << ".\n";
+        return false;
+      }
     } else {
       std::vector<int32_t> tokens = this->tokenizer_->Encode(request.prompt);
       // from here on, we will only use the max_length parameter
@@ -1018,8 +1028,14 @@ void RequestManager::add_new_inf_req(BatchConfig &new_bc,
 
 void RequestManager::handle_completed_finetuning_req(
     BatchConfig const &old_finetuning_bc) {
-  assert(old_finetuning_bc.num_finetuning_bwd_requests() == 1 &&
+  if (!inference_finished) {
+    assert(old_finetuning_bc.num_finetuning_bwd_requests() == 1 &&
          "Number of active peft bwd requests in a finetuning batch should be 1");
+  } else {
+    assert(old_finetuning_bc.num_finetuning_fwd_requests() + old_finetuning_bc.num_finetuning_bwd_requests() == 1 &&
+         "Number of active peft requests should be 1");
+  }
+  
   int inference_batch_size =
       BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
   assert(!old_finetuning_bc.request_completed[inference_batch_size] &&
@@ -1103,6 +1119,8 @@ void RequestManager::add_finetuning_req_fwd_batch(BatchConfig &new_bc) {
   assert(request.dataset.size() > 0 && "Empty dataset for finetuning request");
   assert(request.peft_finetuning_info.status == Request::FORWARD_PHASE &&
          "Finetuning request is not in forward phase");
+  assert(!inference_finished &&
+         "Trying to add a new finetuning request after inference is done");
 
   int dataset_entry = request.peft_finetuning_info.completed_training_steps %
                       request.dataset.size();
@@ -1168,11 +1186,13 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
   assert(request.dataset.size() > 0 && "Empty dataset for finetuning request");
   assert(request.peft_finetuning_info.status == Request::BACKWARD_PHASE &&
          "Finetuning request is not in backward phase");
+  assert(!inference_finished &&
+         "Trying to add a new finetuning request after inference is done");
 
   int dataset_entry = request.peft_finetuning_info.completed_training_steps %
                       request.dataset.size();
-  assert(request.dataset[dataset_entry].size() <= get_max_tokens_per_batch() &&
-         "Dataset entry does not fit in the batch size");
+  // assert(request.dataset[dataset_entry].size() <= get_max_tokens_per_batch() &&
+  //        "Dataset entry does not fit in the batch size");
 
   // general fields
   new_bc.request_completed[inference_batch_size] = false;
@@ -1215,7 +1235,7 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
 }
 
 bool RequestManager::finetuning_fwd_work_available() {
-  if (pending_peft_request_queue.empty()) {
+  if (pending_peft_request_queue.empty() || inference_finished) {
     return false;
   }
   Request &request = pending_peft_request_queue.front();
@@ -1223,7 +1243,7 @@ bool RequestManager::finetuning_fwd_work_available() {
 }
 
 bool RequestManager::finetuning_bwd_work_available() {
-  if (pending_peft_request_queue.empty()) {
+  if (pending_peft_request_queue.empty() || inference_finished) {
     return false;
   }
   Request &request = pending_peft_request_queue.front();
@@ -1282,6 +1302,10 @@ void RequestManager::process_finetuning_req_fwd_progress(
     request.peft_finetuning_info.dataset_entry_processed_tokens = 0;
     request.peft_finetuning_info.status = Request::BACKWARD_PHASE;
   }
+
+  if (inference_finished) {
+    handle_completed_finetuning_req(old_bc);
+  }
 }
 
 void RequestManager::process_finetuning_req_bwd_progress(BatchConfig const &old_bc) {
@@ -1312,7 +1336,7 @@ void RequestManager::process_finetuning_req_bwd_progress(BatchConfig const &old_
     request.peft_finetuning_info.last_processed_bwd_layer = INT_MAX;
   }
   if (request.peft_finetuning_info.completed_training_steps ==
-      request.peft_finetuning_info.max_training_steps) {
+      request.peft_finetuning_info.max_training_steps || inference_finished) {
     handle_completed_finetuning_req(old_bc);
   }
 }
@@ -1341,7 +1365,7 @@ void RequestManager::process_work_from_old_batch(BatchConfig const &old_bc, Infe
 BatchConfig RequestManager::prepare_next_bwd_batch(BatchConfig &new_bc) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
 
-  if (finetuning_bwd_work_available() && !inference_finished) {
+  if (finetuning_bwd_work_available()) {
     add_finetuning_req_bwd_batch(new_bc);
   }
 
@@ -1402,8 +1426,7 @@ BatchConfig RequestManager::prepare_next_fwd_batch(BatchConfig const &old_bc,
   }
 
   // Step 4: add finetuning fwd tokens, if there is additional space
-  if (finetuning_fwd_work_available() &&
-      new_bc.num_tokens < get_max_tokens_per_batch() && !inference_finished) {
+  if (finetuning_fwd_work_available() && new_bc.num_tokens < get_max_tokens_per_batch()) {
     add_finetuning_req_fwd_batch(new_bc);
   }
 
