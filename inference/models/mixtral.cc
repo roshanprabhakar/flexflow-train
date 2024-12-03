@@ -322,7 +322,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
     mlp_out = ff.aggregate(aggregate_inputs,
                            mixtral_config.num_local_experts,
                            0.0f,
-                           nullptr, // TODO figure out name
+                           nullptr // TODO figure out name
 //                           std::string("layers_" + std::to_string(i) +
 //                                       "_block_sparse_moe_experts_aggregate")
 //                               .c_str()
