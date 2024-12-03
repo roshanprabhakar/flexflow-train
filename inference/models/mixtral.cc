@@ -318,8 +318,8 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
 
     aggregate_inputs[0] = topk_values;
     aggregate_inputs[1] = topk_indices;
-    aggregate_inputs[2] = 1;
-        aggregate_inputs[3] = 1;
+    aggregate_inputs[2] = topk_values;
+        aggregate_inputs[3] = topk_indices;
 //    aggregate_inputs[2] = aggregate_inputs[3] = nullptr;
     mlp_out = ff.aggregate(aggregate_inputs,
                            mixtral_config.num_local_experts,
