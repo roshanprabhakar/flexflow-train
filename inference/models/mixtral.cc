@@ -322,9 +322,12 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
     mlp_out = ff.aggregate(aggregate_inputs,
                            mixtral_config.num_local_experts,
                            0.0f,
-                           std::string("layers_" + std::to_string(i) +
-                                       "_block_sparse_moe_experts_aggregate")
-                               .c_str());
+                           nullptr, // TODO figure out name
+//                           std::string("layers_" + std::to_string(i) +
+//                                       "_block_sparse_moe_experts_aggregate")
+//                               .c_str()
+//
+                           );
   }
   // final normalization and linear
   Tensor final_rms_norm_output[2] = {nullptr, nullptr};
