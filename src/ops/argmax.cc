@@ -401,9 +401,9 @@ InferenceResult
   InferenceResult ir;
   ir.finetuning_loss = loss;
 
-  if (bc->num_finetuning_fwd_tokens() > 0) {
-    printf("Loss: %.4f\n", loss);
-  }
+  // if (bc->num_finetuning_fwd_tokens() > 0) {
+  //   printf("Loss: %.4f\n", loss);
+  // }
 
   if (m->inference_debugging) {
     assert(task->index_point.get_dim() == 1);

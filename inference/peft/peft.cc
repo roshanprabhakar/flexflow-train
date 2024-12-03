@@ -175,7 +175,7 @@ std::vector<Request> parse_trace_file(const std::string &trace_file_path) {
     if (is_warmup_request) {
       warmup_requests.push_back(inference_req);
     } else {
-      printf("Prompt[%d]: %s\n", total_requests, text.c_str());
+      // printf("Prompt[%d]: %s\n", total_requests, text.c_str());
       requests.push_back(inference_req);
       num_regular_requests++;
     }

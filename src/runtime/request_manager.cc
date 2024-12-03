@@ -130,9 +130,9 @@ bool RequestManager::load_request_token_ids(Request &request) {
                   << get_max_sequence_length() << ".\n";
         return false;
       }
-      for (int i = 0; i < tokens.size(); i++) {
-        std::cout << "[" << i << "]" << tokens.at(i) << "\n";
-      }
+      // for (int i = 0; i < tokens.size(); i++) {
+      //   std::cout << "[" << i << "]" << tokens.at(i) << "\n";
+      // }
       request.tokens.insert(request.tokens.end(), tokens.begin(), tokens.end());
     }
 
@@ -846,7 +846,7 @@ void RequestManager::handle_completed_inf_req(BatchConfig const &old_bc,
   log_req_mgr.print("[Done] guid(%zu) final_length(%zu)",
                     old_bc.requestsInfo[i].request_guid,
                     request.tokens.size());
-  log_req_mgr.print("Final output: %s", output.c_str());
+  // log_req_mgr.print("Final output: %s", output.c_str());
   num_processed_requests++;
   ProfileInfo profile_info = profiling_requests[request.guid];
   profile_info.finish_time = Realm::Clock::current_time_in_microseconds();
@@ -875,17 +875,17 @@ void RequestManager::handle_completed_inf_req(BatchConfig const &old_bc,
                  << (profile_info.first_token_time -
                      profile_info.registration_time)
                  << ")\n";
-      if (request.benchmarking_tokens <= 0) {
-        outputFile << "token IDs: ";
-        for (int i = 0; i < request.tokens.size(); i++) {
-          outputFile << request.tokens[i];
-          if (i < request.tokens.size() - 1) {
-            outputFile << ",";
-          }
-        }
-        outputFile << std::endl;
-        outputFile << output;
-      }
+      // if (request.benchmarking_tokens <= 0) {
+      //   outputFile << "token IDs: ";
+      //   for (int i = 0; i < request.tokens.size(); i++) {
+      //     outputFile << request.tokens[i];
+      //     if (i < request.tokens.size() - 1) {
+      //       outputFile << ",";
+      //     }
+      //   }
+      //   outputFile << std::endl;
+      //   outputFile << output;
+      // }
       outputFile.close();
     } else {
       std::cout << "Unable to open the output file: " << output_filepath
@@ -1072,35 +1072,35 @@ void RequestManager::handle_completed_finetuning_req(
                     request.peft_finetuning_info.completed_training_steps,
                     request.peft_finetuning_info.finetuning_losses.back(),
                     profile_info.finish_time - profile_info.start_time);
-  if (!output_filepath.empty()) {
-    std::ofstream outputFile(output_filepath, std::ios::app);
-    if (outputFile.is_open()) {
-      std::string tokens_str = "[";
-      // for (size_t i = 0; i < request.finetuning_tokens_per_batch.size();
-      //       i++) {
-      //   tokens_str +=
-      //       std::to_string(request.finetuning_tokens_per_batch[i]);
-      //   if (i != request.finetuning_tokens_per_batch.size() - 1) {
-      //     tokens_str += ", ";
-      //   }
-      // }
-      tokens_str += "]";
-      // outputFile << "[" << (request.warmup ? "Warmup" : "Finetuning")
-      //             << "] guid(" << request.guid
-      //             << ") completed_training_steps("
-      //             << request.peft_finetuning_info.completed_training_steps
-      //             << ") processed_finetuning_tokens("
-      //             << request.processed_finetuning_tokens << ") latency("
-      //             << std::fixed << std::setprecision(3)
-      //             << (profile_info.finish_time - profile_info.start_time)
-      //             << ") tokens_per_batch(" << tokens_str << ")\n";
-      outputFile.close();
-    } else {
-      std::cout << "Unable to open the output file: " << output_filepath
-                << std::endl;
-      assert(false);
-    }
-  }
+  // if (!output_filepath.empty()) {
+  //   // std::ofstream outputFile(output_filepath, std::ios::app);
+  //   // if (outputFile.is_open()) {
+  //     // std::string tokens_str = "[";
+  //     // for (size_t i = 0; i < request.finetuning_tokens_per_batch.size();
+  //     //       i++) {
+  //     //   tokens_str +=
+  //     //       std::to_string(request.finetuning_tokens_per_batch[i]);
+  //     //   if (i != request.finetuning_tokens_per_batch.size() - 1) {
+  //     //     tokens_str += ", ";
+  //     //   }
+  //     // }
+  //     // tokens_str += "]";
+  //     // outputFile << "[" << (request.warmup ? "Warmup" : "Finetuning")
+  //     //             << "] guid(" << request.guid
+  //     //             << ") completed_training_steps("
+  //     //             << request.peft_finetuning_info.completed_training_steps
+  //     //             << ") processed_finetuning_tokens("
+  //     //             << request.processed_finetuning_tokens << ") latency("
+  //     //             << std::fixed << std::setprecision(3)
+  //     //             << (profile_info.finish_time - profile_info.start_time)
+  //     //             << ") tokens_per_batch(" << tokens_str << ")\n";
+  //     // outputFile.close();
+  //   } else {
+  //     std::cout << "Unable to open the output file: " << output_filepath
+  //               << std::endl;
+  //     assert(false);
+  //   }
+  // }
 }
 
 void RequestManager::add_finetuning_req_fwd_batch(BatchConfig &new_bc) {
