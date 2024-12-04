@@ -34,7 +34,7 @@ struct FilePaths {
   std::string cache_folder_path;
   std::string prompt_file_path;
   std::string dataset_file_path;
-  std::string output_file_path;
+  std::string output_folder_path;
 };
 
 void parse_input_args(char **argv,
@@ -89,8 +89,8 @@ void parse_input_args(char **argv,
       continue;
     }
     // output file
-    if (!strcmp(argv[i], "-output-file")) {
-      paths.output_file_path = std::string(argv[++i]);
+    if (!strcmp(argv[i], "-output-folder")) {
+      paths.output_folder_path = std::string(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--use-full-precision")) {
@@ -362,7 +362,9 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_max_sequence_length(max_sequence_length);
   rm->register_tokenizer(
       model_type, bos_token_id, eos_token_ids, tokenizer_filepath);
-  rm->register_output_filepath(file_paths.output_file_path);
+  std::string output_filepath = join_path(
+      {file_paths.output_folder_path, "output.log"});
+  rm->register_output_filepath(output_filepath);
   rm->set_enable_peft_finetuning(enable_peft_finetuning);
   rm->set_max_finetuning_sequence_length(1024);
 
@@ -454,6 +456,14 @@ void FlexFlow::top_level_task(Task const *task,
     Future future = runtime->issue_execution_fence(ctx);
     future.get_void_result();
   }
+
+  rm->save_profiling_info_to_csv(file_paths.output_folder_path,
+                                 llm_model_name,
+                                 ffconfig.tensor_parallelism_degree,
+                                 max_requests_per_batch,
+                                 max_tokens_per_batch,
+                                 0.0, // arrival rate
+                                 10); // num_warmup_requests
 
   if (peft_model_id_finetuning != nullptr) {
     free(peft_model_id_finetuning);

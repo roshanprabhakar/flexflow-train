@@ -66,6 +66,7 @@ public:
 
 struct StepProfileInfo {
   int step_idx;
+  bool is_warmup_step;
   int num_inference_requests;
   int num_prefilling_tokens;
   int num_decoding_tokens;

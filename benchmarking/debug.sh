@@ -6,24 +6,25 @@ set -e
 cd "${BASH_SOURCE[0]%/*}/../build"
 
 
-MODEL_NAME="meta-llama/Llama-2-70b-hf"
+# MODEL_NAME="meta-llama/Llama-2-70b-hf"
 # MODEL_NAME="meta-llama/Llama-3.1-70B-Instruct"
-PEFT_MODEL_NAME="goliaro/llama-2-70b-hf-lora"
-NGPUS=8
-NCPUS=16
-FSIZE=38000
-ZSIZE=200000
-
-# MODEL_NAME="JackFram/llama-160m"
-# PEFT_MODEL_NAME="goliaro/llama-160m-lora"
-# NGPUS=4
+# PEFT_MODEL_NAME="goliaro/llama-2-70b-hf-lora"
+# NGPUS=8
 # NCPUS=16
-# FSIZE=14000
-# ZSIZE=20000
+# FSIZE=38000
+# ZSIZE=200000
+
+MODEL_NAME="JackFram/llama-160m"
+PEFT_MODEL_NAME="goliaro/llama-160m-lora"
+NGPUS=4
+NCPUS=16
+FSIZE=14000
+ZSIZE=20000
 
 PROMPT_FILE="/usr/FlexFlow/inference/prompt/sharegpt.json"
 FINETUNING_FILE="/usr/FlexFlow/inference/prompt/finetuning_benchmarking.json"
-OUTPUT_FILE="/usr/FlexFlow/inference/output/test.json"
+OUTPUT_FOLDER="/usr/FlexFlow/inference/output"
+# OUTPUT_FILE="/usr/FlexFlow/inference/output/test.json"
 LOG_FILE="/usr/FlexFlow/inference/output/test.log"
 MAX_SEQ_LEN=2048
 MAX_TOKENS_PER_BATCH=500
@@ -72,7 +73,7 @@ rm $LOG_FILE $OUTPUT_FILE || true
     -finetuning-dataset $FINETUNING_FILE \
     -prompt $PROMPT_FILE \
     -tensor-parallelism-degree $NGPUS \
-    -output-file $OUTPUT_FILE \
+    -output-file $OUTPUT_FOLDER \
     --max-requests-per-batch $BATCH_SIZE \
     --max-tokens-per-batch $MAX_TOKENS_PER_BATCH \
     --max-sequence-length $MAX_SEQ_LEN \
