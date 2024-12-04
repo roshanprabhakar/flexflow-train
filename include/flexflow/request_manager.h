@@ -349,6 +349,7 @@ public:
   bool get_spec_infer_old_version();
   bool get_greedy_schedule();
   bool get_equal_schedule();
+  inline double get_slo_constraint(Request &request);
   double get_request_expected_latency(Request &request);
   Request &get_request_with_guid(RequestGuid guid);
   int register_ssm_model(FFModel *model);

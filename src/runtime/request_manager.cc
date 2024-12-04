@@ -358,9 +358,18 @@ bool RequestManager::get_equal_schedule() {
   return equal_schedule;
 }
 
+inline double RequestManager::get_slo_constraint(Request &request) {
+  if (request.get_slo_ratio() < 0) {
+    // we use negative number to specify the absolute slo constraint (ms)
+    return -request.get_slo_ratio();
+  } else {
+    // relative slo constraint upon the baseline latency
+    return request.get_slo_ratio() * baseline_latency_ms;
+  }
+}
+
 double RequestManager::get_request_expected_latency(Request &request) {
-  return request.get_slo_ratio() * baseline_latency_ms *
-         request.decode_length();
+  return get_slo_constraint(request) * request.decode_length();
 }
 
 Request &RequestManager::get_request_with_guid(RequestGuid guid) {
@@ -506,6 +515,9 @@ RequestManager::RequestGuid
   // std::cout << "[slo ratio] " << req.slo_ratio << std::endl;
   request.tokens.insert(request.tokens.end(), tokens.begin(), tokens.end());
   request.set_slo_ratio(req.slo_ratio);
+  printf("Registered as request[%ld] with slo %.3f ms\n",
+           request.guid,
+           get_slo_constraint(request));
 
   if (get_num_ssms() == 0) {
     std::cout << "No small speculative model registered, using incremental "
@@ -1793,7 +1805,7 @@ bool RequestManager::update_llm_verify_results(
     bool current_attained =
         request.decode_latency_ms <=
         get_request_expected_latency(request) +
-            get_baseline_latency() * request.get_slo_ratio() * 6;
+            get_slo_constraint(request) * 6;
 
     // Initialize the token tree for the request
     init_token_tree(guid);
@@ -2422,9 +2434,8 @@ std::vector<GenerationResult>
   for (size_t i = 0; i < requests.size(); i++) {
     requests[i].slo_ratio = emission_machine.sample_slo_ratio();
     requests[i].emission_time_ms = emission_machine.get_elapsed_time_ms();
-    printf("Prompt[%ld] with slo %.3f: %s\n",
+    printf("Prompt[%ld]: %s\n",
            i,
-           requests[i].slo_ratio,
            requests[i].prompt.c_str());
     RequestManager::RequestGuid guid = rm->register_new_request(requests[i]);
     if (guid != RequestManager::INVALID_GUID) {
@@ -3140,7 +3151,7 @@ void RequestManager::prune_token_tree() {
     RequestGuid guid = guid_of_requests[request_index];
     Request &request = all_requests[guid];
     assert(request.status == Request::RUNNING);
-    if (request.get_slo_ratio() > 999) {
+    if (request.get_slo_ratio() > 999) { // infinity
       continue;
     }
     double spare_latency =
@@ -3219,10 +3230,10 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid,
   Request &request = all_requests[guid];
   double num_tokens_to_decode_per_step =
       (ssm_spec_latency_ms + llm_verify_latency_ms) * correction_factor /
-      (baseline_latency_ms * request.get_slo_ratio());
+      get_slo_constraint(request);
   double expected_num_tokens_decoded =
       request.decode_latency_ms /
-      (baseline_latency_ms * request.get_slo_ratio());
+      get_slo_constraint(request);
 
   double num_tokens_to_decode =
       max(1.0,
