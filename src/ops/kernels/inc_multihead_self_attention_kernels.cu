@@ -176,19 +176,19 @@ void compute_qkv(IncMultiHeadSelfAttentionMeta const *m,
     // matrix C: devQKVProjArray
     // matrix B's layout: [qk_dim, num_heads, 3, num_new_tokens]
     m->handle.gemm_engine->gemm_internal(CUBLAS_OP_T,
-                                          CUBLAS_OP_N,
-                                          m_,
-                                          n,
-                                          k,
-                                          alpha,
-                                          weight_ptr,
-                                          lda,
-                                          input_ptr,
-                                          ldb,
-                                          beta,
-                                          output_ptr,
-                                          ldc,
-                                          stream);
+                                         CUBLAS_OP_N,
+                                         m_,
+                                         n,
+                                         k,
+                                         alpha,
+                                         weight_ptr,
+                                         lda,
+                                         input_ptr,
+                                         ldb,
+                                         beta,
+                                         output_ptr,
+                                         ldc,
+                                         stream);
   }
 
   //   checkCUDA(cudaEventRecord(t_end, stream));
@@ -789,19 +789,19 @@ void compute_o_prod_bias(IncMultiHeadSelfAttentionMeta const *m,
     DT *C = static_cast<DT *>(output_ptr);
 
     m->handle.gemm_engine->gemm_internal(CUBLAS_OP_T,
-                                          CUBLAS_OP_N,
-                                          m_,
-                                          n,
-                                          k,
-                                          alpha,
-                                          A,
-                                          lda,
-                                          B,
-                                          ldb,
-                                          beta,
-                                          C,
-                                          ldc,
-                                          stream);
+                                         CUBLAS_OP_N,
+                                         m_,
+                                         n,
+                                         k,
+                                         alpha,
+                                         A,
+                                         lda,
+                                         B,
+                                         ldb,
+                                         beta,
+                                         C,
+                                         ldc,
+                                         stream);
   }
   // Add final output bias
   if (*m->final_bias && shard_id == 0) {

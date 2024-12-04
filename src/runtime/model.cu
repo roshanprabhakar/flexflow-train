@@ -108,10 +108,12 @@ FFHandler
   handle.num_devices = 0;
   handle.device_id = 0;
   handle.gemm_engine = new Internal::GemmEngine(handle.blas, handle.blasLt);
-  // We may not use all devices, physical_device may not be successive, so we explicitly get the physical device id
+  // We may not use all devices, physical_device may not be successive, so we
+  // explicitly get the physical device id
   int physical_device;
   checkCUDA(cudaGetDevice(&physical_device));
-  checkCUDA(cudaGetDeviceProperties(handle.gemm_engine->device_prop, physical_device));
+  checkCUDA(cudaGetDeviceProperties(handle.gemm_engine->device_prop,
+                                    physical_device));
   // #ifdef FF_USE_NCCL
   //   checkNCCL(ncclCommInitRank(&handle.nccl, info->allRanks, info->ncclId,
   //   info->myRank)); fprintf(stderr, "handle.nccl(%p)\n", handle.nccl);

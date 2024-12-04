@@ -23,8 +23,8 @@
 #include <cstddef>
 #include <cstring>
 #if defined(FF_USE_CUDA) || defined(FF_USE_HIP_CUDA)
-#include <cublas_v2.h>
 #include <cublasLt.h>
+#include <cublas_v2.h>
 #include <cudnn.h>
 #elif defined(FF_USE_HIP_ROCM)
 #include <hipblas/hipblas.h>

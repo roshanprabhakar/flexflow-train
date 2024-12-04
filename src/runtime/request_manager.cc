@@ -516,8 +516,8 @@ RequestManager::RequestGuid
   request.tokens.insert(request.tokens.end(), tokens.begin(), tokens.end());
   request.set_slo_ratio(req.slo_ratio);
   printf("Registered as request[%ld] with slo %.3f ms\n",
-           request.guid,
-           get_slo_constraint(request));
+         request.guid,
+         get_slo_constraint(request));
 
   if (get_num_ssms() == 0) {
     std::cout << "No small speculative model registered, using incremental "
@@ -1804,8 +1804,7 @@ bool RequestManager::update_llm_verify_results(
         request.decode_latency_ms <= get_request_expected_latency(request);
     bool current_attained =
         request.decode_latency_ms <=
-        get_request_expected_latency(request) +
-            get_slo_constraint(request) * 6;
+        get_request_expected_latency(request) + get_slo_constraint(request) * 6;
 
     // Initialize the token tree for the request
     init_token_tree(guid);
@@ -2434,9 +2433,7 @@ std::vector<GenerationResult>
   for (size_t i = 0; i < requests.size(); i++) {
     requests[i].slo_ratio = emission_machine.sample_slo_ratio();
     requests[i].emission_time_ms = emission_machine.get_elapsed_time_ms();
-    printf("Prompt[%ld]: %s\n",
-           i,
-           requests[i].prompt.c_str());
+    printf("Prompt[%ld]: %s\n", i, requests[i].prompt.c_str());
     RequestManager::RequestGuid guid = rm->register_new_request(requests[i]);
     if (guid != RequestManager::INVALID_GUID) {
       guids.push_back(guid);
@@ -3232,8 +3229,7 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid,
       (ssm_spec_latency_ms + llm_verify_latency_ms) * correction_factor /
       get_slo_constraint(request);
   double expected_num_tokens_decoded =
-      request.decode_latency_ms /
-      get_slo_constraint(request);
+      request.decode_latency_ms / get_slo_constraint(request);
 
   double num_tokens_to_decode =
       max(1.0,

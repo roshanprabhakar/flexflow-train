@@ -324,7 +324,8 @@ void forward_kernel(LinearMeta const *m,
   cudaDataType_t output_type = ff_to_cuda_datatype(m->output_type[0]);
   assert(input_type == weight_type && weight_type == output_type);
   DT const *input_p = static_cast<DT const *>(input_ptr),
-          *weight_p = static_cast<DT const *>(m->offload ? m->weight_ptr : weight_ptr);
+           *weight_p =
+               static_cast<DT const *>(m->offload ? m->weight_ptr : weight_ptr);
   DT *output_p = static_cast<DT *>(output_ptr);
 #if defined(CUDA_VERSION) && (CUDA_VERSION < 11000)
   cudaDataType_t compute_type = cublas_data_type;
@@ -338,19 +339,19 @@ void forward_kernel(LinearMeta const *m,
   }
 #endif
   m->handle.gemm_engine->gemm_internal(CUBLAS_OP_T,
-                                        CUBLAS_OP_N,
-                                        out_dim,
-                                        batch_size,
-                                        in_dim,
-                                        alpha,
-                                        weight_p,
-                                        in_dim,
-                                        input_p,
-                                        in_dim,
-                                        beta,
-                                        output_p,
-                                        out_dim,
-                                        stream);
+                                       CUBLAS_OP_N,
+                                       out_dim,
+                                       batch_size,
+                                       in_dim,
+                                       alpha,
+                                       weight_p,
+                                       in_dim,
+                                       input_p,
+                                       in_dim,
+                                       beta,
+                                       output_p,
+                                       out_dim,
+                                       stream);
   // use_bias = True
   if (bias_ptr != NULL) {
     // fuse bias and relu
