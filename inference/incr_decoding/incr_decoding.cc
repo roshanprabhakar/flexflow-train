@@ -57,6 +57,8 @@ void parse_input_args(char **argv,
                       double &baseline_latency_ms,
                       double &ssm_spec_latency_ms,
                       double &llm_verify_latency_ms,
+                      double &slo_filter,
+                      int &replica,
                       double &request_per_second,
                       std::string &emission_file_path,
                       bool &add_special_tokens) {
@@ -158,6 +160,14 @@ void parse_input_args(char **argv,
       llm_verify_latency_ms = std::stod(argv[++i]);
       continue;
     }
+    if (!strcmp(argv[i], "--eval-slo-filter")) {
+      slo_filter = std::stod(argv[++i]);
+      continue;
+    }
+    if (!strcmp(argv[i], "--eval-replica")) {
+      replica = std::stoi(argv[++i]);
+      continue;
+    }
     if (!strcmp(argv[i], "--request-per-second")) {
       request_per_second = std::stod(argv[++i]);
       continue;
@@ -212,6 +222,8 @@ void FlexFlow::top_level_task(Task const *task,
   double baseline_latency_ms = 50;
   double ssm_spec_latency_ms = 20;
   double llm_verify_latency_ms = 50;
+  double slo_filter = 0.0;
+  int replica = 1;
   double request_per_second = 1.0;
   bool add_special_tokens = true;
   std::string emission_file_path;
@@ -240,6 +252,8 @@ void FlexFlow::top_level_task(Task const *task,
                    baseline_latency_ms,
                    ssm_spec_latency_ms,
                    llm_verify_latency_ms,
+                   slo_filter,
+                   replica,
                    request_per_second,
                    emission_file_path,
                    add_special_tokens);
@@ -248,6 +262,9 @@ void FlexFlow::top_level_task(Task const *task,
   }
   if (max_tokens_per_prefilling_batch == -1) {
     max_tokens_per_prefilling_batch = max_tokens_per_batch;
+  }
+  if (slo_filter == 0.0) {
+    replica = 1;
   }
 
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
@@ -430,10 +447,16 @@ void FlexFlow::top_level_task(Task const *task,
       std::vector<double> timestamps, ratios;
       for (auto const &json_obj : trace_json) {
         EmissionTrace trace(json_obj);
-        requests.push_back(
-            GenerationRequest(trace.prompt, -1.0, 0, add_special_tokens));
-        timestamps.push_back(trace.emission_time_ms);
-        ratios.push_back(trace.slo_ratio);
+        if (slo_filter != 0.0 &&
+            std::fabs(trace.slo_ratio - slo_filter) > 1e-6) {
+          continue;
+        }
+        for (size_t i = 0; i < replica; ++i) {
+          requests.push_back(
+              GenerationRequest(trace.prompt, -1.0, 0, add_special_tokens));
+          timestamps.push_back(trace.emission_time_ms);
+          ratios.push_back(trace.slo_ratio);
+        }
       }
       TraceEmissionMachine emission_machine(timestamps, ratios);
       results = model.generate(requests, emission_machine);
