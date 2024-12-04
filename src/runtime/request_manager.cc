@@ -280,6 +280,7 @@ RequestManager::RequestManager()
   max_spec_tree_token_num = -1;
   max_sequence_length = -1;
   max_finetuning_sequence_length = -1;
+  step_idx = 0;
 }
 
 void RequestManager::set_verbose(bool verbose_) { verbose = verbose_; }
@@ -581,6 +582,13 @@ RequestGuid RequestManager::register_new_request(Request const &request_) {
   profile_info.registration_time = Realm::Clock::current_time_in_microseconds();
   profiling_requests[request.guid] = profile_info;
 
+  // Record request receival time
+  InferenceReqProfileInfo inf_profile_info;
+  inf_profile_info.request_guid = request.guid;
+  inf_profile_info.decoding_step_idx = REQ_RECEIVED_STEP_IDX;
+  inf_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
+  inf_req_profile_infos.push_back(inf_profile_info);
+
   return request.guid;
 }
 
@@ -776,6 +784,25 @@ void RequestManager::add_peft_config_to_request_info(
   //           << bc.requestsInfo[req_idx].peft_model_config_str << std::endl;
 }
 
+void RequestManager::record_decoding_req_profiling_info(BatchConfig const &old_fwd_bc, int req_idx) {
+  if (old_fwd_bc.request_completed[req_idx]) {
+    return;
+  }
+  RequestGuid guid = old_fwd_bc.requestsInfo[req_idx].request_guid;
+  Request &request = all_requests[guid];
+  if (!old_fwd_bc.requestsInfo[req_idx].prompt_phase ||
+      old_fwd_bc.requestsInfo[req_idx].first_token_depth_in_request +
+      old_fwd_bc.requestsInfo[req_idx].num_tokens_in_batch == request.tokens.size()-1) {
+    
+    InferenceReqProfileInfo inf_profile_info;
+    inf_profile_info.request_guid = guid;
+    inf_profile_info.decoding_step_idx = request.tokens.size()-1-request.initial_len;
+    assert(inf_profile_info.decoding_step_idx >= 0);
+    inf_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
+    inf_req_profile_infos.push_back(inf_profile_info);
+  }
+}
+
 void RequestManager::process_inf_req_progress(BatchConfig const &old_fwd_bc,
                                               InferenceResult const &result) {
   for (int i = 0; i < old_fwd_bc.num_active_tokens(); i++) {
@@ -809,8 +836,13 @@ void RequestManager::process_inf_req_progress(BatchConfig const &old_fwd_bc,
   int inference_batch_size =
       BatchConfig::max_requests_per_batch() - (int)enable_peft_finetuning;
   for (int req_idx = 0; req_idx < inference_batch_size; req_idx++) {
-    if (!old_fwd_bc.request_completed[req_idx] &&
-        inf_req_completed(old_fwd_bc, req_idx)) {
+    if (old_fwd_bc.request_completed[req_idx]) {
+      continue;
+    }
+    // record a InferenceReqProfileInfo unless we are still in the middle of prefilling
+    record_decoding_req_profiling_info(old_fwd_bc, req_idx);
+
+    if (inf_req_completed(old_fwd_bc, req_idx)) {
       handle_completed_inf_req(old_fwd_bc, req_idx);
     }
   }
@@ -1024,6 +1056,14 @@ void RequestManager::add_new_inf_req(BatchConfig &new_bc,
     new_bc.tokensInfo[new_bc.num_tokens].token_id = new_request.tokens[depth];
     new_bc.num_tokens++;
   }
+
+  // Record request start time
+  InferenceReqProfileInfo inf_profile_info;
+  inf_profile_info.request_guid = new_request.guid;
+  inf_profile_info.decoding_step_idx = REQ_START_TIME_STEP_IDX;
+  inf_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
+  inf_req_profile_infos.push_back(inf_profile_info);
+  
 }
 
 void RequestManager::handle_completed_finetuning_req(
@@ -1341,6 +1381,24 @@ void RequestManager::process_finetuning_req_bwd_progress(BatchConfig const &old_
   }
 }
 
+void RequestManager::record_step_profile_info(BatchConfig const &old_bc) {
+  StepProfileInfo step_profile_info;
+  step_profile_info.step_idx = step_idx++;
+  step_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
+  step_profile_info.num_inference_requests = old_bc.num_active_requests();
+  step_profile_info.num_prefilling_tokens = old_bc.num_tokens - old_bc.num_generation_tokens;
+  step_profile_info.num_decoding_tokens = old_bc.num_generation_tokens;
+  step_profile_info.num_finetuning_fwd_tokens = old_bc.num_finetuning_fwd_tokens();
+  step_profile_info.num_finetuning_bwd_tokens = old_bc.num_finetuning_bwd_tokens();
+  if (step_profile_info.num_finetuning_bwd_tokens > 0) {
+    step_profile_info.num_bwd_layers = old_bc.requestsInfo[old_bc.finetuning_request_index()].peft_bwd_last_layer -
+                               old_bc.requestsInfo[old_bc.finetuning_request_index()].peft_bwd_first_layer + 1;
+  } else {
+    step_profile_info.num_bwd_layers = 0;
+  }
+  step_profile_infos.push_back(step_profile_info);
+}
+
 void RequestManager::process_work_from_old_batch(BatchConfig const &old_bc, InferenceResult const &result) {
   const std::lock_guard<std::mutex> lock(request_queue_mutex);
 
@@ -1349,6 +1407,8 @@ void RequestManager::process_work_from_old_batch(BatchConfig const &old_bc, Infe
     std::cout << "old_bc: " << old_bc << std::endl;
     std::cout << "result: " << result << std::endl;
   }
+
+  record_step_profile_info(old_bc);
 
   // Step 1: Inference. Process work from previous fwd iteration: save generated
   // inference tokens and update records of finetuning fwd progress
@@ -1431,6 +1491,87 @@ BatchConfig RequestManager::prepare_next_fwd_batch(BatchConfig const &old_bc,
   }
 
   return new_bc;
+}
+
+
+void RequestManager::save_profiling_info_to_csv(std::string output_folder,
+                                                std::string llm_model_name,
+                                                int tensor_parallelism_degree,
+                                                int max_requests_per_batch,
+                                                int max_tokens_per_batch,
+                                                double arrival_rate,
+                                                int num_warmup_requests) {
+  // create output file based on the parameters
+  // llm_model_name_safe: make llm_model_name lowercase and replace / with _
+  std::string llm_model_name_safe = llm_model_name;
+  std::transform(llm_model_name_safe.begin(), llm_model_name_safe.end(), llm_model_name_safe.begin(), ::tolower);
+  std::replace(llm_model_name_safe.begin(), llm_model_name_safe.end(), '/', '_');
+  
+  std::string step_info_output_filepath = output_folder + "/" + 
+                                "step_profiling_" + 
+                                llm_model_name_safe + 
+                                "_tensor_parallelism_" + std::to_string(tensor_parallelism_degree) + 
+                                "_max_requests_per_batch_" + std::to_string(max_requests_per_batch) + 
+                                "_max_tokens_per_batch_" + std::to_string(max_tokens_per_batch) + 
+                                "_arrival_rate_" + std::to_string(arrival_rate) + 
+                                "_num_warmup_requests_" + std::to_string(num_warmup_requests) + ".csv";
+  std::ofstream StepInfoOutputFile(step_info_output_filepath);
+  if (StepInfoOutputFile.is_open()) {
+    // print CSV header
+    StepInfoOutputFile << "llm_model_name,tensor_parallelism_degree,max_requests_per_batch,max_tokens_per_batch,arrival_rate,num_warmup_requests,step_idx,timestamp,num_inference_requests,num_prefilling_tokens,num_decoding_tokens,num_finetuning_fwd_tokens,num_finetuning_bwd_tokens,num_bwd_layers\n";
+    for (size_t i = 0; i < step_profile_infos.size(); i++) {
+      StepProfileInfo &step_profile_info = step_profile_infos[i];
+      StepInfoOutputFile << llm_model_name << ","
+                 << tensor_parallelism_degree << ","
+                 << max_requests_per_batch << ","
+                 << max_tokens_per_batch << ","
+                 << arrival_rate << ","
+                 << num_warmup_requests << ","
+                 << step_profile_info.step_idx << ","
+                 << step_profile_info.timestamp << ","
+                 << step_profile_info.num_inference_requests << ","
+                 << step_profile_info.num_prefilling_tokens << ","
+                 << step_profile_info.num_decoding_tokens << ","
+                 << step_profile_info.num_finetuning_fwd_tokens << ","
+                 << step_profile_info.num_finetuning_bwd_tokens << ","
+                 << step_profile_info.num_bwd_layers << "\n";
+    }
+    StepInfoOutputFile.close();
+  } else {
+    std::cout << "Unable to open the output file: " << step_info_output_filepath
+              << std::endl;
+    assert(false);
+  }
+  std::string request_info_output_filepath = output_folder + "/" + 
+                                "inference_request_profiling_" +
+                                llm_model_name_safe + 
+                                "_tensor_parallelism_" + std::to_string(tensor_parallelism_degree) + 
+                                "_max_requests_per_batch_" + std::to_string(max_requests_per_batch) + 
+                                "_max_tokens_per_batch_" + std::to_string(max_tokens_per_batch) + 
+                                "_arrival_rate_" + std::to_string(arrival_rate) + 
+                                "_num_warmup_requests_" + std::to_string(num_warmup_requests) + ".csv";
+  std::ofstream RequestInfoOutputFile(request_info_output_filepath);
+  if (RequestInfoOutputFile.is_open()) {
+    // print CSV header
+    RequestInfoOutputFile << "llm_model_name,tensor_parallelism_degree,max_requests_per_batch,max_tokens_per_batch,arrival_rate,num_warmup_requests,request_guid,timestamp,decoding_step_idx\n";
+    for (int i=0; i<inf_req_profile_infos.size(); i++) {
+      InferenceReqProfileInfo &inf_profile_info = inf_req_profile_infos[i];
+      RequestInfoOutputFile << llm_model_name << ","
+                 << tensor_parallelism_degree << ","
+                 << max_requests_per_batch << ","
+                 << max_tokens_per_batch << ","
+                 << arrival_rate << ","
+                 << num_warmup_requests << ","
+                 << inf_profile_info.request_guid << ","
+                 << inf_profile_info.timestamp << ","
+                 << inf_profile_info.decoding_step_idx << "\n";
+    }
+    RequestInfoOutputFile.close();
+  } else {
+    std::cout << "Unable to open the output file: " << request_info_output_filepath
+              << std::endl;
+    assert(false);
+  }
 }
 
 /* ----- Speculative Inference Specific functions ----- */

@@ -61,6 +61,27 @@ public:
   std::unordered_map<FFModel *, FileDataLoader *> model_weights_loaders;
 };
 
+#define REQ_RECEIVED_STEP_IDX -2
+#define REQ_START_TIME_STEP_IDX -1
+
+struct StepProfileInfo {
+  int step_idx;
+  int num_inference_requests;
+  int num_prefilling_tokens;
+  int num_decoding_tokens;
+  int num_finetuning_fwd_tokens;
+  int num_finetuning_bwd_tokens;
+  int num_bwd_layers;
+  long long timestamp;
+};
+
+struct InferenceReqProfileInfo {
+  RequestGuid request_guid;
+  int decoding_step_idx;
+  long long timestamp;
+};
+
+
 struct Request {
   enum Status {
     PENDING = 101,   // loading prompt
@@ -243,6 +264,15 @@ public:
   void process_finetuning_req_bwd_progress(BatchConfig const &old_bc);
   void process_work_from_old_batch(BatchConfig const &old_bc,
                                      InferenceResult const &result);
+  void record_decoding_req_profiling_info(BatchConfig const &old_fwd_bc, int req_idx);
+  void record_step_profile_info(BatchConfig const &old_bc);
+  void save_profiling_info_to_csv(std::string output_folder,
+                                  std::string llm_model_name,
+                                  int tensor_parallelism_degree,
+                                  int max_requests_per_batch,
+                                  int max_tokens_per_batch,
+                                  double arrival_rate,
+                                  int num_warmup_requests);
   BatchConfig prepare_next_bwd_batch(BatchConfig &new_bc);
   BatchConfig prepare_next_fwd_batch(BatchConfig const &old_bc,
                                      InferenceResult const &result);
@@ -400,6 +430,10 @@ private:
 
   // Background server handler
   Legion::Future background_server_handler;
+
+  std::vector<StepProfileInfo> step_profile_infos;
+  std::vector<InferenceReqProfileInfo> inf_req_profile_infos;
+  int step_idx=0;
 
 private:
   struct ProfileInfo {

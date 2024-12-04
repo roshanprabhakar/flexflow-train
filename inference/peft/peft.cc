@@ -355,8 +355,9 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_max_requests_per_batch(
       max_requests_per_batch +
       (int)enable_peft_finetuning); // add one slot for finetuning if needed
-  rm->set_max_concurrent_adapters(max_requests_per_batch +
-                                  (int)enable_peft_finetuning);
+  // rm->set_max_concurrent_adapters(max_requests_per_batch +
+  //                                 (int)enable_peft_finetuning);
+  rm->set_max_concurrent_adapters(1);
   rm->set_max_tokens_per_batch(max_tokens_per_batch);
   rm->set_max_sequence_length(max_sequence_length);
   rm->register_tokenizer(
@@ -432,17 +433,17 @@ void FlexFlow::top_level_task(Task const *task,
     std::cout << "----------warmup finished--------------" << std::endl;
 
     // run real requests
-    Request finetuning_req;
-    finetuning_req.req_type = RequestType::REQ_FINETUNING;
-    finetuning_req.peft_model_id = (peft_model_id_finetuning != nullptr)
-                                        ? *peft_model_id_finetuning
-                                        : PEFTModelID::NO_ID;
-    finetuning_req.peft_finetuning_info.dataset_filepath =
-        file_paths.dataset_file_path;
-    finetuning_req.peft_finetuning_info.max_training_steps = max_training_steps;
-    requests.push_back(finetuning_req);
+    // Request finetuning_req;
+    // finetuning_req.req_type = RequestType::REQ_FINETUNING;
+    // finetuning_req.peft_model_id = (peft_model_id_finetuning != nullptr)
+    //                                     ? *peft_model_id_finetuning
+    //                                     : PEFTModelID::NO_ID;
+    // finetuning_req.peft_finetuning_info.dataset_filepath =
+    //     file_paths.dataset_file_path;
+    // finetuning_req.peft_finetuning_info.max_training_steps = max_training_steps;
+    // requests.push_back(finetuning_req);
 
-    std::vector<GenerationResult> result = model.generate(requests);
+    // std::vector<GenerationResult> result = model.generate(requests);
   }
 
   // terminate the request manager by stopping the background thread
