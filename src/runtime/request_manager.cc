@@ -1523,6 +1523,7 @@ void RequestManager::save_profiling_info_to_csv(std::string output_folder,
                                           "_max_tokens_per_batch_" + std::to_string(max_tokens_per_batch) + 
                                           "_arrival_rate_" + std::to_string(arrival_rate) + 
                                           "_num_warmup_requests_" + std::to_string(num_warmup_requests) + ".csv";
+  std::cout << "Opening the output file: " << step_info_output_filepath << std::endl;
   std::ofstream StepInfoOutputFile(step_info_output_filepath);
   if (StepInfoOutputFile.is_open()) {
     // print CSV header
@@ -1560,6 +1561,7 @@ void RequestManager::save_profiling_info_to_csv(std::string output_folder,
                                             "_max_tokens_per_batch_" + std::to_string(max_tokens_per_batch) + 
                                             "_arrival_rate_" + std::to_string(arrival_rate) + 
                                             "_num_warmup_requests_" + std::to_string(num_warmup_requests) + ".csv";
+  std::cout << "Opening the output file: " << request_info_output_filepath << std::endl;
   std::ofstream RequestInfoOutputFile(request_info_output_filepath);
   if (RequestInfoOutputFile.is_open()) {
     // print CSV header

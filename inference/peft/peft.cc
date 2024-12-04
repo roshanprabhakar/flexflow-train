@@ -457,6 +457,7 @@ void FlexFlow::top_level_task(Task const *task,
     future.get_void_result();
   }
 
+  std::cout << "Saving profiling info..." << std::endl;
   rm->save_profiling_info_to_csv(file_paths.output_folder_path,
                                  llm_model_name,
                                  ffconfig.tensor_parallelism_degree,

@@ -73,7 +73,7 @@ rm $LOG_FILE $OUTPUT_FILE || true
     -finetuning-dataset $FINETUNING_FILE \
     -prompt $PROMPT_FILE \
     -tensor-parallelism-degree $NGPUS \
-    -output-file $OUTPUT_FOLDER \
+    -output-folder $OUTPUT_FOLDER \
     --max-requests-per-batch $BATCH_SIZE \
     --max-tokens-per-batch $MAX_TOKENS_PER_BATCH \
     --max-sequence-length $MAX_SEQ_LEN \
