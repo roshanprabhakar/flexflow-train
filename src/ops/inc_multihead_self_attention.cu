@@ -110,7 +110,7 @@ bool is_decoding_request(BatchConfig const *bc, int request_id) {
 }
 
 template <typename DT>
-void run_batched_matmul(IncMultiHeadSelfAttentionMeta *meta,
+void run_batched_matmul(const IncMultiHeadSelfAttentionMeta *meta,
                         cublasHandle_t handle,
                         cublasOperation_t transa,
                         cublasOperation_t transb,
@@ -1176,10 +1176,10 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
   assert(num_tokens == num_total_tokens);
   int kt_block_size = m->kProjSize;
   int kt_req_block_size =
-      kt_block_size * m->num_q_heads * BatchConfig::max_finetuning_sequence_length();
+      kt_block_size * m->num_kv_heads * BatchConfig::max_finetuning_sequence_length();
   int vt_block_size = m->vProjSize;
   int vt_req_block_size =
-      vt_block_size * m->num_q_heads * BatchConfig::max_finetuning_sequence_length();
+      vt_block_size * m->num_kv_heads * BatchConfig::max_finetuning_sequence_length();
   assert(m->qProjSize == m->kProjSize && m->kProjSize == m->vProjSize);
   // Step 1: copy gradient before final projection into workspace
   {
@@ -1204,13 +1204,16 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
   {
     float alpha = 1.0f, beta = 0.0f;
     // matrix A: qk_prods_softmax
-    // matrix A's layout: [num_new_tokens, total_tokens, num_heads]
+    // matrix A's layout: [num_new_tokens, total_tokens, num_q_heads]
     DT const *A = static_cast<DT *>(m->qk_prods_softmax);
     // matrix B: attn_heads gradients
-    // matrix B's layout: [vProjSize * num_heads, num_new_tokens]
+    // matrix B's layout: [vProjSize * num_q_heads, num_new_tokens]
     DT const *B = static_cast<DT *>(m->handle.workSpace);
     // matrix C: gradients for value (saved as part of m->devQKVProjArray)
-    // matrix C's layout: [num_tokens, qProjsize * num_heads, 3]
+    // matrix C's layout: [num_tokens, qProjsize * num_q_heads, 3]
+    // note that we first need to compute the gradients wrt each q_heads, then we can sum
+    // the gradients corresponding to each group of q_heads to obtain the gradients wrt each
+    // value head
     DT *C = static_cast<DT *>(m->devQKVProjArray) +
             2 * num_tokens *
                 (m->qProjSize * m->num_q_heads); // skip over regions reserved
@@ -1264,13 +1267,13 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
   {
     float alpha = 1.0f, beta = 0.0f;
     // matrix A: attn_heads gradients
-    // matrix A's layout: [vProjSize * num_heads, num_new_tokens]
+    // matrix A's layout: [vProjSize * num_q_heads, num_new_tokens]
     DT const *A = static_cast<DT *>(m->handle.workSpace);
     // matrix B: value cache
-    // matrix B's layout: [vProjSize * num_heads, max_num_tokens, num_req]
+    // matrix B's layout: [vProjSize * num_kv_heads, max_num_tokens, num_req]
     DT const *B = static_cast<DT *>(m->valueCache) + i * vt_req_block_size;
     // matrix C: qk_prods_softmax gradients
-    // matrix C's layout: [num_new_tokens, total_tokens, num_heads]
+    // matrix C's layout: [num_new_tokens, total_tokens, num_q_heads]
     DT *C = static_cast<DT *>(m->qk_prods_softmax);
     // after transposition & striding
     int m_ = num_tokens; // num_new_tokens
@@ -1278,35 +1281,27 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
     int k_ = m->vProjSize;
     // before transposition and striding
     int lda = m->vProjSize * m->num_q_heads;
-    int ldb = m->vProjSize * m->num_q_heads;
+    int ldb = m->vProjSize * m->num_kv_heads;
     int ldc = num_tokens; // num_new_tokens
     int strideA = m->vProjSize;
     int strideB = m->vProjSize;
     int strideC = num_tokens * num_tokens; // num_new_tokens * total_tokens
 
-    checkCUDA(cublasGemmStridedBatchedEx(m->handle.blas,
-                                         CUBLAS_OP_T,
-                                         CUBLAS_OP_N,
-                                         m_,
-                                         n_,
-                                         k_,
-                                         &alpha,
-                                         A,
-                                         cublas_data_type,
-                                         lda,
-                                         strideA,
-                                         B,
-                                         cublas_data_type,
-                                         ldb,
-                                         strideB,
-                                         &beta,
-                                         C,
-                                         cublas_data_type,
-                                         ldc,
-                                         strideC,
-                                         m->num_q_heads,
-                                         compute_type,
-                                         CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    run_batched_matmul<DT>(m, m->handle.blas,
+                      CUBLAS_OP_T, CUBLAS_OP_N,
+                      m_, n_, k_,
+                      &alpha,
+                      A, cublas_data_type, lda, strideA,
+                      B, cublas_data_type, ldb, strideB,
+                      &beta,
+                      C, cublas_data_type, ldc, strideC,
+                      m->num_q_heads,
+                      compute_type,
+                      CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+                      stream,
+                      1,
+                      m->num_q_heads/m->num_kv_heads,
+                      1);
     if (m->inference_debugging) {
       std::string filename =
           get_peft_dbg_folder(m, shard_id) + ".qk_prods.softmax_grad";
@@ -1380,13 +1375,16 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
       alpha = 1.0f / sqrt(m->kProjSize);
     }
     // matrix A: gradients w.r.t. qk_prods
-    // matrix A's layout: [num_new_tokens, num_tokens, num_heads]
+    // matrix A's layout: [num_new_tokens, num_tokens, num_q_heads]
     DT const *A = static_cast<DT *>(m->qk_prods);
     // matrix B: query activation (in query_activation_buffer)
-    // matrix B's layout: [m->qProjSize * num_heads, num_new_tokens]
+    // matrix B's layout: [m->qProjSize * num_q_heads, num_new_tokens]
     DT const *B = static_cast<DT *>(m->query_activation_buffer);
     // matrix C: gradients for key (saved as part of m->devQKVProjArray)
-    // matrix C's layout: [num_tokens, qProjsize * num_heads, 3]
+    // matrix C's layout: [num_tokens, qProjsize * num_q_heads, 3]
+    // note that we first need to compute the gradients wrt each q_heads, then we can sum
+    // the gradients corresponding to each group of q_heads to obtain the gradients wrt each
+    // key head
     DT *C = static_cast<DT *>(m->devQKVProjArray) +
             num_tokens *
                 (m->qProjSize *
@@ -1443,13 +1441,13 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
       alpha = 1.0f / sqrt(m->kProjSize);
     }
     // matrix A: gradients w.r.t. qk_prods
-    // matrix A's layout: [num_new_tokens, num_tokens, num_heads]
+    // matrix A's layout: [num_new_tokens, num_tokens, num_q_heads]
     DT const *A = static_cast<DT *>(m->qk_prods);
     // matrix B: key cache
-    // matrix B's layout: [vProjSize * num_heads, max_num_tokens, num_req]
+    // matrix B's layout: [vProjSize * num_kv_heads, max_num_tokens, num_req]
     DT const *B = static_cast<DT *>(m->keyCache) + i * kt_req_block_size;
     // matrix C: gradients for query (saved as part of m->devQKVProjArray)
-    // matrix C's layout: [num_tokens, qProjsize * num_heads, 3]
+    // matrix C's layout: [num_tokens, qProjsize * num_q_heads, 3]
     DT *C = static_cast<DT *>(m->devQKVProjArray);
     // after transposition & striding
     int m_ = num_tokens; // num_new_tokens
@@ -1457,34 +1455,28 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
     int k_ = num_tokens;
     // before transposition and striding
     int lda = num_tokens; // num_new_tokens
-    int ldb = m->qProjSize * m->num_q_heads;
+    int ldb = m->qProjSize * m->num_kv_heads;
     int ldc = num_tokens;
     int strideA = num_tokens * num_tokens;
     int strideB = m->qProjSize;
     int strideC = num_tokens * m->qProjSize;
-    checkCUDA(cublasGemmStridedBatchedEx(m->handle.blas,
-                                         CUBLAS_OP_N,
-                                         CUBLAS_OP_T,
-                                         m_,
-                                         n_,
-                                         k_,
-                                         &alpha,
-                                         A,
-                                         cublas_data_type,
-                                         lda,
-                                         strideA,
-                                         B,
-                                         cublas_data_type,
-                                         ldb,
-                                         strideB,
-                                         &beta,
-                                         C,
-                                         cublas_data_type,
-                                         ldc,
-                                         strideC,
-                                         m->num_q_heads,
-                                         compute_type,
-                                         CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    
+    run_batched_matmul<DT>(m, m->handle.blas,
+                          CUBLAS_OP_N, CUBLAS_OP_T,
+                          m_, n_, k_,
+                          &alpha,
+                          A, cublas_data_type, lda, strideA,
+                          B, cublas_data_type, ldb, strideB,
+                          &beta,
+                          C, cublas_data_type, ldc, strideC,
+                          m->num_q_heads,
+                          compute_type,
+                          CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+                          stream,
+                          1,
+                          m->num_q_heads/m->num_kv_heads,
+                          1);
+    
     if (m->inference_debugging) {
       std::string filename =
           get_peft_dbg_folder(m, shard_id) + ".devQKVPRojArray_pre";
@@ -1494,6 +1486,7 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
   }
 
   // Step 7: perform rotary position embeddings (RoPE) bwd
+  // todo: first sum the gradients wrt each q_head to obtain the gradients wrt each key head
   {
     if (m->rotary_embedding_meta->apply_rotary_embedding) {
       assert(m->hidden_size == m->qProjSize * m->num_q_heads);
@@ -1555,7 +1548,7 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
             bc->requestsInfo[i].first_token_offset_in_batch * m->qSize;
     // int m_ = m->qSize;
     int n_ = num_tokens;
-    int k_ = m->num_q_heads * (m->qProjSize + m->kProjSize + m->vProjSize);
+    int k_ = m->qProjSize * (m->num_q_heads + 2 * m->num_kv_heads);
 
     // The original version uses existing result and attention's projection to
     // do further calculation in a way different than the usual dense layer,
@@ -1770,8 +1763,8 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
                                    ? BatchConfig::max_verify_tokens_per_batch()
                                    : BatchConfig::max_tokens_per_batch();
     size_t qkv_max_proj_size = max_tokens_per_batch * (qProjSize * num_q_heads +
-                                                       kProjSize * num_kv_heads +
-                                                       vProjSize * num_kv_heads);
+                                                       kProjSize * num_q_heads +
+                                                       vProjSize * num_q_heads);
     size_t key_cache_size = 0, value_cache_size = 0;
     switch (infer_mode) {
       case INC_DECODING_MODE: {
