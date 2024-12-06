@@ -178,6 +178,8 @@ public:
   int get_max_requests_per_batch();
   void set_max_tokens_per_batch(int max_num_tokens);
   int get_max_tokens_per_batch();
+  void set_max_fwd_finetuning_tokens_per_batch(int max_num_tokens);
+  int get_max_fwd_finetuning_tokens_per_batch();
   void set_max_spec_tree_token_num(int max_num_tokens);
   int get_max_spec_tree_token_num();
   int get_max_verify_tokens_per_batch();
@@ -381,6 +383,7 @@ private:
   // configuration parameters
   int max_requests_per_batch;
   int max_tokens_per_batch;
+  int max_fwd_finetuning_tokens_per_batch;
   int max_spec_tree_token_num;
   int max_sequence_length;
   int max_finetuning_sequence_length;

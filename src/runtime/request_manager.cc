@@ -300,6 +300,7 @@ int RequestManager::get_max_requests_per_batch() {
 void RequestManager::set_max_tokens_per_batch(int max_num_tokens) {
   assert(max_tokens_per_batch == -1 || max_tokens_per_batch == max_num_tokens);
   max_tokens_per_batch = max_num_tokens;
+  max_fwd_finetuning_tokens_per_batch = max_num_tokens; // by default
   assert(max_tokens_per_batch <= BatchConfig::MAX_NUM_TOKENS);
 }
 
@@ -308,6 +309,18 @@ void RequestManager::set_max_spec_tree_token_num(int max_num_tokens) {
          max_spec_tree_token_num == max_num_tokens);
   max_spec_tree_token_num = max_num_tokens;
   assert(max_spec_tree_token_num <= BatchConfig::MAX_SPEC_TREE_TOKEN_NUM);
+}
+
+void RequestManager::set_max_fwd_finetuning_tokens_per_batch(int max_num_tokens) {
+  max_fwd_finetuning_tokens_per_batch = max_num_tokens;
+  assert(max_fwd_finetuning_tokens_per_batch <= BatchConfig::MAX_NUM_TOKENS);
+  assert(max_fwd_finetuning_tokens_per_batch <= max_tokens_per_batch);
+  assert(max_fwd_finetuning_tokens_per_batch > 0);
+}
+
+int RequestManager::get_max_fwd_finetuning_tokens_per_batch() {
+  assert(max_fwd_finetuning_tokens_per_batch > 0 && max_fwd_finetuning_tokens_per_batch <= max_tokens_per_batch);
+  return max_fwd_finetuning_tokens_per_batch;
 }
 
 int RequestManager::get_max_tokens_per_batch() {
@@ -1178,8 +1191,8 @@ void RequestManager::add_finetuning_req_fwd_batch(BatchConfig &new_bc) {
   int num_tokens_left_in_dataset_entry =
       (int)request.dataset[dataset_entry].size() -
       request.peft_finetuning_info.dataset_entry_processed_tokens;
-  int batch_capacity_left =
-      get_max_tokens_per_batch() - new_bc.num_active_tokens();
+  int batch_capacity_left = std::min(get_max_fwd_finetuning_tokens_per_batch(),
+                                      get_max_tokens_per_batch() - new_bc.num_active_tokens());
   int num_peft_tokens =
       std::min(num_tokens_left_in_dataset_entry, batch_capacity_left);
   assert(num_peft_tokens > 0 && "No tokens left to add to the batch");
@@ -1265,8 +1278,14 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
           get_num_transformer_layers() - 1);
   assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer >= 0);
   new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer =
-      new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer -
-      get_num_layers_per_finetuning_step() + 1; //inclusive
+      std::min(0, new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer -
+      get_num_layers_per_finetuning_step() + 1); //inclusive
+  // if (new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer < 0) {
+  //   std::cout << "Error: peft_bwd_first_layer < 0" << std::endl;
+  //   std::cout << "new_bc: " << new_bc << std::endl;
+  //   std::cout << "request: " << request << std::endl;
+  //   std::cout << "get_num_layers_per_finetuning_step(): " << get_num_layers_per_finetuning_step() << std::endl;
+  // }
   assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer >= 0);
 
   set_optimizer_tasks(
