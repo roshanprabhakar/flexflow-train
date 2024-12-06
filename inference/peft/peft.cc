@@ -435,17 +435,17 @@ void FlexFlow::top_level_task(Task const *task,
     std::cout << "----------warmup finished--------------" << std::endl;
 
     // run real requests
-    // Request finetuning_req;
-    // finetuning_req.req_type = RequestType::REQ_FINETUNING;
-    // finetuning_req.peft_model_id = (peft_model_id_finetuning != nullptr)
-    //                                     ? *peft_model_id_finetuning
-    //                                     : PEFTModelID::NO_ID;
-    // finetuning_req.peft_finetuning_info.dataset_filepath =
-    //     file_paths.dataset_file_path;
-    // finetuning_req.peft_finetuning_info.max_training_steps = max_training_steps;
-    // requests.push_back(finetuning_req);
+    Request finetuning_req;
+    finetuning_req.req_type = RequestType::REQ_FINETUNING;
+    finetuning_req.peft_model_id = (peft_model_id_finetuning != nullptr)
+                                        ? *peft_model_id_finetuning
+                                        : PEFTModelID::NO_ID;
+    finetuning_req.peft_finetuning_info.dataset_filepath =
+        file_paths.dataset_file_path;
+    finetuning_req.peft_finetuning_info.max_training_steps = max_training_steps;
+    requests.push_back(finetuning_req);
 
-    // std::vector<GenerationResult> result = model.generate(requests);
+    std::vector<GenerationResult> result = model.generate(requests);
   }
 
   // terminate the request manager by stopping the background thread

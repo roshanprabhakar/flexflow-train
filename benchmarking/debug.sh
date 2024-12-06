@@ -14,12 +14,19 @@ cd "${BASH_SOURCE[0]%/*}/../build"
 # FSIZE=38000
 # ZSIZE=200000
 
-MODEL_NAME="JackFram/llama-160m"
-PEFT_MODEL_NAME="goliaro/llama-160m-lora"
-NGPUS=4
+MODEL_NAME="meta-llama/Meta-Llama-3-8B"
+PEFT_MODEL_NAME="goliaro/llama-3-8b-lora-dolly"
+NGPUS=2
 NCPUS=16
-FSIZE=14000
-ZSIZE=20000
+FSIZE=20000
+ZSIZE=30000
+
+# MODEL_NAME="JackFram/llama-160m"
+# PEFT_MODEL_NAME="goliaro/llama-160m-lora"
+# NGPUS=4
+# NCPUS=16
+# FSIZE=14000
+# ZSIZE=20000
 
 PROMPT_FILE="/usr/FlexFlow/inference/prompt/sharegpt.json"
 FINETUNING_FILE="/usr/FlexFlow/inference/prompt/finetuning_benchmarking.json"
@@ -34,10 +41,10 @@ MAX_TRAINING_STEPS=1000
 reset
 make -j install
 
-# python -c "from huggingface_hub import snapshot_download; \
-#     snapshot_download(repo_id=\"${MODEL_NAME}\", allow_patterns=\"*.safetensors\", max_workers=30)"
-# python ../inference/utils/download_hf_model.py $MODEL_NAME
-# python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME
+python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download(repo_id=\"${MODEL_NAME}\", allow_patterns=\"*.safetensors\", max_workers=30)"
+python ../inference/utils/download_hf_model.py $MODEL_NAME
+python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME
  
 # mkdir -p ../inference/prompt
 # cp ../benchmarking/sharegpt.json ../inference/prompt/sharegpt.json
@@ -49,9 +56,9 @@ make -j install
 export NCCL_DEBUG=INFO
 export NCCL_DEBUG_FILE=/usr/FlexFlow/inference/output/nccl2.log
 
-# export LEGION_BACKTRACE=1
+export LEGION_BACKTRACE=1
 # export FF_DEBG_NO_WEIGHTS=1
-# export CUDA_VISIBLE_DEVICES=1,2,3,4
+export CUDA_VISIBLE_DEVICES=1,2,3,4
 
 # ./inference/incr_decoding/incr_decoding \
 #     -ll:cpu $NCPUS -ll:gpu $NGPUS -ll:util $NCPUS \
@@ -67,8 +74,7 @@ rm $LOG_FILE $OUTPUT_FILE || true
 ./inference/peft/peft \
     -ll:cpu $NCPUS -ll:gpu $NGPUS -ll:util $NCPUS \
     -ll:fsize $FSIZE -ll:zsize $ZSIZE \
-    -llm-model $MODEL_NAME --fusion  -lg:prof 1 -lg:prof_logfile prof_%.gz \
-    --log-instance-creation \
+    -llm-model $MODEL_NAME --fusion  \
     -enable-peft -peft-model $PEFT_MODEL_NAME \
     -finetuning-dataset $FINETUNING_FILE \
     -prompt $PROMPT_FILE \

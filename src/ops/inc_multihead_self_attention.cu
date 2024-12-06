@@ -137,7 +137,8 @@ void run_batched_matmul(const IncMultiHeadSelfAttentionMeta *meta,
                         cudaStream_t stream,
                         int batch_ratio_a=1,
                         int batch_ratio_b=1,
-                        int batch_ratio_c=1) {
+                        int batch_ratio_c=1,
+                        bool bwd=false) {
   if (batch_ratio_a==1 && batch_ratio_b == 1 && batch_ratio_c == 1) {
     checkCUDA(cublasGemmStridedBatchedEx(handle,
                                          transa, transb,
@@ -151,6 +152,11 @@ void run_batched_matmul(const IncMultiHeadSelfAttentionMeta *meta,
                                          computeType,
                                          algo));
   } else {
+
+    lda = (transa == CUBLAS_OP_N) ? m : k;
+    ldb = (transb == CUBLAS_OP_N) ? k : n;
+    ldc = m;
+
     const DT **h_A_array = new const DT*[batchCount];
     const DT **h_B_array = new const DT*[batchCount];
     DT **h_C_array = new DT*[batchCount];
@@ -160,22 +166,40 @@ void run_batched_matmul(const IncMultiHeadSelfAttentionMeta *meta,
       h_C_array[batch] = C + (batch/batch_ratio_c) * strideC;
     }
     assert(sizeof(DT*) == sizeof(void*));
-    // Copy pointer arrays to device
-    checkCUDA(cudaMemcpyAsync(meta->d_A_array, h_A_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
-    checkCUDA(cudaMemcpyAsync(meta->d_B_array, h_B_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
-    checkCUDA(cudaMemcpyAsync(meta->d_C_array, h_C_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
+    if (!bwd) {
+      // Copy pointer arrays to device
+      checkCUDA(cudaMemcpyAsync(meta->d_A_array, h_A_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
+      checkCUDA(cudaMemcpyAsync(meta->d_B_array, h_B_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
+      checkCUDA(cudaMemcpyAsync(meta->d_C_array, h_C_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
 
-    checkCUDA(cublasGemmBatchedEx(handle,
-                                  transa, transb,
-                                  m, n, k,
-                                  alpha,
-                                  meta->d_A_array, Atype, lda,
-                                  meta->d_B_array, Btype, ldb,
-                                  beta,
-                                  meta->d_C_array, Ctype, ldc,
-                                  batchCount,
-                                  computeType,
-                                  algo));
+      checkCUDA(cublasGemmBatchedEx(handle,
+                                    transa, transb,
+                                    m, n, k,
+                                    alpha,
+                                    meta->d_A_array, Atype, lda,
+                                    meta->d_B_array, Btype, ldb,
+                                    beta,
+                                    meta->d_C_array, Ctype, ldc,
+                                    batchCount,
+                                    computeType,
+                                    algo));
+    } else {
+      checkCUDA(cudaMemcpyAsync(meta->d_A_array2, h_A_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
+      checkCUDA(cudaMemcpyAsync(meta->d_B_array2, h_B_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
+      checkCUDA(cudaMemcpyAsync(meta->d_C_array2, h_C_array, batchCount * sizeof(DT*), cudaMemcpyHostToDevice, stream));
+
+      checkCUDA(cublasGemmBatchedEx(handle,
+                                    transa, transb,
+                                    m, n, k,
+                                    alpha,
+                                    meta->d_A_array2, Atype, lda,
+                                    meta->d_B_array2, Btype, ldb,
+                                    beta,
+                                    meta->d_C_array2, Ctype, ldc,
+                                    batchCount,
+                                    computeType,
+                                    algo));
+    }
   }
 }
 
@@ -249,16 +273,15 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
       int n = total_tokens;
       int k = m->qProjSize;
       // before transpositions
-      int lda = k * (m->num_q_heads + 2 * m->num_kv_heads);
-      int ldb = k * m->num_kv_heads;
-      int ldc = m_;
+      int lda = k * m->num_q_heads * QKV_WEIGHT_NUM, ldb = k * m->num_q_heads,
+          ldc = m_;
       // N.B. strides are applied before transpose operations
       int strideA = q_block_size;
       int strideB = kt_block_size;
       int strideC = num_new_tokens * total_tokens;
 
       // matrix A: devQKVProjArray
-      // matrix A's layout: [qProjSize, num_q_heads, 3, num_new_tokens]
+      // matrix A's layout: [qProjSize*num_q_heads + 2*kvProjSize*num_kv_heads, num_new_tokens]
       // To get query projection, skip over Q entries from previous requests
       DT const *A = static_cast<DT *>(m->devQKVProjArray) +
                     bc->requestsInfo[i].first_token_offset_in_batch *
@@ -269,24 +292,24 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
       // padding)
       DT const *B = static_cast<DT *>(m->keyCache) + i * kt_req_block_size;
       // matrix C: qk_prods
-      // matrix C's layout: [num_new_tokens, total_tokens, num_kv_heads]
+      // matrix C's layout: [num_new_tokens, total_tokens, num_q_heads]
       // To get C, skip over QK.T products from previous requests
       DT *C = static_cast<DT *>(m->qk_prods);
       run_batched_matmul<DT>(m, m->handle.blas,
-                         CUBLAS_OP_N, CUBLAS_OP_T,
-                         m_, n, k,
-                         &alpha, 
-                         A, cublas_data_type, lda, strideA,
-                         B, cublas_data_type, ldb, strideB, 
-                         &beta,
-                         C, cublas_data_type, ldc, strideC,
-                         m->num_q_heads,
-                         compute_type,
-                         CUBLAS_GEMM_DEFAULT_TENSOR_OP,
-                         stream,
-                         1,
-                         m->num_q_heads/m->num_kv_heads,
-                         1);
+                              CUBLAS_OP_T, CUBLAS_OP_N,
+                              m_, n, k,
+                              &alpha,
+                              A, cublas_data_type, lda, strideA,
+                              B, cublas_data_type, ldb, strideB,
+                              &beta,
+                              C, cublas_data_type, ldc, strideC,
+                              m->num_q_heads,
+                              compute_type,
+                              CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+                              stream,
+                              1,
+                              m->num_q_heads/m->num_kv_heads,
+                              1);
     }
     // Step 2: Add alibi position bias to qk production
     // matrix C: qk_prods
@@ -411,20 +434,20 @@ void compute_attention_kernel_prompt(IncMultiHeadSelfAttentionMeta *m,
               (bc->requestsInfo[i].first_token_offset_in_batch) *
                   m->num_q_heads * m->vProjSize;
       run_batched_matmul<DT>(m, m->handle.blas,
-                         CUBLAS_OP_N, CUBLAS_OP_T,
-                         m_, n, k,
-                         &alpha,
-                         A, cublas_data_type, lda, strideA,
-                         B, cublas_data_type, ldb, strideB,
-                         &beta,
-                         C, cublas_data_type, ldc, strideC,
-                         m->num_q_heads,
-                         compute_type,
-                         CUBLAS_GEMM_DEFAULT_TENSOR_OP,
-                         stream,
-                         m->num_q_heads/m->num_kv_heads,
-                         1,
-                         1);
+                            CUBLAS_OP_N, CUBLAS_OP_T,
+                            m_, n, k,
+                            &alpha,
+                            A, cublas_data_type, lda, strideA,
+                            B, cublas_data_type, ldb, strideB,
+                            &beta,
+                            C, cublas_data_type, ldc, strideC,
+                            m->num_q_heads,
+                            compute_type,
+                            CUBLAS_GEMM_DEFAULT_TENSOR_OP,
+                            stream,
+                            m->num_q_heads/m->num_kv_heads,
+                            1,
+                            1);
     }
     tokens_previous_requests += num_new_tokens;
   }
@@ -1301,7 +1324,8 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
                       stream,
                       1,
                       m->num_q_heads/m->num_kv_heads,
-                      1);
+                      1,
+                      true);
     if (m->inference_debugging) {
       std::string filename =
           get_peft_dbg_folder(m, shard_id) + ".qk_prods.softmax_grad";
@@ -1475,7 +1499,8 @@ void peft_bwd_kernel(IncMultiHeadSelfAttentionMeta const *m,
                           stream,
                           1,
                           m->num_q_heads/m->num_kv_heads,
-                          1);
+                          1,
+                          true);
     
     if (m->inference_debugging) {
       std::string filename =
@@ -1815,9 +1840,10 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
          2 * qk_prod_size + attn_heads_size) *
             size_of_dt +
         complex_size * sizeof(cuFloatComplex) +
-        gqa_ptr_array_size;
+        3*gqa_ptr_array_size;
     if (enable_peft_finetuning) {
       totalSize += allocated_peft_buffer_size1 + allocated_peft_buffer_size2;
+      totalSize += 3*gqa_ptr_array_size;
     }
     if (offload) {
       // assert that we have enough reserved work space left
@@ -1866,6 +1892,11 @@ IncMultiHeadSelfAttentionMeta::IncMultiHeadSelfAttentionMeta(
       d_A_array = (void**)gpu_mem_allocator.allocate_instance_untyped(gqa_ptr_array_size);
       d_B_array = (void**)gpu_mem_allocator.allocate_instance_untyped(gqa_ptr_array_size);
       d_C_array = (void**)gpu_mem_allocator.allocate_instance_untyped(gqa_ptr_array_size);
+      if (enable_peft_finetuning) {
+        d_A_array2 = (void**)gpu_mem_allocator.allocate_instance_untyped(gqa_ptr_array_size);
+        d_B_array2 = (void**)gpu_mem_allocator.allocate_instance_untyped(gqa_ptr_array_size);
+        d_C_array2 = (void**)gpu_mem_allocator.allocate_instance_untyped(gqa_ptr_array_size);
+      }
     }
     
     token_infos = static_cast<BatchConfig::PerTokenInfo *>(

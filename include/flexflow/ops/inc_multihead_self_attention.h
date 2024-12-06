@@ -197,6 +197,7 @@ public:
 #endif
   // GQA
   void **d_A_array, **d_B_array, **d_C_array;
+  void **d_A_array2, **d_B_array2, **d_C_array2;
   size_t gqa_ptr_array_size;
   
   // PEFT specific fields
