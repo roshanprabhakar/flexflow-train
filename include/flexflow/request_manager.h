@@ -501,7 +501,9 @@ private:
   int num_running_requests = 0;
   // Available requests in the batch config
   bool request_available[BatchConfig::MAX_NUM_REQUESTS];
+  bool request_preempted[BatchConfig::MAX_NUM_REQUESTS];
   int num_available_requests = 0;
+  int num_preempted_requests = 0;
   int ssm_completed = true;
   int ssm_tree_depth = 0;
 
@@ -529,6 +531,7 @@ private:
   bool update_llm_decode_results(InferenceResult const &result);
   BatchConfig prepare_llm_prefilling_batch();
   BatchConfig prepare_decoding_batch();
+  BatchConfig prepare_decoding_batch_fcfs_slo();
   /* ---------- Incremental Decoding Helper Functions ---------- */
 
   /* ---------- Spec Decoding Helper Functions ---------- */
