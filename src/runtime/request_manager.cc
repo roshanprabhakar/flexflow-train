@@ -139,9 +139,9 @@ bool RequestManager::load_request_token_ids(Request &request) {
     request.initial_len = request.tokens.size();
 
     if (get_num_ssms() == 0) {
-      std::cout << "No small speculative model registered, using incremental "
-                   "decoding."
-                << std::endl;
+      // std::cout << "No small speculative model registered, using incremental "
+      //              "decoding."
+      //           << std::endl;
     } else {
       std::cout << "Num of SSMs: " << get_num_ssms() << std::endl;
       for (int i = 0; i < get_num_ssms(); i++) {
@@ -790,13 +790,20 @@ void RequestManager::record_decoding_req_profiling_info(BatchConfig const &old_f
   }
   RequestGuid guid = old_fwd_bc.requestsInfo[req_idx].request_guid;
   Request &request = all_requests[guid];
-  if (!old_fwd_bc.requestsInfo[req_idx].prompt_phase ||
-      old_fwd_bc.requestsInfo[req_idx].first_token_depth_in_request +
-      old_fwd_bc.requestsInfo[req_idx].num_tokens_in_batch == request.tokens.size()-1) {
+  int processed_tokens = old_fwd_bc.requestsInfo[req_idx].first_token_depth_in_request + old_fwd_bc.requestsInfo[req_idx].num_tokens_in_batch;
+  if (!old_fwd_bc.requestsInfo[req_idx].prompt_phase || processed_tokens == request.initial_len) {
     
     InferenceReqProfileInfo inf_profile_info;
     inf_profile_info.request_guid = guid;
-    inf_profile_info.decoding_step_idx = request.tokens.size()-1-request.initial_len;
+    inf_profile_info.decoding_step_idx = processed_tokens-request.initial_len;
+    // if (inf_profile_info.decoding_step_idx < 0) {
+    //   std::cout << "old_fwd_bc: " << old_fwd_bc << std::endl;
+    //   std::cout << "processed_tokens: " << processed_tokens << std::endl;
+    //   std::cout << "request.initial_len: " << request.initial_len << std::endl;
+    //   std::cout << "request idx: " << req_idx << std::endl;
+    //   std::cout << "request: " << request << std::endl;
+    //   std::cout << "request.tokens.size(): " << request.tokens.size() << std::endl;
+    // }
     assert(inf_profile_info.decoding_step_idx >= 0);
     inf_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
     inf_req_profile_infos.push_back(inf_profile_info);
@@ -806,24 +813,19 @@ void RequestManager::record_decoding_req_profiling_info(BatchConfig const &old_f
 void RequestManager::process_inf_req_progress(BatchConfig const &old_fwd_bc,
                                               InferenceResult const &result) {
   for (int i = 0; i < old_fwd_bc.num_active_tokens(); i++) {
-    size_t guid =
-        old_fwd_bc.requestsInfo[old_fwd_bc.tokensInfo[i].request_index]
-            .request_guid;
+    size_t guid = old_fwd_bc.requestsInfo[old_fwd_bc.tokensInfo[i].request_index].request_guid;
     Request &request = all_requests[guid];
     if (request.req_type == RequestType::REQ_FINETUNING) {
       // finetuning requests don't produce any new decoding token
       continue;
     }
-    if (old_fwd_bc.tokensInfo[i].abs_depth_in_request + 1 <
-        request.tokens.size()) {
-      assert(old_fwd_bc.requestsInfo[old_fwd_bc.tokensInfo[i].request_index]
-                 .prompt_phase == true);
+    if (old_fwd_bc.tokensInfo[i].abs_depth_in_request + 1 < request.tokens.size()) {
+      assert(old_fwd_bc.requestsInfo[old_fwd_bc.tokensInfo[i].request_index].prompt_phase == true);
       // This is a prompt token
       continue;
     } else {
       // This is a decoding token
-      assert(old_fwd_bc.tokensInfo[i].abs_depth_in_request + 1 ==
-             request.tokens.size());
+      assert(old_fwd_bc.tokensInfo[i].abs_depth_in_request + 1 == request.tokens.size());
       request.tokens.push_back(result.token_ids[i]);
       if (!profiling_requests[guid].first_token_time_set) {
         profiling_requests[guid].first_token_time =
@@ -855,15 +857,16 @@ void RequestManager::handle_completed_inf_req(BatchConfig const &old_bc,
   assert(request.req_type == RequestType::REQ_INFERENCE &&
          "Found misplaced finetuning request");
 
-  if (is_eos_token(request.tokens.back())) {
+  std::vector<int> output_tokens = request.tokens;
+  if (is_eos_token(output_tokens.back())) {
     // remove the EOS token
-    request.tokens.pop_back();
+    output_tokens.pop_back();
   }
-  std::string output = this->tokenizer_->Decode(request.tokens);
+  std::string output = this->tokenizer_->Decode(output_tokens);
   // Unlike Huggingface, the sentencepiece C++ library automatically
   // removes the BOS token
   if (model_type == ModelType::LLAMA && old_llama_tokenizer &&
-      request.add_special_tokens && request.tokens.at(0) == bos_token_id) {
+      request.add_special_tokens && output_tokens.at(0) == bos_token_id) {
     output = "<s> " + output;
   }
   {
@@ -877,7 +880,7 @@ void RequestManager::handle_completed_inf_req(BatchConfig const &old_bc,
   trigger_request_completion_future(request.guid);
   log_req_mgr.print("[Done] guid(%zu) final_length(%zu)",
                     old_bc.requestsInfo[i].request_guid,
-                    request.tokens.size());
+                    output_tokens.size());
   // log_req_mgr.print("Final output: %s", output.c_str());
   num_processed_requests++;
   ProfileInfo profile_info = profiling_requests[request.guid];
@@ -941,6 +944,14 @@ void RequestManager::add_continuing_inf_req_to_new_batch(
          "Found misplaced finetuning request");
   int processed_tokens = old_bc.requestsInfo[i].first_token_depth_in_request +
                          old_bc.requestsInfo[i].num_tokens_in_batch;
+  if (processed_tokens >= request.tokens.size()) {
+    std::cout << "Request has already finished" << std::endl;
+    std::cout << "old_bc:  " << old_bc << std::endl;
+    std::cout << "request: " << request << std::endl;
+    std::cout << "new_bc:  " << new_bc << std::endl;
+    std::cout << "processed_tokens: " << processed_tokens << std::endl;
+    std::cout << "request.tokens.size(): " << request.tokens.size() << std::endl;
+  }
   assert(processed_tokens < request.tokens.size() &&
          "Continuing request has already finished");
   int inference_batch_size =

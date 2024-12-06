@@ -14,27 +14,27 @@ cd "${BASH_SOURCE[0]%/*}/../build"
 # FSIZE=38000
 # ZSIZE=200000
 
-MODEL_NAME="meta-llama/Meta-Llama-3-8B"
-PEFT_MODEL_NAME="goliaro/llama-3-8b-lora-dolly"
-NGPUS=2
-NCPUS=16
-FSIZE=20000
-ZSIZE=30000
-
-# MODEL_NAME="JackFram/llama-160m"
-# PEFT_MODEL_NAME="goliaro/llama-160m-lora"
-# NGPUS=4
+# MODEL_NAME="meta-llama/Meta-Llama-3-8B"
+# PEFT_MODEL_NAME="goliaro/llama-3-8b-lora-dolly"
+# NGPUS=8
 # NCPUS=16
-# FSIZE=14000
-# ZSIZE=20000
+# FSIZE=30000
+# ZSIZE=30000
+
+MODEL_NAME="JackFram/llama-160m"
+PEFT_MODEL_NAME="goliaro/llama-160m-lora"
+NGPUS=4
+NCPUS=16
+FSIZE=30000
+ZSIZE=20000
 
 PROMPT_FILE="/usr/FlexFlow/inference/prompt/sharegpt.json"
 FINETUNING_FILE="/usr/FlexFlow/inference/prompt/finetuning_benchmarking.json"
 OUTPUT_FOLDER="/usr/FlexFlow/inference/output"
 # OUTPUT_FILE="/usr/FlexFlow/inference/output/test.json"
 LOG_FILE="/usr/FlexFlow/inference/output/test.log"
-MAX_SEQ_LEN=2048
-MAX_TOKENS_PER_BATCH=500
+MAX_SEQ_LEN=2900
+MAX_TOKENS_PER_BATCH=512
 BATCH_SIZE=8
 MAX_TRAINING_STEPS=1000
 
@@ -58,7 +58,7 @@ export NCCL_DEBUG_FILE=/usr/FlexFlow/inference/output/nccl2.log
 
 export LEGION_BACKTRACE=1
 # export FF_DEBG_NO_WEIGHTS=1
-export CUDA_VISIBLE_DEVICES=1,2,3,4
+# export CUDA_VISIBLE_DEVICES=1,2,3,4
 
 # ./inference/incr_decoding/incr_decoding \
 #     -ll:cpu $NCPUS -ll:gpu $NGPUS -ll:util $NCPUS \
