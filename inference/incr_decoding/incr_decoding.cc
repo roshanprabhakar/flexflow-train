@@ -61,7 +61,8 @@ void parse_input_args(char **argv,
                       int &replica,
                       double &request_per_second,
                       std::string &emission_file_path,
-                      bool &add_special_tokens) {
+                      bool &add_special_tokens,
+                      bool &fcfs_slo) {
   for (int i = 1; i < argc; i++) {
     // llm model type
     if (!strcmp(argv[i], "-llm-model")) {
@@ -180,6 +181,10 @@ void parse_input_args(char **argv,
       add_special_tokens = false;
       continue;
     }
+    if (!strcmp(argv[i], "--fcfs-slo")) {
+      fcfs_slo = true;
+      continue;
+    }
   }
   if (paths.cache_folder_path.empty()) {
     char const *ff_cache_path = std::getenv("FF_CACHE_PATH");
@@ -226,6 +231,7 @@ void FlexFlow::top_level_task(Task const *task,
   int replica = 1;
   double request_per_second = 1.0;
   bool add_special_tokens = true;
+  bool fcfs_slo = false;
   std::string emission_file_path;
 
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
@@ -256,7 +262,8 @@ void FlexFlow::top_level_task(Task const *task,
                    replica,
                    request_per_second,
                    emission_file_path,
-                   add_special_tokens);
+                   add_special_tokens,
+                   fcfs_slo);
   if (max_tokens_per_ssm_batch == -1) {
     max_tokens_per_ssm_batch = max_tokens_per_batch;
   }
@@ -351,6 +358,7 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_max_tree_width(16);
   rm->set_verbose(verbose);
   rm->set_streaming_cache(streaming_cache);
+  rm->set_fcfs_slo(fcfs_slo);
   rm->register_tokenizer(
       model_type, bos_token_id, eos_token_ids, tokenizer_filepath);
   rm->register_output_filepath(file_paths.output_file_path);

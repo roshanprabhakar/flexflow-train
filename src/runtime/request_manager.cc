@@ -346,6 +346,10 @@ void RequestManager::set_equal_schedule(bool equal_schedule_) {
   equal_schedule = equal_schedule_;
 }
 
+void RequestManager::set_fcfs_slo(bool fcfs_slo_) {
+  fcfs_slo = fcfs_slo_;
+}
+
 bool RequestManager::get_spec_infer_old_version() {
   return spec_infer_old_version;
 }
@@ -356,6 +360,10 @@ bool RequestManager::get_greedy_schedule() {
 
 bool RequestManager::get_equal_schedule() {
   return equal_schedule;
+}
+
+bool RequestManager::get_fcfs_slo() {
+  return fcfs_slo;
 }
 
 inline double RequestManager::get_slo_constraint(Request &request) {

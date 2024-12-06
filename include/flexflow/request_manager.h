@@ -130,6 +130,7 @@ struct Request {
     RUNNING = 102,   // running inference
     COMPLETED = 103, // finished and verified
     FINISHING = 104, // finishing request, but not yet verified
+    PREEMPTED = 105, // preempted request
   };
   BatchConfig::RequestGuid guid;
   int batch_index = -1;
@@ -346,9 +347,11 @@ public:
   void set_spec_infer_old_version(bool spec_infer_old_version);
   void set_greedy_schedule(bool greedy_schedule);
   void set_equal_schedule(bool equal_schedule);
+  void set_fcfs_slo(bool fcfs_slo);
   bool get_spec_infer_old_version();
   bool get_greedy_schedule();
   bool get_equal_schedule();
+  bool get_fcfs_slo();
   inline double get_slo_constraint(Request &request);
   double get_request_expected_latency(Request &request);
   Request &get_request_with_guid(RequestGuid guid);
@@ -465,6 +468,7 @@ private:
   bool spec_infer_old_version = false;
   bool greedy_schedule = false;
   bool equal_schedule = false;
+  bool fcfs_slo = false;
 
   std::unique_ptr<Tokenizer> tokenizer_;
   bool verbose;
