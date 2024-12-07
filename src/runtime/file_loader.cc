@@ -839,7 +839,7 @@ void FileDataLoader::load_single_weight_tensor(FFModel *ff,
       weight_filename += (weight_idx == 0)
                              ? ".attn_bias"
                              : ((weight_idx == 1) ? ".weight" : ".bias");
-      std::cout << "Loading weight file " << weight_filename << "in load_single_weight_tensor, OP_ADD_BIAS_RESIDUAL_LAYERNORM " << std::endl;
+      std::cout << "Loading weight file " << weight_filename << " in load_single_weight_tensor, OP_ADD_BIAS_RESIDUAL_LAYERNORM " << std::endl;
       std::string weight_filepath =
           join_path({weights_folder, weight_filename});
       load_from_file(data, volume, weight_filepath);
@@ -850,7 +850,7 @@ void FileDataLoader::load_single_weight_tensor(FFModel *ff,
       if (weight_filename != "embed_tokens_weight_lm_head") {
         weight_filename += weight_idx == 0 ? ".weight" : ".bias";
       }
-      std::cout << "Loading weight file " << weight_filename << "in load_single_weight_tensor, default op" << std::endl;
+      std::cout << "Loading weight file " << weight_filename << " in load_single_weight_tensor, default op" << std::endl;
       std::string weight_filepath =
           join_path({weights_folder, weight_filename});
       load_from_file(data, volume, weight_filepath);

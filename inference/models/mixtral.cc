@@ -148,7 +148,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         nullptr,
         REG_MODE_NONE,
         0.0f,
-        std::string("layers." + std::to_string(i) + ".self_attn_o_proj")
+        std::string("layers." + std::to_string(i) + ".self_attn.o_proj")
             .c_str());
 
     // step 2: SILU activaion
