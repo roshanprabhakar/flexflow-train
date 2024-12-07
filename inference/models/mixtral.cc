@@ -251,7 +251,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
 //                                        std::to_string(expert_idx) + "ssm")
 //                                .c_str());
 
-  Tensor mlp_out = ff.dense(multi,
+  mlp_out = ff.dense(multi,
                        mixtral_config.hidden_size,
                        AC_MODE_NONE,
                        false,
@@ -264,12 +264,6 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                        std::string("layers_" + std::to_string(i) +
                                    "_block_sparse_moe_experts_0_w2")
                            .c_str());
-
-
-
-
-
-
 
   }
   // final normalization and linear
