@@ -5,14 +5,18 @@ set -e
 # Cd into directory holding this script
 cd "${BASH_SOURCE[0]%/*}/../build"
 
+reset
+# ../config/config.linux
+# make -j 
+source ./set_python_envs.sh
 
-# MODEL_NAME="meta-llama/Llama-2-70b-hf"
-# MODEL_NAME="meta-llama/Llama-3.1-70B-Instruct"
-# PEFT_MODEL_NAME="goliaro/llama-2-70b-hf-lora"
-# NGPUS=8
-# NCPUS=16
-# FSIZE=38000
-# ZSIZE=200000
+
+MODEL_NAME="meta-llama/Llama-3.1-70B"
+PEFT_MODEL_NAME="goliaro/llama3.1-70b-lora"
+NGPUS=4
+NCPUS=16
+FSIZE=76000
+ZSIZE=200000
 
 # MODEL_NAME="meta-llama/Meta-Llama-3-8B"
 # PEFT_MODEL_NAME="goliaro/llama-3-8b-lora-dolly"
@@ -28,7 +32,7 @@ cd "${BASH_SOURCE[0]%/*}/../build"
 # FSIZE=30000
 # ZSIZE=20000
 
-OUTPUT_FOLDER="/usr/FlexFlow/inference/output/overhead_test"
+OUTPUT_FOLDER="../inference/output/overhead_test"
 MAX_SEQ_LEN=2048
 BATCH_SIZE=8
 
@@ -40,24 +44,21 @@ max_tokens_per_batch_values=(
 
 mkdir -p $OUTPUT_FOLDER
 
-reset
-make -j install
 
-python -c "from huggingface_hub import snapshot_download; \
-    snapshot_download(repo_id=\"${MODEL_NAME}\", allow_patterns=\"*.safetensors\", max_workers=30)"
-python ../inference/utils/download_hf_model.py $MODEL_NAME
-python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME
+# python -c "from huggingface_hub import snapshot_download; \
+#     snapshot_download(repo_id=\"${MODEL_NAME}\", allow_patterns=\"*.safetensors\", max_workers=30)"
+# python ../inference/utils/download_hf_model.py $MODEL_NAME --half-precision-only
+# python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME --half-precision-only
  
 # export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_FILE=/usr/FlexFlow/inference/output/nccl2.log
 # export LEGION_BACKTRACE=1
 # export CUDA_VISIBLE_DEVICES=1,2,3,4
 
-rm $LOG_FILE || true
-
-for i in "${!max_tokens_per_batch[@]}"; do
+for i in "${!max_tokens_per_batch_values[@]}"; do
     MAX_TOKENS_PER_BATCH=${max_tokens_per_batch_values[$i]}
     LOG_FILE="${OUTPUT_FOLDER}/test_${MAX_TOKENS_PER_BATCH}_tokens_per_batch.log"
+    rm $LOG_FILE || true
     ./inference/peft/overhead_test \
         -ll:cpu $NCPUS -ll:gpu $NGPUS -ll:util $NCPUS \
         -ll:fsize $FSIZE -ll:zsize $ZSIZE \
