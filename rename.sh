@@ -48,3 +48,15 @@ for file in "$TARGET_DIR"/*proj_*; do
     mv "$file" "${file//proj_/proj.}"
   fi
 done
+
+for file in "$TARGET_DIR"/*_self*; do
+  if [[ -f "$file" ]]; then
+    mv "$file" "${file//_self/.self}"
+  fi
+done
+
+for file in "$TARGET_DIR"/*attn_*; do
+  if [[ -f "$file" ]]; then
+    mv "$file" "${file//attn_/attn.}"
+  fi
+done
