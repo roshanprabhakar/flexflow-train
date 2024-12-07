@@ -104,7 +104,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
           nullptr,       // ?
           REG_MODE_NONE, // no regularization
           0.0f,          // no dropout
-          std::string("layers." + std::to_string(i) + ".self_attn_qkv_proj")
+          std::string("layers." + std::to_string(i) + ".self_attn.qkv_proj")
               .c_str());
 
     Tensor mha;
