@@ -451,7 +451,7 @@ void load_attention_weights_quantized(char *ptr,
     if (!in.good()) {
       std::cout << "Could not open file: " << weight_filepath << std::endl;
     }
-    assert(in.good() && "incorrect weight file path");
+    assert(in.good() && "incorrect weight file path (QKVO)");
     std::vector<char> host_array(partial_size);
     size_t loaded_data_size = sizeof(char) * partial_size;
     in.seekg(0, in.end);
@@ -505,7 +505,7 @@ void load_attention_weights_quantized(char *ptr,
       if (!in.good()) {
         std::cout << "Could not open file: " << meta_file << std::endl;
       }
-      assert(in.good() && "incorrect weight file path");
+      assert(in.good() && "incorrect weight file path (scale and offset)");
 
       if (use_full_precision) {
         // float
