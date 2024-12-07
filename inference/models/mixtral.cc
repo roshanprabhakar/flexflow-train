@@ -225,8 +225,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                        REG_MODE_NONE,
                        0.0f,
                        std::string("layers_" + std::to_string(i) +
-                                   "_block_sparse_moe_experts_" +
-                                   std::to_string(expert_idx) + "_w1")
+                                   "_block_sparse_moe_experts_0_w1")
                            .c_str());
 
   	Tensor w3 = ff.dense(ff_norm,
