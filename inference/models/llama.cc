@@ -109,8 +109,6 @@ void LLAMA::create_llama_model(FFModel &ff,
 
     Tensor mha;
     switch (mode) {
-
-
       case INC_DECODING_MODE: {
         mha = ff.inc_multiquery_self_attention(
             qkv_proj,
