@@ -42,3 +42,9 @@ for file in "$TARGET_DIR"/*layers_*; do
     mv "$file" "${file//layers_/layers.}"
   fi
 done
+
+for file in "$TARGET_DIR"/*proj_*; do
+  if [[ -f "$file" ]]; then
+    mv "$file" "${file//proj_/proj.}"
+  fi
+done
