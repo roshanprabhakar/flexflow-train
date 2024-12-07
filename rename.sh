@@ -36,3 +36,9 @@ for file in "$TARGET_DIR"/*_block*; do
     mv "$file" "${file//_block/.block}"
   fi
 done
+
+for file in "$TARGET_DIR"/*layers_*; do
+  if [[ -f "$file" ]]; then
+    mv "$file" "${file//layers_/layers.}"
+  fi
+done
