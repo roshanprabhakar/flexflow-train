@@ -47,7 +47,7 @@ Tensor FFModel::aggregate(
                         OP_AGGREGATE,
                         DT_FLOAT,
                         name,
-                        n + 4 /*inputs*/,
+                        n + 4 /*num inputs*/,
                         0 /*weights*/,
                         1 /*outputs*/,
                         inputs);
