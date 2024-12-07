@@ -21,18 +21,22 @@ cd "${BASH_SOURCE[0]%/*}/../build"
 # FSIZE=30000
 # ZSIZE=30000
 
-MODEL_NAME="JackFram/llama-160m"
-PEFT_MODEL_NAME="goliaro/llama-160m-lora"
-NGPUS=4
-NCPUS=16
-FSIZE=30000
-ZSIZE=20000
+# MODEL_NAME="JackFram/llama-160m"
+# PEFT_MODEL_NAME="goliaro/llama-160m-lora"
+# NGPUS=4
+# NCPUS=16
+# FSIZE=30000
+# ZSIZE=20000
 
 OUTPUT_FOLDER="/usr/FlexFlow/inference/output/overhead_test"
-LOG_FILE="${OUTPUT_FOLDER}/test.log"
-MAX_SEQ_LEN=2900
-MAX_TOKENS_PER_BATCH=512
+MAX_SEQ_LEN=2048
 BATCH_SIZE=8
+
+max_tokens_per_batch_values=(
+    128
+    256
+    512
+)
 
 mkdir -p $OUTPUT_FOLDER
 
@@ -47,18 +51,22 @@ python ../inference/utils/download_peft_model.py $PEFT_MODEL_NAME
 # export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_FILE=/usr/FlexFlow/inference/output/nccl2.log
 # export LEGION_BACKTRACE=1
-export CUDA_VISIBLE_DEVICES=1,2,3,4
+# export CUDA_VISIBLE_DEVICES=1,2,3,4
 
-rm $LOG_FILE $OUTPUT_FILE || true
+rm $LOG_FILE || true
 
-./inference/peft/overhead_test \
-    -ll:cpu $NCPUS -ll:gpu $NGPUS -ll:util $NCPUS \
-    -ll:fsize $FSIZE -ll:zsize $ZSIZE \
-    -llm-model $MODEL_NAME --fusion  \
-    -enable-peft -peft-model $PEFT_MODEL_NAME \
-    -tensor-parallelism-degree $NGPUS \
-    -output-folder $OUTPUT_FOLDER \
-    --max-requests-per-batch $BATCH_SIZE \
-    --max-tokens-per-batch $MAX_TOKENS_PER_BATCH \
-    --max-sequence-length $MAX_SEQ_LEN \
-    2>&1 | tee $LOG_FILE
+for i in "${!max_tokens_per_batch[@]}"; do
+    MAX_TOKENS_PER_BATCH=${max_tokens_per_batch_values[$i]}
+    LOG_FILE="${OUTPUT_FOLDER}/test_${MAX_TOKENS_PER_BATCH}_tokens_per_batch.log"
+    ./inference/peft/overhead_test \
+        -ll:cpu $NCPUS -ll:gpu $NGPUS -ll:util $NCPUS \
+        -ll:fsize $FSIZE -ll:zsize $ZSIZE \
+        -llm-model $MODEL_NAME --fusion  \
+        -enable-peft -peft-model $PEFT_MODEL_NAME \
+        -tensor-parallelism-degree $NGPUS \
+        -output-folder $OUTPUT_FOLDER \
+        --max-requests-per-batch $BATCH_SIZE \
+        --max-tokens-per-batch $MAX_TOKENS_PER_BATCH \
+        --max-sequence-length $MAX_SEQ_LEN \
+        2>&1 | tee $LOG_FILE
+done
