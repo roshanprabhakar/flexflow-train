@@ -165,6 +165,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
             .c_str());
     token = token_ff_norm[0];
     Tensor ff_norm = token_ff_norm[1];
+
     // MoE
 	Tensor w1 = ff.dense(
         			   ff_norm,
