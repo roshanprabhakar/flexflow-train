@@ -264,7 +264,7 @@ std::ostream &operator<<(std::ostream &os, Request const &req) {
   return os;
 }
 
-bool RequestManager::inference_finished = false;
+// bool RequestManager::inference_finished = false;
 
 RequestManager::RequestManager()
     : request_manager_status(INITIALIZED), verbose(false),
@@ -370,6 +370,10 @@ void RequestManager::set_enable_peft_finetuning(bool enable_peft_finetuning_) {
 
 void RequestManager::set_inference_finished(bool finished) {
   inference_finished = finished;
+  if (finished == false && pending_peft_request_queue.size() > 0) {
+    std::cout << "Error: Inference finished but there are pending PEFT requests in the queue. Marking these requests as completed now." << std::endl;
+    assert(false);
+  }
 }
 
 void RequestManager::register_tokenizer(ModelType type,
@@ -1416,15 +1420,20 @@ void RequestManager::record_step_profile_info(BatchConfig const &old_bc) {
   step_profile_info.step_idx = step_idx++;
   step_profile_info.timestamp = Realm::Clock::current_time_in_microseconds();
   // set is_warmup true if all requets in the batch are warmup requests, false otherwise
-  step_profile_info.is_warmup_step = true;
+  step_profile_info.is_warmup_step = false;
+  bool found_one_uncompleted_request = false;
   for (int i = 0; i < BatchConfig::max_requests_per_batch(); i++) {
-    if (!old_bc.request_completed[i] && !all_requests[old_bc.requestsInfo[i].request_guid].warmup) {
-      step_profile_info.is_warmup_step = false;
-      break;
+    if (!old_bc.request_completed[i]) {
+      if (!found_one_uncompleted_request) {
+        found_one_uncompleted_request = true;
+        step_profile_info.is_warmup_step = all_requests[old_bc.requestsInfo[i].request_guid].warmup;
+      } else {
+        assert(step_profile_info.is_warmup_step == all_requests[old_bc.requestsInfo[i].request_guid].warmup && "Inconsistent warmup status in the batch");
+      }
     }
   }
-  step_profile_info.num_inference_requests = old_bc.num_active_requests();
-  step_profile_info.num_prefilling_tokens = old_bc.num_tokens - old_bc.num_generation_tokens;
+  step_profile_info.num_inference_requests = old_bc.num_active_requests() - old_bc.num_finetuning_fwd_requests() - old_bc.num_finetuning_bwd_requests();
+  step_profile_info.num_prefilling_tokens = old_bc.num_tokens - old_bc.num_generation_tokens - old_bc.num_finetuning_fwd_tokens();
   step_profile_info.num_decoding_tokens = old_bc.num_generation_tokens;
   step_profile_info.num_finetuning_fwd_tokens = old_bc.num_finetuning_fwd_tokens();
   step_profile_info.num_finetuning_bwd_tokens = old_bc.num_finetuning_bwd_tokens();

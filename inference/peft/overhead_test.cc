@@ -191,6 +191,7 @@ std::vector<Request> make_requests(int max_requests_per_batch,
   finetuning_req.max_length = finetuning_entry_size;
   finetuning_req.peft_model_id = (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
   finetuning_req.peft_finetuning_info.max_training_steps = 1;
+  finetuning_req.warmup = false;
   requests.push_back(finetuning_req);
   return requests;
 }
@@ -418,6 +419,7 @@ void FlexFlow::top_level_task(Task const *task,
                                                               tot_num_layers_in_model,
                                                               num_layers_per_finetuning_step_linspace_size);
     for (int max_fwd_tokens_per_batch : max_fwd_tokens_per_batch_array) {
+      rm->set_max_fwd_finetuning_tokens_per_batch(max_fwd_tokens_per_batch);
       for (int num_bwd_layers_per_step : num_bwd_layers_per_step_array) {
         rm->set_num_layers_per_finetuning_step(num_bwd_layers_per_step);
         std::cout << "Benchmarking overhead of " << max_fwd_tokens_per_batch << " fwd tokens and " << num_bwd_layers_per_step << " bwd layers per step" << std::endl;

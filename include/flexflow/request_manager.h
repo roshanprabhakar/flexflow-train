@@ -189,7 +189,7 @@ public:
   void set_max_finetuning_sequence_length(int max_seq_length);
   void push_spec_infer_tree_width(int tree_width);
   void set_enable_peft_finetuning(bool enable_peft_finetuning_);
-  static void set_inference_finished(bool finished = true);
+  void set_inference_finished(bool finished = true);
   int register_ssm_model(FFModel *model);
   void register_tokenizer(ModelType model_type,
                           int bos_token_id,
@@ -395,7 +395,7 @@ private:
   int max_concurrent_adapters = 0;
   // peft benchmarking
   bool enable_peft_finetuning = false;
-  static bool inference_finished;
+  bool inference_finished = false;
   int num_transformer_layers = 0;
   int num_layers_per_finetuning_step = 0;
 
