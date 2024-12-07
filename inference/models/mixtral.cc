@@ -272,7 +272,9 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
 
     aggregate_inputs[0] = topk_values;
     aggregate_inputs[1] = topk_indices;
-    aggregate_inputs[2] = aggregate_inputs[3] = nullptr;
+    aggregate_inputs[2] = topk_values; // TODO this is a tmp fix
+    aggregate_inputs[3] = gate;  // TODO this is a tmp fix
+//    aggregate_inputs[2] = aggregate_inputs[3] = nullptr;
     mlp_out = ff.aggregate(aggregate_inputs,
                            mixtral_config.num_local_experts,
                            0.0f,
