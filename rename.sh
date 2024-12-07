@@ -13,13 +13,26 @@ done
 # Loop through files containing "_input"
 for file in "$TARGET_DIR"/*_input*; do
   if [[ -f "$file" ]]; then
-    mv "$file" "${file//_input/_input}"
+    mv "$file" "${file//_input/.input}"
   fi
 done
 
 # Loop through files containing ".mlp."
-for file in "$TARGET_DIR"/*.mlp.*; do
+for file in "$TARGET_DIR"/*_mlp_*; do
   if [[ -f "$file" ]]; then
-    mv "$file" "${file//.mlp./_mlp_}"
+    mv "$file" "${file//.mlp./.mlp.}"
+  fi
+done
+
+for file in "$TARGET_DIR"/*_post*; do
+  if [[ -f "$file" ]]; then
+    mv "$file" "${file//_post/.post}"
+  fi
+done
+
+
+for file in "$TARGET_DIR"/*_block*; do
+  if [[ -f "$file" ]]; then
+    mv "$file" "${file//_block/.block}"
   fi
 done
