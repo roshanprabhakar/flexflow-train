@@ -75,7 +75,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
           mixtral_config.rms_norm_eps,
           mixtral_config.hidden_size,
           DT_NONE,
-          std::string("layers_" + std::to_string(i) + "_input_layernorm")
+          std::string("layer." + std::to_string(i) + ".input_layernorm")
               .c_str());
     } else {
       ff.residual_rms_norm(
@@ -86,7 +86,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
           mixtral_config.hidden_size,
           false, // inplace_residual
           DT_NONE,
-          std::string("layers_" + std::to_string(i) + "_input_layernorm")
+          std::string("layer." + std::to_string(i) + ".input_layernorm")
               .c_str());
       token = token_att_norm[0];
       att_norm = token_att_norm[1];
@@ -104,7 +104,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
           nullptr,       // ?
           REG_MODE_NONE, // no regularization
           0.0f,          // no dropout
-          std::string("layers_" + std::to_string(i) + "_self_attn_qkv_proj")
+          std::string("layer." + std::to_string(i) + ".self_attn_qkv_proj")
               .c_str());
 
     Tensor mha;
@@ -126,7 +126,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
             1.0f,  /*scaling factor*/
             true,  /*qk_prod_scaling*/
             false, /*position_bias*/
-            std::string("layers_" + std::to_string(i) + "_self_attn")
+            std::string("layer." + std::to_string(i) + ".self_attn")
                 .c_str() /*name*/
         );
         break;
@@ -148,7 +148,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         nullptr,
         REG_MODE_NONE,
         0.0f,
-        std::string("layers_" + std::to_string(i) + "_self_attn_o_proj")
+        std::string("layer." + std::to_string(i) + ".self_attn_o_proj")
             .c_str());
 
     // step 2: SILU activaion
@@ -161,7 +161,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         mixtral_config.hidden_size,
         false, // inplace_residual
         DT_NONE,
-        std::string("layers_" + std::to_string(i) + "_post_attention_layernorm")
+        std::string("layer." + std::to_string(i) + ".post_attention_layernorm")
             .c_str());
     token = token_ff_norm[0];
     Tensor ff_norm = token_ff_norm[1];
@@ -177,7 +177,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                        nullptr,
                        REG_MODE_NONE,
                        0.0f,
-                       std::string("layers_" + std::to_string(i) + "_block_sparse_moe_experts_0_w1").c_str());
+                       std::string("layer." + std::to_string(i) + ".block_sparse_moe_experts_0_w1").c_str());
 
   	Tensor w3 = ff.dense(
             		   ff_norm,
@@ -190,9 +190,9 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                        nullptr,
                        REG_MODE_NONE,
                        0.0f,
-                       std::string("layers_" + std::to_string(i) + "_block_sparse_moe_experts_0_w3").c_str());
+                       std::string("layer." + std::to_string(i) + ".block_sparse_moe_experts_0_w3").c_str());
 
-  Tensor multi = ff.sigmoid_silu_multi(w1, w3); //DT_NONE,std::string("layers_" + std::to_string(i) +"_block_sparse_moe_experts_" +std::to_string(expert_idx) + "ssm").c_str());
+  Tensor multi = ff.sigmoid_silu_multi(w1, w3); //DT_NONE,std::string("layer." + std::to_string(i) +".block_sparse_moe_experts." +std::to_string(expert_idx) + "ssm").c_str());
 
   mlp_out = ff.dense(
       				   multi,
@@ -205,7 +205,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                        nullptr,
                        REG_MODE_NONE,
                        0.0f,
-                       std::string("layers_" + std::to_string(i) + "_block_sparse_moe_experts_0_w2").c_str());
+                       std::string("layer." + std::to_string(i) + ".block_sparse_moe_experts_0_w2").c_str());
   }
   // final normalization and linear
   Tensor final_rms_norm_output[2] = {nullptr, nullptr};
