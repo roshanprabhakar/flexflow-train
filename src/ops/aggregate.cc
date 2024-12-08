@@ -104,7 +104,7 @@ bool operator==(AggregateParams const &lhs, AggregateParams const &rhs) {
   return lhs.n == rhs.n && lhs.lambda_bal == rhs.lambda_bal;
 }
 
-// This runs after mixtral.cc is ran and prompt is tokenized
+// This runs after mixtral.cc is ran and the prompt is tokenized
 Aggregate::Aggregate(FFModel &model,
                      ParallelTensor const *_inputs,
                      int _n,
@@ -114,9 +114,9 @@ Aggregate::Aggregate(FFModel &model,
          OP_AGGREGATE,
          DT_FLOAT,
          name,
-         _n + 4 /*inputs*/,
-         0 /*weights*/,
-         1 /*outputs*/,
+         _n + 4 /*numInputs*/,
+         0 /*numWeights*/,
+         1 /*numOutputs*/,
          _inputs),
       n(_n), lambda_bal(_lambda_bal) {
   // FIXME: For now, set upper limits Better: Do as follows, but memory is
@@ -130,9 +130,10 @@ Aggregate::Aggregate(FFModel &model,
 
   assert(n + 4 == numInputs);
   assert(n > 0);
-  printf("In Aggregate::Aggregate, inputs[0]->num_dims = %d\n", inputs[0]->num_dims);
-  printf("In Aggregate::Aggregate, inputs[0] dims are %d %d %d %d\n", inputs[0]->dims[0].size, inputs[0]->dims[1].size, inputs[0]->dims[2].size, inputs[0]->dims[3].size);
-  assert(inputs[0]->num_dims >= 2 + 1);
+  //printf("In Aggregate::Aggregate, inputs[0]->num_dims = %d\n", inputs[0]->num_dims);
+  //printf("In Aggregate::Aggregate, inputs[0] dims are %d %d %d %d\n", inputs[0]->dims[0].size, inputs[0]->dims[1].size, inputs[0]->dims[2].size, inputs[0]->dims[3].size);
+  // TODO the inequalities below used to be equalities, not sure it's a good idea to switch to inequalities
+  assert(inputs[0]->num_dims >= 2 + 1);  // inputs[0] has dims (experts_per_token, 1, 128, 1) (confirmed dim count)
   assert(inputs[1]->num_dims >= 2 + 1);
   assert(inputs[2]->num_dims >= 2 + 1);
   assert(inputs[3]->num_dims >= 2 + 1);
