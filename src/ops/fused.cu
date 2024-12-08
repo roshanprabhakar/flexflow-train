@@ -679,6 +679,10 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
   if (bc->num_finetuning_bwd_tokens() == 0) {
     return false;
   }
+  
+  // printf("PEFT BWD task. Num bwd tokens: %d, last layer: %d, first layer: %d\n", bc->num_finetuning_bwd_tokens(),
+  //                   bc->requestsInfo[bc->finetuning_request_index()].peft_bwd_last_layer,
+  //        bc->requestsInfo[bc->finetuning_request_index()].peft_bwd_first_layer);
 
   assert(metas->numOperators == fused->numOperators);
   assert(regions.size() == task->regions.size());
@@ -799,38 +803,6 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
 #endif
     }
     switch (fused->op_op_type[op]) {
-      case OP_CONCAT: {
-        assert(fused->op_num_weights[op] == 0);
-        assert(fused->op_num_outputs[op] == 1);
-        // TODO: implement this
-        assert(false);
-        // ConcatMeta *m = (ConcatMeta *)metas->meta[op];
-        // int num_inputs = fused->op_num_inputs[op];
-        // Kernels::Concat::peft_bwd_kernel_wrapper(m,
-        //                                          my_output_accessor[0],
-        //                                          my_input_accessor,
-        //                                         num_inputs,
-        //                                          m->legion_axis);
-        break;
-      }
-      case OP_BATCHNORM: {
-        assert(fused->op_num_inputs[op] == 1);
-        assert(fused->op_num_outputs[op] == 1);
-        assert(my_input_grad_accessor[0].domain.get_dim() == 5);
-        assert(my_output_grad_accessor[0].domain.get_dim() == 5);
-        assert(my_weight_accessor[0].domain.get_dim() == 2);
-        assert(my_weight_accessor[1].domain.get_dim() == 2);
-        // TODO: implement this
-        assert(false);
-        // BatchNormMeta *m = (BatchNormMeta *)metas->meta[op];
-        // BatchNorm::peft_bwd_kernel_kernel(
-        //     m,
-        //     my_input_accessor[0].get_float_ptr(),
-        //     my_output_accessor[0].get_float_ptr(),
-        //     my_weight_accessor[0].get_float_ptr(),
-        //     my_weight_accessor[1].get_float_ptr());
-        break;
-      }
       case OP_LINEAR: {
         assert(fused->op_num_inputs[op] == 1);
         assert(fused->op_num_outputs[op] == 1);
@@ -843,9 +815,17 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         assert(my_input_grad_accessor[0].domain.get_volume() ==
                in_dim * batch_size);
         LinearMeta *m = (LinearMeta *)metas->meta[op];
+        // std::string opname = Linear::get_op_name_without_uid(m);
+        // printf("\t PEFT applies to LINEAR layer %s with %d PEFT tokens: %s\n",
+        //        opname.c_str(),
+        //        bc->num_finetuning_bwd_tokens(),
+        //        bc->peft_bwd_applies_to_this_layer(
+        //            m->layer_guid.transformer_layer_id)
+        //            ? "YES"
+        //            : "NO");
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         assert(m->input_type[0] == my_input_grad_accessor[0].data_type);
         assert(m->input_type[0] == my_output_grad_accessor[0].data_type);
@@ -877,7 +857,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         LoraLinearMeta *m = (LoraLinearMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         assert(m->input_type[0] == my_input_grad_accessor[0].data_type);
         assert(m->output_type[0] == my_output_grad_accessor[0].data_type);
@@ -894,46 +874,6 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
             my_input_grad_accessor[0],
             my_output_grad_accessor[0]);
         Kernels::LoraLinear::save_peft_weights_if_needed(m, bc, in_dim, out_dim, shard_id);
-        break;
-      }
-      case OP_BATCHMATMUL: {
-        assert(fused->op_num_inputs[op] == 2);
-        assert(fused->op_num_weights[op] == 0);
-        assert(fused->op_num_outputs[op] == 1);
-        Domain out_domain = my_output_grad_accessor[0].domain;
-        Domain a_domain = my_input_grad_accessor[0].domain;
-        Domain b_domain = my_input_grad_accessor[1].domain;
-        int m = b_domain.hi()[0] - b_domain.lo()[0] + 1;
-        assert(m == out_domain.hi()[0] - out_domain.lo()[0] + 1);
-        int n = a_domain.hi()[1] - a_domain.lo()[1] + 1;
-        assert(n == out_domain.hi()[1] - out_domain.lo()[1] + 1);
-        int k = a_domain.hi()[0] - a_domain.lo()[0] + 1;
-        assert(k == b_domain.hi()[1] - b_domain.lo()[1] + 1);
-        assert(a_domain.get_dim() == b_domain.get_dim());
-        assert(a_domain.get_dim() == out_domain.get_dim());
-        int batch = 1;
-        for (int i = 2; i < a_domain.get_dim(); i++) {
-          int dim_size = a_domain.hi()[i] - a_domain.lo()[i] + 1;
-          assert(dim_size == b_domain.hi()[i] - b_domain.lo()[i] + 1);
-          assert(dim_size == out_domain.hi()[i] - out_domain.lo()[i] + 1);
-          batch *= dim_size;
-        }
-        // TODO: implement me
-        assert(false);
-        // BatchMatmulMeta *meta = (BatchMatmulMeta *)metas->meta[op];
-        // Kernels::BatchMatmul::backward_kernel_wrapper(
-        //     meta,
-        //     my_output_accessor[0].get_float_ptr(),
-        //     my_input_accessor[0].get_float_ptr(),
-        //     my_input_accessor[1].get_float_ptr(),
-        //     (float const *)nullptr,
-        //     m,
-        //     n,
-        //     k,
-        //     batch,
-        //     meta->a_seq_length_dim,
-        //     meta->b_seq_length_dim,
-        //     fused->iter_config.seq_length);
         break;
       }
       case OP_EW_ADD:
@@ -961,37 +901,6 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         // so we do nothing for embedding
         break;
       }
-      case OP_GELU:
-      case OP_RELU:
-      case OP_SIGMOID:
-      case OP_TANH:
-      case OP_ELU:
-      case OP_SCALAR_TRUE_DIV: {
-        assert(fused->op_num_inputs[op] == 1);
-        assert(fused->op_num_weights[op] == 0);
-        assert(fused->op_num_outputs[op] == 1);
-        assert(my_input_grad_accessor[0].domain ==
-               my_output_grad_accessor[0].domain);
-        // TODO: implement me
-        assert(false);
-        // ElementUnaryMeta *m = (ElementUnaryMeta *)metas->meta[op];
-        //   if (m->data_type == DT_HALF) {
-        //     ElementUnary::forward_kernel_wrapper(
-        //         m,
-        //         my_input_accessor[0].get_half_ptr(),
-        //         my_output_accessor[0].get_half_ptr(),
-        //         my_input_accessor[0].domain.get_volume());
-        //   } else if (m->data_type == DT_FLOAT) {
-        //     ElementUnary::forward_kernel_wrapper(
-        //         m,
-        //         my_input_accessor[0].get_float_ptr(),
-        //         my_output_accessor[0].get_float_ptr(),
-        //         my_input_accessor[0].domain.get_volume());
-        //   } else {
-        //     assert(false && "Unsupported data type in ElementUnary forward");
-        //   }
-        break;
-      }
       case OP_RMS_NORM: {
         assert(fused->op_num_inputs[op] == 1);
         assert(fused->op_num_weights[op] == 1);
@@ -999,7 +908,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         RMSNormMeta const *m = (RMSNormMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         Kernels::RMSNorm::peft_bwd_kernel_wrapper(m,
                                                   bc,
@@ -1015,7 +924,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         ResidualRMSNormMeta const *m = (ResidualRMSNormMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         Kernels::ResidualRMSNorm::peft_bwd_kernel_wrapper(
             m,
@@ -1034,7 +943,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
             (IncMultiHeadSelfAttentionMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         assert(fused->op_num_weights[op] == 0);
         GenericTensorAccessorR biases;
@@ -1047,19 +956,13 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         // biases);
         break;
       }
-      case OP_TREE_INC_MULTIHEAD_SELF_ATTENTION:
-      case OP_SPEC_INC_MULTIHEAD_SELF_ATTENTION: {
-        // TODO: implement me
-        assert(false);
-        break;
-      }
       case OP_LAYERNORM: {
         assert(fused->op_num_inputs[op] == 1);
         assert(fused->op_num_outputs[op] == 1);
         LayerNormMeta const *m = (LayerNormMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return  false;
+          break;
         }
         if (m->elementwise_affine) {
           assert(fused->op_num_weights[op] == 1 + (int)(m->use_bias));
@@ -1081,7 +984,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
             (ResidualLayerNormMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         if (m->use_two_residuals) {
           assert(fused->op_num_inputs[op] == 3);
@@ -1120,7 +1023,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
             (AddBiasResidualLayerNormMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         if (!m->elementwise_affine) {
           assert(fused->op_num_weights[op] == 1); // attn bias
@@ -1150,7 +1053,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         SigmoidSiluMultiMeta const *m = (SigmoidSiluMultiMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         SigmoidSiluMulti::peft_bwd_kernel_wrapper(m,
                                                   bc,
@@ -1168,7 +1071,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         SoftmaxMeta *m = (SoftmaxMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         Kernels::Softmax::peft_bwd_kernel_wrapper(m, bc, my_input_grad_accessor[0]);
         break;
@@ -1179,7 +1082,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         AllReduceMeta const *m = (AllReduceMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return false;
+          break;
         }
         Kernels::AllReduce::peft_bwd_kernel_wrapper(
             m, bc, my_input_grad_accessor[0], my_output_grad_accessor[0]);
@@ -1191,7 +1094,7 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
         ParallelIdentityMeta const *m = (ParallelIdentityMeta *)metas->meta[op];
         if (!bc->peft_bwd_applies_to_this_layer(
                 m->layer_guid.transformer_layer_id)) {
-          return  false;
+          break;
         }
         runtime->concurrent_task_barrier(ctx);
         Kernels::ParallelIdentity::peft_bwd_kernel_wrapper(
@@ -1226,17 +1129,15 @@ __host__ bool FusedOp::peft_bwd_task(Task const *task,
       }
       assert(task->index_point.get_dim() == 1);
       int shard_id = task->index_point.point_data[0];
-      if (!bc->peft_bwd_applies_to_this_layer(
-              metas->meta[op]->layer_guid.transformer_layer_id)) {
-        return false;
+      if (bc->peft_bwd_applies_to_this_layer(metas->meta[op]->layer_guid.transformer_layer_id)) {
+        FusedOp::save_inference_tensors_to_file(metas->meta[op],
+                                                shard_id,
+                                                bc,
+                                                input_accessors_to_save,
+                                                weight_accessors_to_save,
+                                                output_accessors_to_save,
+                                                false);
       }
-      FusedOp::save_inference_tensors_to_file(metas->meta[op],
-                                              shard_id,
-                                              bc,
-                                              input_accessors_to_save,
-                                              weight_accessors_to_save,
-                                              output_accessors_to_save,
-                                              false);
     }
   }
   return true;

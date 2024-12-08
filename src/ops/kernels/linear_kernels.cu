@@ -636,6 +636,7 @@ void peft_bwd_kernel(LinearMeta const *m,
   }
 
   if (input_grad_ptr != NULL) {
+    // printf("\t\tRunning GEMM (layer %i) with m=%d, n=%d, k=%d\n", m->layer_guid.transformer_layer_id, in_dim, num_peft_tokens, out_dim);
     checkCUDA(cublasGemmEx(m->handle.blas,
                            CUBLAS_OP_N,
                            CUBLAS_OP_N,

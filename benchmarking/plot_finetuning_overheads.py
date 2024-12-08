@@ -169,7 +169,7 @@ if __name__ == "__main__":
     if not os.path.exists('./plots'):
         os.makedirs('./plots')
 
-    tp_degree=8
+    tp_degree=4
 
     for tokens_per_batch in [128, 256, 512]:
         fp=f"../inference/output/overhead_test/step_profiling_meta-llama_llama-3.1-70b_tensor_parallelism_{tp_degree}_max_requests_per_batch_8_max_tokens_per_batch_{tokens_per_batch}_arrival_rate_0.000000_num_warmup_requests_10.csv"

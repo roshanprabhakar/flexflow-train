@@ -33,7 +33,7 @@ ZSIZE=200000
 # ZSIZE=20000
 
 OUTPUT_FOLDER="../inference/output/overhead_test"
-MAX_SEQ_LEN=2048
+MAX_SEQ_LEN=8192
 BATCH_SIZE=8
 
 max_tokens_per_batch_values=(

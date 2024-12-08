@@ -181,7 +181,7 @@ std::vector<Request> make_requests(int max_requests_per_batch,
     Request inference_req;
     inference_req.benchmarking_tokens = 1;
     inference_req.max_new_tokens = (finetuning_entry_size + max_fwd_tokens_per_batch - 1) / max_fwd_tokens_per_batch + 
-                                    (tot_llm_layers + bwd_layers_per_step - 1) / bwd_layers_per_step;
+                                    (tot_llm_layers + bwd_layers_per_step - 1) / bwd_layers_per_step + 5;
     inference_req.warmup = false;
     requests.push_back(inference_req);
   }

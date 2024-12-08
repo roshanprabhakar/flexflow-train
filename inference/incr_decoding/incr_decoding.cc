@@ -33,8 +33,7 @@ Legion::Logger log_app("llama");
 struct FilePaths {
   std::string cache_folder_path;
   std::string prompt_file_path;
-  std::string log_file_path;
-  std::string output_file_path;
+  std::string output_folder_path;
 };
 
 void parse_input_args(char **argv,
@@ -68,14 +67,9 @@ void parse_input_args(char **argv,
       paths.prompt_file_path = std::string(argv[++i]);
       continue;
     }
-    // log file
-    if (!strcmp(argv[i], "-log-file")) {
-      paths.log_file_path = std::string(argv[++i]);
-      continue;
-    }
     // output file
-    if (!strcmp(argv[i], "-output-file")) {
-      paths.output_file_path = std::string(argv[++i]);
+    if (!strcmp(argv[i], "-output-folder")) {
+      paths.output_folder_path = std::string(argv[++i]);
       continue;
     }
     if (!strcmp(argv[i], "--use-full-precision")) {
@@ -124,6 +118,69 @@ void parse_input_args(char **argv,
   wordfree(&p);
 }
 
+std::vector<Request> make_warmup_requests(int num_requests) {
+  std::vector<Request> warmup_requests;
+  for (int i = 0; i < num_requests; i++) {
+    Request inference_req;
+    inference_req.benchmarking_tokens = 512;
+    inference_req.max_new_tokens = 30;
+    inference_req.warmup = true;
+    warmup_requests.push_back(inference_req);
+  }
+  return warmup_requests;
+}
+
+std::vector<Request> load_prompt_old(std::string trace_file_path) {
+  int total_num_requests = 0;
+
+  std::ifstream file_handle(trace_file_path);
+  assert(file_handle.good() && "Prompt file does not exist.");
+  nlohmann::json prompt_json = nlohmann::json::parse(file_handle,
+                                  /*parser_callback_t */ nullptr,
+                                  /*allow_exceptions */ true,
+                                  /*ignore_comments */ true);
+
+  std::vector<Request> requests;
+  for (auto &prompt : prompt_json) {
+    std::string text = prompt.get<std::string>();
+    printf("Prompt[%d]: %s\n", total_num_requests, text.c_str());
+    Request inference_req;
+    inference_req.prompt = text;
+    inference_req.max_length = 128;
+    requests.push_back(inference_req);
+    total_num_requests++;
+  }
+  return requests;
+}
+
+std::vector<Request> load_trace(std::string trace_file_path) {
+  std::vector<Request> requests;
+  
+  std::ifstream file_handle(trace_file_path);
+  assert(file_handle.good() && "Prompt file does not exist.");
+  nlohmann::ordered_json prompt_json =
+      nlohmann::ordered_json::parse(file_handle,
+                                    /*parser_callback_t */ nullptr,
+                                    /*allow_exceptions */ true,
+                                    /*ignore_comments */ true);
+  file_handle.close();
+  auto &metadata = prompt_json["metadata"];
+  
+  for (auto &entry : prompt_json["entries"]) {
+    int prompt_length = entry["prompt_length"];
+    int response_length = entry["response_length"];
+    std::string text = entry["prompt"];
+
+    Request inference_req;
+    // inference_req.prompt = text;
+    inference_req.benchmarking_tokens = prompt_length;
+    // inference_req.add_special_tokens = false;
+    inference_req.max_new_tokens = response_length;
+    requests.push_back(inference_req);
+  }
+  return requests;
+}
+
 void FlexFlow::top_level_task(Task const *task,
                               std::vector<PhysicalRegion> const &regions,
                               Context ctx,
@@ -140,8 +197,8 @@ void FlexFlow::top_level_task(Task const *task,
   float temperature = 0.0f;
   float topp = 0.0f;
   int max_requests_per_batch = 8;
-  int max_tokens_per_batch = 128;
-  int max_sequence_length = 256;
+  int max_tokens_per_batch = 256;
+  int max_sequence_length = 2048;
 
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
   char **argv = command_args.argv;
@@ -231,7 +288,9 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_max_sequence_length(max_sequence_length);
   rm->register_tokenizer(
       model_type, bos_token_id, eos_token_ids, tokenizer_filepath);
-  rm->register_output_filepath(file_paths.log_file_path);
+  std::string output_filepath = join_path(
+      {file_paths.output_folder_path, "output.log"});
+  rm->register_output_filepath(output_filepath);
 
   FFModel model(ffconfig, ffconfig.cpu_offload);
   if (model_type == ModelType::LLAMA) {
@@ -271,98 +330,15 @@ void FlexFlow::top_level_task(Task const *task,
     assert(false && "unknow model type");
   }
 
+  assert(!model.config.enable_peft);
+
   rm->start_background_server(&model);
-  // {
-  //   using json = nlohmann::json;
-  //   std::ifstream file_handle(file_paths.prompt_file_path);
-  //   assert(file_handle.good() && "Prompt file does not exist.");
-  //   nlohmann::ordered_json prompt_json =
-  //       nlohmann::ordered_json::parse(file_handle,
-  //                                     /*parser_callback_t */ nullptr,
-  //                                     /*allow_exceptions */ true,
-  //                                     /*ignore_comments */ true);
-  //   file_handle.close();
-  //   auto &metadata = prompt_json["metadata"];
-  //   int num_warmup_requests = metadata["num_warmup_requests"];
-  //   int num_regular_requests = 0, total_requests = 0;
-  //   std::vector<Request> warmup_requests, requests;
-  //   for (auto &entry : prompt_json["entries"]) {
-  //     int prompt_length = entry["prompt_length"];
-  //     int response_length = entry["response_length"];
-  //     std::string text = entry["prompt"];
-  //     bool is_warmup_request = total_requests < num_warmup_requests;
+  
 
-  //     Request inference_req;
-  //     inference_req.prompt = text;
-  //     inference_req.add_special_tokens = false;
-  //     inference_req.max_new_tokens = response_length;
-
-  //     if (is_warmup_request) {
-  //       warmup_requests.push_back(inference_req);
-  //     } else {
-  //       printf("Prompt[%d]: %s\n", total_requests, text.c_str());
-  //       requests.push_back(inference_req);
-  //       num_regular_requests++;
-  //     }
-
-  //     total_requests++;
-  //   }
-  //   std::vector<GenerationResult> warmup_result =
-  //       model.generate(warmup_requests);
-  //   std::vector<GenerationResult> result = model.generate(requests);
-
-  //   assert(warmup_result.size() == warmup_requests.size());
-  //   assert(result.size() == requests.size());
-  //   assert(result.size() + warmup_result.size() == total_requests);
-  //   int i = 0;
-  //   for (auto &entry : prompt_json["entries"]) {
-  //     if (i < num_warmup_requests) {
-  //       i++;
-  //       continue;
-  //     }
-  //     int index = i - num_warmup_requests;
-  //     entry["original_response"] = entry["response"];
-  //     entry["original_response_length"] = entry["response_length"];
-  //     std::string ff_out = result[index].output_text;
-  //     int tot_length = result[index].output_text.length();
-  //     entry["response"] = ff_out;
-  //     entry["response_length"] = result[index].output_tokens.size();
-  //     i++;
-  //   }
-
-  //   // Write the modified JSON to a file
-  //   std::ofstream output_file(file_paths.output_file_path);
-  //   if (output_file.is_open()) {
-  //     output_file << prompt_json.dump(2);
-  //     output_file.close();
-  //     std::cout << "Modified JSON has been saved to "
-  //               << file_paths.output_file_path << std::endl;
-  //   } else {
-  //     std::cerr << "Unable to open file for writing." << std::endl;
-  //   }
-  // }
-  int total_num_requests = 0;
-  {
-    using json = nlohmann::json;
-    std::ifstream file_handle(file_paths.prompt_file_path);
-    assert(file_handle.good() && "Prompt file does not exist.");
-    json prompt_json = json::parse(file_handle,
-                                   /*parser_callback_t */ nullptr,
-                                   /*allow_exceptions */ true,
-                                   /*ignore_comments */ true);
-
-    std::vector<Request> requests;
-    for (auto &prompt : prompt_json) {
-      std::string text = prompt.get<std::string>();
-      printf("Prompt[%d]: %s\n", total_num_requests, text.c_str());
-      Request inference_req;
-      inference_req.prompt = text;
-      inference_req.max_length = 128;
-      requests.push_back(inference_req);
-      total_num_requests++;
-    }
-    std::vector<GenerationResult> result = model.generate(requests);
-  }
+  std::vector<Request> warmup_requests = make_warmup_requests(10);
+  std::vector<GenerationResult> warmup_result = model.generate(warmup_requests);
+  std::vector<Request> requests = load_trace(file_paths.prompt_file_path);
+  std::vector<GenerationResult> result = model.generate(requests);
 
   // terminate the request manager by stopping the background thread
   rm->terminate_background_server();
