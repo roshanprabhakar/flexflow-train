@@ -185,7 +185,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         std::string("layers." + std::to_string(i) + ".block_sparse_moe_gate")
             .c_str());
 
-    printf("gate has dims %d\n", gate->dims[0], gate->dims[1], gate->dims[2]);
+    printf("gate has dims %d %d %d\n", gate->dims[0], gate->dims[1], gate->dims[2]);
     gate = ff.softmax( // This operation fails!
         gate,
         0,
@@ -213,7 +213,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         0.0f,
         std::string("layers." + std::to_string(i) + ".block_sparse_moe_groupby")
             .c_str());
-    printf("grouped_tokens[0] has dims %d\n", grouped_tokens[0]->dims[0], grouped_tokens[0]->dims[1], grouped_tokens[0]->dims[2]);
+    printf("grouped_tokens[0] has dims %d %d %d\n", grouped_tokens[0]->dims[0], grouped_tokens[0]->dims[1], grouped_tokens[0]->dims[2]);
     Tensor aggregate_inputs[4 + mixtral_config.num_local_experts] = {nullptr};
     for (int expert_idx = 0; expert_idx < mixtral_config.num_local_experts; expert_idx++) {
       Tensor w1 = ff.dense(grouped_tokens[expert_idx],
@@ -269,12 +269,12 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                                        ".block_sparse_moe_experts_" +
                                        std::to_string(expert_idx) + "_w2")
                                .c_str());
-      printf("w2 and aggreagte_inputs[%d] has dims %d\n",4 + expert_idx, w2->dims[0], w2->dims[1], w2->dims[2]);
+      printf("w2 and aggreagte_inputs[%d] has dims %d %d %d\n",4 + expert_idx, w2->dims[0], w2->dims[1], w2->dims[2]);
       aggregate_inputs[4 + expert_idx] = w2;
     }
 
-    Tensor topk_values_reduced = ff.reduce_sum(topk_values, {0}, true); printf("topk_values_reduced has dims %d\n", topk_values_reduced->dims[0], topk_values_reduced->dims[1], topk_values_reduced->dims[2]);
-    topk_values = ff.divide(topk_values, topk_values_reduced); printf("topk_values has dims %d\n", topk_values->dims[0], topk_values->dims[1], topk_values->dims[2]);
+    Tensor topk_values_reduced = ff.reduce_sum(topk_values, {0}, true); printf("topk_values_reduced has dims %d %d %d\n", topk_values_reduced->dims[0], topk_values_reduced->dims[1], topk_values_reduced->dims[2]);
+    topk_values = ff.divide(topk_values, topk_values_reduced); printf("topk_values has dims %d %d %d\n", topk_values->dims[0], topk_values->dims[1], topk_values->dims[2]);
 
     Tensor dummy_gate = ff.dense(
         ff_norm,
@@ -296,8 +296,8 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         DT_NONE,
         std::string("dummy_gate").c_str());
 
-    aggregate_inputs[0] = topk_values; printf("aggregate_inputs[0] has dims %d\n", aggregate_inputs[0]->dims[0], aggregate_inputs[0]->dims[1], aggregate_inputs[0]->dims[2]);
-    aggregate_inputs[1] = topk_indices; printf("aggregate_inputs[1] has dims %d\n", aggregate_inputs[1]->dims[0], aggregate_inputs[1]->dims[1], aggregate_inputs[1]->dims[2]);
+    aggregate_inputs[0] = topk_values; printf("aggregate_inputs[0] has dims %d %d %d\n", aggregate_inputs[0]->dims[0], aggregate_inputs[0]->dims[1], aggregate_inputs[0]->dims[2]);
+    aggregate_inputs[1] = topk_indices; printf("aggregate_inputs[1] has dims %d %d %d\n", aggregate_inputs[1]->dims[0], aggregate_inputs[1]->dims[1], aggregate_inputs[1]->dims[2]);
     aggregate_inputs[2] = topk_values; // TODO this is a tmp fix
     aggregate_inputs[3] = dummy_gate;  // TODO this is a tmp fix
 //    aggregate_inputs[2] = aggregate_inputs[3] = nullptr;
