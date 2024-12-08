@@ -121,10 +121,10 @@ def save_trace(trace: Trace, output_path: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build WildChat trace")
     parser.add_argument("--model_name", type=str, default="meta-llama/Llama-3.1-70B-Instruct", help="Model name")
-    parser.add_argument("-m", "--max-length", type=int, default=8190, help="Maximum prompt + response length")
+    parser.add_argument("-m", "--max-length", type=int, default=5000, help="Maximum prompt + response length")
     parser.add_argument("-n", "--num_entries", type=int, default=250, help="Number of entries")
     parser.add_argument("-s", "--seed", type=int, default=12345, help="Random seed")
-    parser.add_argument("-o", "--output_file", type=str, default="./wildchat.json", help="Output file name")
+    parser.add_argument("-o", "--output_file", type=str, default="./traces/wildchat.json", help="Output file name")
     args = parser.parse_args()
 
     # Change directory to that holding this script

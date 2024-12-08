@@ -270,6 +270,7 @@ public:
   void record_decoding_req_profiling_info(BatchConfig const &old_fwd_bc, int req_idx);
   void record_step_profile_info(BatchConfig const &old_bc);
   void save_profiling_info_to_csv(std::string output_folder,
+                                  std::string dataset_name,
                                   std::string llm_model_name,
                                   int tensor_parallelism_degree,
                                   int max_requests_per_batch,

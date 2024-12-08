@@ -5,7 +5,7 @@ import seaborn as sns
 import os
 
 # Read the CSV file
-def plot_fwd_overhead(filepath, num_tokens_per_batch):
+def plot_fwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch, ft_bwd_tokens):
     # Load the CSV file
     df = pd.read_csv(filepath)
     
@@ -60,7 +60,7 @@ def plot_fwd_overhead(filepath, num_tokens_per_batch):
                    y='step_time',
                    alpha=0.6)
     
-    plt.title('Step Time vs Number of Finetuning Forward Tokens\nMax Tokens per Batch: ' + str(num_tokens_per_batch))
+    plt.title(f'Step Time vs Number of Finetuning Forward Tokens\nModel: {model_name} (TP={tp_degree})\nBatch Size: {bz} - Max Tokens per Batch: {num_tokens_per_batch}\nBWD finetuning tokens: {ft_bwd_tokens}')
     plt.xlabel('Number of Finetuning Forward Tokens')
     plt.ylabel('Step Time (milliseconds)')
     
@@ -86,7 +86,7 @@ def plot_fwd_overhead(filepath, num_tokens_per_batch):
 
     # plt.show()
     
-def plot_bwd_overhead(filepath, num_tokens_per_batch):
+def plot_bwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch, ft_bwd_tokens):
     # Load the CSV file
     df = pd.read_csv(filepath)
     
@@ -132,7 +132,7 @@ def plot_bwd_overhead(filepath, num_tokens_per_batch):
                    y='step_time',
                    alpha=0.6)
     
-    plt.title('Step Time vs Number of BWD Finetuning Layers\nMax Tokens per Batch: ' + str(num_tokens_per_batch))
+    plt.title(f'Step Time vs Number of BWD Finetuning Layers\nModel: {model_name} (TP={tp_degree})\nBatch Size: {bz} - Max Tokens per Batch: {num_tokens_per_batch}\nBWD finetuning tokens: {ft_bwd_tokens}')
     plt.xlabel('Number of BWD Finetuning Layers')
     plt.ylabel('Step Time (milliseconds)')
     
@@ -169,10 +169,13 @@ if __name__ == "__main__":
     if not os.path.exists('./plots'):
         os.makedirs('./plots')
 
+    model_name="meta-llama/Llama-3.1-70B"
     tp_degree=4
+    ft_bwd_tokens=1024
+    bz=8
 
     for tokens_per_batch in [128, 256, 512]:
-        fp=f"../inference/output/overhead_test/step_profiling_meta-llama_llama-3.1-70b_tensor_parallelism_{tp_degree}_max_requests_per_batch_8_max_tokens_per_batch_{tokens_per_batch}_arrival_rate_0.000000_num_warmup_requests_10.csv"
+        fp=f"../benchmarking/data/overhead_test/step_profiling_meta-llama_llama-3.1-70b_tensor_parallelism_{tp_degree}_max_requests_per_batch_8_max_tokens_per_batch_{tokens_per_batch}_arrival_rate_0.000000_num_warmup_requests_10.csv"
         
-        plot_fwd_overhead(fp, tokens_per_batch)
-        plot_bwd_overhead(fp, tokens_per_batch)
+        plot_fwd_overhead(fp, model_name, tp_degree, bz, tokens_per_batch, ft_bwd_tokens)
+        plot_bwd_overhead(fp, model_name, tp_degree, bz, tokens_per_batch, ft_bwd_tokens)

@@ -337,8 +337,10 @@ void FlexFlow::top_level_task(Task const *task,
 
   std::vector<Request> warmup_requests = make_warmup_requests(10);
   std::vector<GenerationResult> warmup_result = model.generate(warmup_requests);
+  std::cout << "----------warmup finished--------------" << std::endl;
   std::vector<Request> requests = load_trace(file_paths.prompt_file_path);
   std::vector<GenerationResult> result = model.generate(requests);
+  std::cout << "----------inference finished--------------" << std::endl;
 
   // terminate the request manager by stopping the background thread
   rm->terminate_background_server();
@@ -349,8 +351,25 @@ void FlexFlow::top_level_task(Task const *task,
     future.get_void_result();
   }
 
-  // float* data
-  std::cout << "----------inference finished--------------" << std::endl;
+  std::string dataset_name;
+  // set dataset name to "wildchat" if the prompt file path contains "wildchat"
+  if (file_paths.prompt_file_path.find("wildchat") != std::string::npos) {
+    dataset_name = "wildchat";
+  } else if (file_paths.prompt_file_path.find("sharegpt") != std::string::npos) {
+    dataset_name = "sharegpt";
+  } else {
+    dataset_name = "unknown";
+  }
+
+  std::cout << "Saving profiling info..." << std::endl;
+  rm->save_profiling_info_to_csv(file_paths.output_folder_path,
+                                 dataset_name,
+                                 llm_model_name,
+                                 ffconfig.tensor_parallelism_degree,
+                                 max_requests_per_batch,
+                                 max_tokens_per_batch,
+                                 0.0, // arrival rate
+                                 10); // num_warmup_requests
 
   // free tokenizer space in memory
 }
