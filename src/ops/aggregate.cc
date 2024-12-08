@@ -37,6 +37,7 @@ using Legion::TaskArgument;
 using Legion::TaskLauncher;
 using PCG::Node;
 
+// This runs when mixtral.cc is run
 Tensor FFModel::aggregate(
     Tensor const *inputs, /* gate_preds, gate_assign, gate assign TopK,
                              full_gate_pred, exp_pred_1, ... , exp_pred_n */
@@ -47,11 +48,14 @@ Tensor FFModel::aggregate(
                         OP_AGGREGATE,
                         DT_FLOAT,
                         name,
-                        n + 4 /*inputs*/,
+                        n + 4 /*num inputs*/,
                         0 /*weights*/,
                         1 /*outputs*/,
                         inputs);
   {
+
+    printf("In FFModel::aggregate, inputs[0]->num_dims = %d\n", inputs[0]->num_dims);
+
     int num_dim = inputs[4]->num_dims;
     // Set output shape
     int dims[MAX_TENSOR_DIM];
@@ -100,6 +104,7 @@ bool operator==(AggregateParams const &lhs, AggregateParams const &rhs) {
   return lhs.n == rhs.n && lhs.lambda_bal == rhs.lambda_bal;
 }
 
+// This runs after mixtral.cc is ran and the prompt is tokenized
 Aggregate::Aggregate(FFModel &model,
                      ParallelTensor const *_inputs,
                      int _n,
@@ -109,9 +114,9 @@ Aggregate::Aggregate(FFModel &model,
          OP_AGGREGATE,
          DT_FLOAT,
          name,
-         _n + 4 /*inputs*/,
-         0 /*weights*/,
-         1 /*outputs*/,
+         _n + 4 /*numInputs*/,
+         0 /*numWeights*/,
+         1 /*numOutputs*/,
          _inputs),
       n(_n), lambda_bal(_lambda_bal) {
   // FIXME: For now, set upper limits Better: Do as follows, but memory is
@@ -125,10 +130,13 @@ Aggregate::Aggregate(FFModel &model,
 
   assert(n + 4 == numInputs);
   assert(n > 0);
-  assert(inputs[0]->num_dims == 2 + 1);
-  assert(inputs[1]->num_dims == 2 + 1);
-  assert(inputs[2]->num_dims == 2 + 1);
-  assert(inputs[3]->num_dims == 2 + 1);
+  //printf("In Aggregate::Aggregate, inputs[0]->num_dims = %d\n", inputs[0]->num_dims);
+  //printf("In Aggregate::Aggregate, inputs[0] dims are %d %d %d %d\n", inputs[0]->dims[0].size, inputs[0]->dims[1].size, inputs[0]->dims[2].size, inputs[0]->dims[3].size);
+  // TODO the inequalities below used to be equalities, not sure it's a good idea to switch to inequalities
+  assert(inputs[0]->num_dims >= 2 + 1);  // inputs[0] has dims (experts_per_token, 1, 128, 1) (confirmed dim count)
+  assert(inputs[1]->num_dims >= 2 + 1);
+  assert(inputs[2]->num_dims >= 2 + 1);
+  assert(inputs[3]->num_dims >= 2 + 1);
 
   for (int i = 0; i < inputs[0]->num_dims; i++) {
     assert(inputs[0]->dims[i] == inputs[1]->dims[i]);
@@ -263,6 +271,8 @@ void Aggregate::forward(FFModel const &ff) {
                          false /*must*/,
                          0 /*mapper_id*/,
                          outputs[0]->machine_view.hash());
+
+  printf("Entered Aggregate::forward\n");
   // gate_preds
   launcher.add_region_requirement(RegionRequirement(inputs[0]->part,
                                                     0 /*projection id*/,
