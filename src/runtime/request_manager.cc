@@ -350,6 +350,10 @@ void RequestManager::set_fcfs_slo(bool fcfs_slo_) {
   fcfs_slo = fcfs_slo_;
 }
 
+void RequestManager::set_stta(bool stta_) {
+  stta = stta_;
+}
+
 bool RequestManager::get_spec_infer_old_version() {
   return spec_infer_old_version;
 }
@@ -364,6 +368,10 @@ bool RequestManager::get_equal_schedule() {
 
 bool RequestManager::get_fcfs_slo() {
   return fcfs_slo;
+}
+
+bool RequestManager::get_stta() {
+  return stta;
 }
 
 inline double RequestManager::get_slo_constraint(Request &request) {
@@ -1168,8 +1176,10 @@ BatchConfig RequestManager::prepare_next_batch() {
       }
       break;
     case DECODING:
-      if get_fcfs_slo () {
+      if (get_fcfs_slo()) {
         return prepare_decoding_batch_fcfs_slo();
+      } else if (get_stta()) {
+        return prepare_decoding_batch_stta();
       } else {
         return prepare_decoding_batch();
       }
@@ -1418,63 +1428,160 @@ BatchConfig RequestManager::prepare_decoding_batch_fcfs_slo() {
   bc.prompt_phase = false;
 
   // Check if there are any requests whose SLO is in the fastest category
+  std::fill(request_available,
+            request_available + get_max_requests_per_batch(),
+            false);
+  num_available_requests = 0;
+  std::vector<Request> fcfs_request_queue;
+  for (int request_index = 0; request_index < get_max_requests_per_batch();
+       request_index++) {
+    if (guid_of_requests[request_index] == INVALID_GUID) {
+      continue;
+    }
+    Request &request = all_requests[guid_of_requests[request_index]];
+    assert(request.status == Request::RUNNING);
+    fcfs_request_queue.push_back(request);
+  }
+
+  // Sort the requests in the FCFS queue based on the decoding time in
+  // descending order
+  std::sort(fcfs_request_queue.begin(),
+            fcfs_request_queue.end(),
+            [](Request const &a, Request const &b) {
+              return a.decode_latency_ms < b.decode_latency_ms;
+            });
+
+  // Include the requests one by one until:
+  // 1. If the batch includes a request whose SLO is in the fastest category,
+  // limit the number of requests in the batch to 8.
+  // 2. If the batch does not include a request whose SLO is in the fastest
+  // category, keep adding requests until a request whose SLO is in the fastest
+  // category is met (do not include it).
+  bool has_fastest_slo = false;
+  for (Request &request : fcfs_request_queue) {
+    if (has_fastest_slo and num_available_requests >= 8) {
+      break;
+    }
+    if (request.get_slo_ratio() <= 1.0) {
+      has_fastest_slo = true;
+      if (num_available_requests >= 8) {
+        break;
+      }
+    }
+    request_load_onto_batch(request.batch_index);
+  }
+
   std::copy(std::begin(request_available),
             std::end(request_available),
             std::begin(bc.request_available));
   bc.num_available_requests = num_available_requests;
-  bool has_fastest_slo = false;
+
   for (int request_index = 0; request_index < get_max_requests_per_batch();
        request_index++) {
-
     if (!request_available[request_index]) {
       continue;
     }
     Request &request = all_requests[guid_of_requests[request_index]];
     assert(request.status == Request::RUNNING);
 
-    if (request.get_slo_ratio() <= 1.0) {
-      has_fastest_slo = true;
+    // Per Request Info
+    bc.requestsInfo[request_index].first_token_index_in_request =
+        request.llm_cache_size;
+    bc.requestsInfo[request_index].first_token_offset_in_batch = bc.num_tokens;
+    bc.requestsInfo[request_index].num_tokens_in_batch = 1;
+
+    // Copy the streaming cache info
+    bc.streamingCacheInfo[request_index] = request.streaming_cache_info;
+
+    request.first_token_offset_in_batch = bc.num_tokens;
+    request.num_tokens_in_batch = 1;
+
+    // Per Token Info
+    bc.tokensInfo[bc.num_tokens].request_index = request_index;
+    bc.tokensInfo[bc.num_tokens].abs_index_in_request = request.llm_cache_size;
+    bc.tokensInfo[bc.num_tokens].abs_depth_in_request = request.llm_cache_size;
+    bc.tokensInfo[bc.num_tokens].token_id = request.tokens.back();
+
+    bc.num_tokens++;
+
+    if (profiling_requests[request.guid].llm_decoding_steps == 0) {
+      profiling_requests[request.guid].start_decoding_time =
+          Realm::Clock::current_time_in_microseconds();
+    }
+  }
+
+  if (verbose) {
+    std::cout << "prepare_decoding_batch_fcfs_slo NEW batchconfig:"
+              << std::endl;
+    bc.print();
+  }
+  profiling.llm_step_start = Realm::Clock::current_time_in_microseconds();
+  return bc;
+}
+
+BatchConfig RequestManager::prepare_decoding_batch_stta() {
+  // This function is called when the request_manager_status is DECODING. It
+  // fills the last token of each request in the current batch to the
+  // BatchConfig for the LLM to decode.
+  if (verbose) {
+    std::cout << "\n############### prepare_decoding_batch_stta "
+                 "##############\n";
+  }
+
+  BatchConfig bc;
+  bc.inference_mode = InferenceMode::INC_DECODING_MODE;
+  bc.prompt_phase = false;
+
+  // Check if there are any requests whose SLO is in the fastest category
+  std::fill(request_available,
+            request_available + get_max_requests_per_batch(),
+            false);
+  num_available_requests = 0;
+  std::vector<std::pair<double, int>> tta_2_batch_index;
+  for (int request_index = 0; request_index < get_max_requests_per_batch();
+       request_index++) {
+    if (guid_of_requests[request_index] == INVALID_GUID) {
+      continue;
+    }
+    Request &request = all_requests[guid_of_requests[request_index]];
+    assert(request.status == Request::RUNNING);
+    tta_2_batch_index.push_back(std::make_pair(
+        get_request_expected_latency(request) - request.decode_latency_ms,
+        request_index));
+  }
+
+  // Sort the requests in the queue based on the time to attain SLO in ascending
+  // order
+  std::sort(tta_2_batch_index.begin(),
+            tta_2_batch_index.end(),
+            [](std::pair<double, int> const &a,
+               std::pair<double, int> const &b) { return a.first < b.first; });
+
+  // Include the requests one by one until:
+  // 1. If the batch includes a request whose SLO is in the fastest category,
+  // limit the number of requests in the batch to 8.
+  // 2. If the batch does not include a request whose SLO is in the fastest
+  // category, keep adding requests until a request whose SLO is in the fastest
+  // category is met (do not include it).
+  bool has_fastest_slo = false;
+  for (auto const &[tta, request_index] : tta_2_batch_index) {
+    Request &request = all_requests[guid_of_requests[request_index]];
+    if (has_fastest_slo and num_available_requests >= 8) {
       break;
     }
-  }
-
-  // If there are requests with the fastest SLO, we limit the number of requests
-  // to be decoded in this batch to 8
-  if (has_fastest_slo) {
-    int num_fastest_slo_requests = 0;
-    for (int request_index = 0; request_index < get_max_requests_per_batch();
-         request_index++) {
-      if (!request_available[request_index]) {
-        continue;
-      }
-      Request &request = all_requests[guid_of_requests[request_index]];
-      assert(request.status == Request::RUNNING);
-
-      if (request.get_slo_ratio() <= 1.0) {
-        num_fastest_slo_requests++;
+    if (request.get_slo_ratio() <= 1.0) {
+      has_fastest_slo = true;
+      if (num_available_requests >= 8) {
+        break;
       }
     }
-
-    if (num_fastest_slo_requests > 8) {
-      int num_remaining_requests = 0;
-      std::vector<std::pair<long long, int>> start_time_and_request_index;
-      for (int request_index = 0; request_index < get_max_requests_per_batch();
-           request_index++) {
-        if (!request_available[request_index]) {
-          continue;
-        }
-        Request &request = all_requests[guid_of_requests[request_index]];
-        assert(request.status == Request::RUNNING);
-
-        if (request.get_slo_ratio() > 1.0) {
-          request_available[request_index] = false;
-          num_available_requests--;
-          num_remaining_requests++;
-        }
-      }
-      bc.num_available_requests -= num_remaining_requests;
-    }
+    request_load_onto_batch(request_index);
   }
+
+  std::copy(std::begin(request_available),
+            std::end(request_available),
+            std::begin(bc.request_available));
+  bc.num_available_requests = num_available_requests;
 
   for (int request_index = 0; request_index < get_max_requests_per_batch();
        request_index++) {
