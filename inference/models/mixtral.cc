@@ -205,12 +205,8 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         false,
         std::string("layers." + std::to_string(i) + ".block_sparse_moe_topk")
             .c_str());
-    Tensor topk_values = topk_out[0]; // (experts_per_tok, 1, 128)
-    printf("topk_values has dim count %d\n", topk_values->num_dims);
-    printf("topk_values has shape %d %d %d %d\n", topk_values->dims[0], topk_values->dims[1], topk_values->dims[2],  topk_values->dims[3]);
-    Tensor topk_indices = topk_out[1]; // (experts_per_tok, 1, 128)
-    printf("topk_indices has dim count %d\n", topk_indices->num_dims);
-    printf("topk_indices has shape %d %d %d %d\n", topk_indices->dims[0], topk_indices->dims[1], topk_indices->dims[2],  topk_indices->dims[3]);
+    Tensor topk_values = topk_out[0]; // (experts_per_tok, 1, 128) (confirmed 3 dims)
+    Tensor topk_indices = topk_out[1]; // (experts_per_tok, 1, 128) (confirmed 3 dims)
 
     Tensor grouped_tokens[mixtral_config.num_local_experts] = {nullptr};
     ff.group_by(

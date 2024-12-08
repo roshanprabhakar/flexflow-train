@@ -37,6 +37,7 @@ using Legion::TaskArgument;
 using Legion::TaskLauncher;
 using PCG::Node;
 
+// This runs when mixtral.cc is run
 Tensor FFModel::aggregate(
     Tensor const *inputs, /* gate_preds, gate_assign, gate assign TopK,
                              full_gate_pred, exp_pred_1, ... , exp_pred_n */
@@ -103,6 +104,7 @@ bool operator==(AggregateParams const &lhs, AggregateParams const &rhs) {
   return lhs.n == rhs.n && lhs.lambda_bal == rhs.lambda_bal;
 }
 
+// This runs after mixtral.cc is ran and prompt is tokenized
 Aggregate::Aggregate(FFModel &model,
                      ParallelTensor const *_inputs,
                      int _n,
@@ -129,10 +131,11 @@ Aggregate::Aggregate(FFModel &model,
   assert(n + 4 == numInputs);
   assert(n > 0);
   printf("In Aggregate::Aggregate, inputs[0]->num_dims = %d\n", inputs[0]->num_dims);
-  assert(inputs[0]->num_dims == 2 + 1);
-  assert(inputs[1]->num_dims == 2 + 1);
-  assert(inputs[2]->num_dims == 2 + 1);
-  assert(inputs[3]->num_dims == 2 + 1);
+  printf("In Aggregate::Aggregate, inputs[0] dims are %d %d %d %d\n", inputs[0]->dims[0], inputs[0]->dims[1], inputs[0]->dims[2], inputs[0]->dims[3]);
+  assert(inputs[0]->num_dims >= 2 + 1);
+  assert(inputs[1]->num_dims >= 2 + 1);
+  assert(inputs[2]->num_dims >= 2 + 1);
+  assert(inputs[3]->num_dims >= 2 + 1);
 
   for (int i = 0; i < inputs[0]->num_dims; i++) {
     assert(inputs[0]->dims[i] == inputs[1]->dims[i]);
