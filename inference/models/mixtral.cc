@@ -15,8 +15,8 @@
 
 #include "mixtral.h"
 
-//#define NDEBUG
-#ifndef NDEBUG
+//#define MIXTRAL_DEBUG
+#ifndef MIXTRAL_DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else
 #define dbg_printf(...)
@@ -280,11 +280,13 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
                                        std::to_string(expert_idx) + "_w2")
                                .c_str());
       // w2 and aggreagte_inputs[4+] have dims (1024, 1, 0)
+
+      printf("w2 has dim count %d\n", w2->num_dims);
       aggregate_inputs[4 + expert_idx] = w2;
     }
 
-    Tensor topk_values_reduced = ff.reduce_sum(topk_values, {0}, true); dbg_printf("topk_values_reduced has dims %d %d %d\n", topk_values_reduced->dims[0], topk_values_reduced->dims[1], topk_values_reduced->dims[2]);
-    topk_values = ff.divide(topk_values, topk_values_reduced); dbg_printf("topk_values has dims %d %d %d\n", topk_values->dims[0], topk_values->dims[1], topk_values->dims[2]);
+    Tensor topk_values_reduced = ff.reduce_sum(topk_values, {0}, true); printf("topk_values_reduced has dims %d %d %d\n", topk_values_reduced->dims[0], topk_values_reduced->dims[1], topk_values_reduced->dims[2]);
+    topk_values = ff.divide(topk_values, topk_values_reduced); printf("topk_values has dims %d %d %d\n", topk_values->dims[0], topk_values->dims[1], topk_values->dims[2]);
 
     Tensor dummy_gate = ff.dense(
         ff_norm,
