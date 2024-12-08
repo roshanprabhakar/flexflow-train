@@ -109,6 +109,50 @@ void LLAMA::create_llama_model(FFModel &ff,
 
     Tensor mha;
     switch (mode) {
+      case BEAM_SEARCH_MODE: {
+        mha = ff.spec_inc_multiquery_self_attention(
+            qkv_proj,
+            llama_config.hidden_size,
+            llama_config.num_attention_heads,
+            llama_config.num_key_value_heads,
+            llama_config.hidden_size / llama_config.num_attention_heads,
+            llama_config.hidden_size / llama_config.num_attention_heads,
+            0.0f,    /*dropout*/
+            false,   /*add_zero_attn*/
+            DT_NONE, /*data_type*/
+            NULL,    /*kernel_initializer*/
+            llama_config.rotary_embedding_meta,
+            false, /*scaling query*/
+            1.0f,  /*scaling factor*/
+            true,  /*qk_prod_scaling*/
+            false, /*position_bias*/
+            std::string("layers." + std::to_string(i) + ".self_attn")
+                .c_str() /*name*/
+        );
+        break;
+      }
+      case TREE_VERIFY_MODE: {
+        mha = ff.inc_multiquery_self_attention_verify(
+            qkv_proj,
+            llama_config.hidden_size,
+            llama_config.num_attention_heads,
+            llama_config.num_key_value_heads,
+            llama_config.hidden_size / llama_config.num_attention_heads,
+            llama_config.hidden_size / llama_config.num_attention_heads,
+            0.0f,    /*dropout*/
+            false,   /*add_zero_attn*/
+            DT_NONE, /*data_type*/
+            nullptr, /*kernel_initializer*/
+            llama_config.rotary_embedding_meta,
+            false, /*scaling query*/
+            1.0f,  /*scaling factor*/
+            true,  /*qk_prod_scaling*/
+            false, /*position_bias*/
+            std::string("layers." + std::to_string(i) + ".self_attn")
+                .c_str() /*name*/
+        );
+        break;
+      }
       case INC_DECODING_MODE: {
         mha = ff.inc_multiquery_self_attention(
             qkv_proj,
@@ -231,6 +275,13 @@ void LLAMA::create_llama_model(FFModel &ff,
                           "lm_head");
 
   Tensor output;
+  if (mode == BEAM_SEARCH_MODE) {
+    Tensor softmax = ff.softmax(dense, -1);
+    // output = ff.beam_top_k(softmax, llama_config.max_beam_width, false);
+    // output = ff.argmax(softmax, /*beam_Search*/ true);
+    output = ff.arg_top_k(softmax, llama_config.max_beam_width, false, true);
+    // output = ff.top_k(softmax, )
+  } else {
     // Tensor softmax = ff.softmax(dense, -1);
     if (generation_config.do_sample) {
       dense = ff.scalar_truediv(dense, generation_config.temperature, false);
@@ -241,6 +292,15 @@ void LLAMA::create_llama_model(FFModel &ff,
       Tensor softmax = ff.softmax(dense, -1);
       output = ff.argmax(softmax, /*beam_Search*/ false);
     }
+  }
+
+  // If PEFT is enabled, add LoRA layers
+  if (ff.config.enable_peft) {
+    // todo: add attention projections
+    std::vector<std::string> target_modules = {
+        "gate_proj", "up_proj", "down_proj"};
+    ff.add_lora_layers(target_modules);
+  }
 
   FileDataLoader *fileloader = new FileDataLoader(
       "",

@@ -118,6 +118,50 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
 
     Tensor mha;
     switch (mode) {
+      case BEAM_SEARCH_MODE: {
+        mha = ff.spec_inc_multiquery_self_attention(
+            qkv_proj,
+            mixtral_config.hidden_size,
+            mixtral_config.num_attention_heads,
+            mixtral_config.num_key_value_heads,
+            mixtral_config.hidden_size / mixtral_config.num_attention_heads,
+            mixtral_config.hidden_size / mixtral_config.num_attention_heads,
+            0.0f,    /*dropout*/
+            false,   /*add_zero_attn*/
+            DT_NONE, /*data_type*/
+            NULL,    /*kernel_initializer*/
+            mixtral_config.rotary_embedding_meta,
+            false, /*scaling query*/
+            1.0f,  /*scaling factor*/
+            true,  /*qk_prod_scaling*/
+            false, /*position_bias*/
+            std::string("layers." + std::to_string(i) + ".self_attn")
+                .c_str() /*name*/
+        );
+        break;
+      }
+      case TREE_VERIFY_MODE: {
+        mha = ff.inc_multiquery_self_attention_verify(
+            qkv_proj,
+            mixtral_config.hidden_size,
+            mixtral_config.num_attention_heads,
+            mixtral_config.num_key_value_heads,
+            mixtral_config.hidden_size / mixtral_config.num_attention_heads,
+            mixtral_config.hidden_size / mixtral_config.num_attention_heads,
+            0.0f,    /*dropout*/
+            false,   /*add_zero_attn*/
+            DT_NONE, /*data_type*/
+            nullptr, /*kernel_initializer*/
+            mixtral_config.rotary_embedding_meta,
+            false, /*scaling query*/
+            1.0f,  /*scaling factor*/
+            true,  /*qk_prod_scaling*/
+            false, /*position_bias*/
+            std::string("layers." + std::to_string(i) + ".self_attn")
+                .c_str() /*name*/
+        );
+        break;
+      }
       case INC_DECODING_MODE: {
         mha = ff.inc_multiquery_self_attention(
             qkv_proj,
