@@ -16,7 +16,7 @@
 #include "mixtral.h"
 
 //#define MIXTRAL_DEBUG
-#ifndef MIXTRAL_DEBUG
+#ifdef MIXTRAL_DEBUG
 #define dbg_printf(...) printf(__VA_ARGS__)
 #else
 #define dbg_printf(...)
