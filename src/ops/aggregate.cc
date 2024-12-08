@@ -52,6 +52,9 @@ Tensor FFModel::aggregate(
                         1 /*outputs*/,
                         inputs);
   {
+
+    printf("In FFModel::aggregate, inputs[0]->num_dims = %d\n", inputs[0]->num_dims);
+
     int num_dim = inputs[4]->num_dims;
     // Set output shape
     int dims[MAX_TENSOR_DIM];
@@ -125,6 +128,7 @@ Aggregate::Aggregate(FFModel &model,
 
   assert(n + 4 == numInputs);
   assert(n > 0);
+  printf("In Aggregate::Aggregate, inputs[0]->num_dims = %d\n", inputs[0]->num_dims);
   assert(inputs[0]->num_dims == 2 + 1);
   assert(inputs[1]->num_dims == 2 + 1);
   assert(inputs[2]->num_dims == 2 + 1);
@@ -263,6 +267,8 @@ void Aggregate::forward(FFModel const &ff) {
                          false /*must*/,
                          0 /*mapper_id*/,
                          outputs[0]->machine_view.hash());
+
+  printf("Entered Aggregate::forward\n");
   // gate_preds
   launcher.add_region_requirement(RegionRequirement(inputs[0]->part,
                                                     0 /*projection id*/,
