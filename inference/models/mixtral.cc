@@ -210,6 +210,7 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         false,
         std::string("layers." + std::to_string(i) + ".block_sparse_moe_topk")
             .c_str());
+    printf("topk_values has dim count %d\n", topk_values->num_dims);
     Tensor topk_values = topk_out[0]; // (experts_per_tok, 1, 128)
     Tensor topk_indices = topk_out[1]; // (experts_per_tok, 1, 128)
 
@@ -285,8 +286,8 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
       aggregate_inputs[4 + expert_idx] = w2;
     }
 
-    Tensor topk_values_reduced = ff.reduce_sum(topk_values, {0}, true); printf("topk_values_reduced has dims %d %d %d\n", topk_values_reduced->dims[0], topk_values_reduced->dims[1], topk_values_reduced->dims[2]);
-    topk_values = ff.divide(topk_values, topk_values_reduced); printf("topk_values has dims %d %d %d\n", topk_values->dims[0], topk_values->dims[1], topk_values->dims[2]);
+    Tensor topk_values_reduced = ff.reduce_sum(topk_values, {0}, true); // (2, 1, 1)
+    topk_values = ff.divide(topk_values, topk_values_reduced); // (2, 1, 128)
 
     Tensor dummy_gate = ff.dense(
         ff_norm,
