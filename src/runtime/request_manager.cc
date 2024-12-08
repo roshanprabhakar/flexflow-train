@@ -1282,7 +1282,7 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
           get_num_transformer_layers() - 1);
   assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer >= 0);
   new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer =
-      std::min(0, new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer -
+      std::max(0, new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer -
       get_num_layers_per_finetuning_step() + 1); //inclusive
   // if (new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer < 0) {
   //   std::cout << "Error: peft_bwd_first_layer < 0" << std::endl;
@@ -1291,6 +1291,7 @@ void RequestManager::add_finetuning_req_bwd_batch(BatchConfig &new_bc) {
   //   std::cout << "get_num_layers_per_finetuning_step(): " << get_num_layers_per_finetuning_step() << std::endl;
   // }
   assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer >= 0);
+  assert(new_bc.requestsInfo[inference_batch_size].peft_bwd_last_layer >= new_bc.requestsInfo[inference_batch_size].peft_bwd_first_layer);
 
   set_optimizer_tasks(
       new_bc.requestsInfo[inference_batch_size].optimizer_tasks,
