@@ -176,8 +176,6 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
     Tensor ff_norm = token_ff_norm[1];
 
     // MoE
-    dbg_printf("moe's input, ff_norm, has dims %d %d %d\n", ff_norm->dims[0], ff_norm->dims[1], ff_norm->dims[2]);
-//    dbg_printf("moe's input, ff_norm, has shape: %d, %d\n", ff_norm->dims[0], ff_norm->dims[1]);
     Tensor gate = ff.dense(
         ff_norm, // (hidden_size, 1, 128)
         mixtral_config.num_local_experts,
@@ -192,15 +190,12 @@ void MIXTRAL::create_mixtral_model(FFModel &ff,
         std::string("layers." + std::to_string(i) + ".block_sparse_moe_gate")
             .c_str());
 
-    dbg_printf("gate before softmax has dims %d %d %d\n", gate->dims[0], gate->dims[1], gate->dims[2]);
     gate = ff.softmax( // This operation fails!
         gate, // (num_experts, 1, 128)
         0,
         DT_NONE,
         std::string("layers." + std::to_string(i) + ".block_sparse_moe_softmax")
             .c_str());
-
-    dbg_printf("gate after softmax has dims %d %d %d\n", gate->dims[0], gate->dims[1], gate->dims[2]);
 
     Tensor topk_out[2] = {nullptr, nullptr};
     ff.top_k(
