@@ -346,9 +346,13 @@ public:
   void set_spec_infer_old_version(bool spec_infer_old_version);
   void set_greedy_schedule(bool greedy_schedule);
   void set_equal_schedule(bool equal_schedule);
+  void set_fcfs_slo(bool fcfs_slo);
+  void set_stta(bool stta);
   bool get_spec_infer_old_version();
   bool get_greedy_schedule();
   bool get_equal_schedule();
+  bool get_fcfs_slo();
+  bool get_stta();
   inline double get_slo_constraint(Request &request);
   double get_request_expected_latency(Request &request);
   Request &get_request_with_guid(RequestGuid guid);
@@ -465,6 +469,8 @@ private:
   bool spec_infer_old_version = false;
   bool greedy_schedule = false;
   bool equal_schedule = false;
+  bool fcfs_slo = false;
+  bool stta = false; // The smallest time to attain policy
 
   std::unique_ptr<Tokenizer> tokenizer_;
   bool verbose;
@@ -525,6 +531,8 @@ private:
   bool update_llm_decode_results(InferenceResult const &result);
   BatchConfig prepare_llm_prefilling_batch();
   BatchConfig prepare_decoding_batch();
+  BatchConfig prepare_decoding_batch_fcfs_slo();
+  BatchConfig prepare_decoding_batch_stta();
   /* ---------- Incremental Decoding Helper Functions ---------- */
 
   /* ---------- Spec Decoding Helper Functions ---------- */
