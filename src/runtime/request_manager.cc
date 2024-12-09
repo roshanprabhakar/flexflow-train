@@ -3166,6 +3166,9 @@ void RequestManager::prune_token_tree() {
        spare_latency_2_request_index) {
     int request_index = spare_latency_request_index_pair.second;
     RequestGuid guid = guid_of_requests[request_index];
+    if (all_requests[guid].get_slo_ratio() < 0) {
+      continue;
+    }
     add_tokens_toward_slo(guid, budget, spare_latency_2_request_index.size());
   }
 
@@ -3235,6 +3238,7 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid,
       max(1.0,
           num_tokens_to_decode_per_step + expected_num_tokens_decoded -
               request.decode_length());
+  num_tokens_to_decode = min(num_tokens_to_decode, (double)ssm_tree_depth + 1);
 
   // The root is already included
   // In function add_root_to_spec_token_tree
@@ -3242,7 +3246,7 @@ void RequestManager::add_tokens_toward_slo(RequestGuid guid,
 
   // The max token that can be added to the token tree when fulfilling the SLO
   int max_token_toward_slo =
-      int(get_max_tokens_per_batch() / num_available_requests);
+      int(get_max_tokens_per_batch() * 1.2 / num_available_requests);
 
   while (budget > 0 and max_token_toward_slo > 0 and
          current_added < num_tokens_to_decode) {
