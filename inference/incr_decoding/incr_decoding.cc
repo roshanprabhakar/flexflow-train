@@ -182,11 +182,11 @@ void parse_input_args(char **argv,
       add_special_tokens = false;
       continue;
     }
-    if (!strcmp(argv[i], "--fcfs-slo")) {
+    if (!strcmp(argv[i], "--fcfs-serving")) {
       fcfs_slo = true;
       continue;
     }
-    if (!strcmp(argv[i], "--stta")) {
+    if (!strcmp(argv[i], "--stta-serving")) {
       stta = true;
       continue;
     }

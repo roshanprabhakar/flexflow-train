@@ -3394,6 +3394,7 @@ void RequestManager::prune_token_tree() {
         max(1.0,
             num_tokens_to_decode_per_step + expected_num_tokens_decoded -
                 request.decode_length());
+    num_tokens_to_decode = min(num_tokens_to_decode, (double)ssm_tree_depth + 1);
     num_tokens_to_decode_2_request_index.push_back(
         std::make_pair(num_tokens_to_decode, request_index));
   }
