@@ -82,7 +82,7 @@ def plot_fwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    plt.savefig(f'./plots/fwd_overhead_{num_tokens_per_batch}.pdf', bbox_inches='tight')
+    plt.savefig(f'./plots/overhead_test/fwd_overhead_{num_tokens_per_batch}.pdf', bbox_inches='tight')
 
     # plt.show()
     
@@ -154,7 +154,7 @@ def plot_bwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    plt.savefig(f'./plots/bwd_overhead_{num_tokens_per_batch}.pdf', bbox_inches='tight')
+    plt.savefig(f'./plots/overhead_test/bwd_overhead_{num_tokens_per_batch}.pdf', bbox_inches='tight')
 
     # plt.show()
 
@@ -166,8 +166,8 @@ if __name__ == "__main__":
     os.chdir(dname)
 
     # Make plots directory if it doesn't exist
-    if not os.path.exists('./plots'):
-        os.makedirs('./plots')
+    if not os.path.exists('./plots/overhead_test'):
+        os.makedirs('./plots/overhead_test')
 
     model_name="meta-llama/Llama-3.1-70B"
     tp_degree=4
