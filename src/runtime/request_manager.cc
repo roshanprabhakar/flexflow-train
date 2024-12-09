@@ -374,6 +374,14 @@ bool RequestManager::get_stta() {
   return stta;
 }
 
+void RequestManager::set_eval_overhead_breakdown(bool eval_overhead_breakdown_) {
+  eval_overhead_breakdown = eval_overhead_breakdown_;
+}
+
+bool RequestManager::get_eval_overhead_breakdown() {
+  return eval_overhead_breakdown;
+}
+
 inline double RequestManager::get_slo_constraint(Request &request) {
   if (request.get_slo_ratio() < 0) {
     // we use negative number to specify the absolute slo constraint (ms)
@@ -682,8 +690,34 @@ BatchConfig RequestManager::get_next_batch_config_task(
 
 BatchConfig
     RequestManager::get_next_batch_config(InferenceResult const &result) {
+  static double process_this_start_us = 0.0, process_last_end_us = 0.0;
+  if (get_eval_overhead_breakdown()) {
+    process_this_start_us = Realm::Clock::current_time_in_microseconds();
+    if (process_last_end_us != 0) {
+      if (request_manager_status == PREFILLING) {
+        if (prefill_model == SSM) {
+          eval_ssm_prefill_latency_us +=
+              process_this_start_us - process_last_end_us;
+        } else {
+          eval_llm_prefill_latency_us +=
+              process_this_start_us - process_last_end_us;
+        }
+      } else if (request_manager_status == SSM_SPEC) {
+        eval_ssm_spec_latency_us +=
+            process_this_start_us - process_last_end_us;
+      } else if (request_manager_status == LLM_VERIFY) {
+        eval_llm_verify_latency_us +=
+            process_this_start_us - process_last_end_us;
+      }
+    }
+  }
   update_inference_results(result);
-  return prepare_next_batch();
+  BatchConfig bc = prepare_next_batch();
+  if (get_eval_overhead_breakdown()) {
+    process_last_end_us = Realm::Clock::current_time_in_microseconds();
+    eval_process_latency_us += process_last_end_us - process_this_start_us; 
+  }
+  return bc;
 }
 
 // Return value: true if load a pending request to the batch
@@ -2088,7 +2122,15 @@ bool RequestManager::update_ssm_inference_results(
   // BatchConfig and hence the last InferenceResult is equal to
   // the order of the request in the last BatchConfig
   if (!spec_infer_old_version) {
+    static double schedule_start = 0.0;
+    if (get_eval_overhead_breakdown()) {
+      schedule_start = Realm::Clock::current_time_in_microseconds();
+    }
     add_tokens_to_spec_token_tree(ssm_inference_result);
+    if (get_eval_overhead_breakdown()) {
+      eval_schedule_latency_us += Realm::Clock::current_time_in_microseconds() -
+                                  schedule_start;
+    }
   } else {
     add_tokens_to_spec_token_tree_old_version(ssm_inference_result);
   }
@@ -2131,7 +2173,15 @@ bool RequestManager::update_ssm_inference_results(
   if (current_ssm_step == ssm_tree_depth) {
     // Prune the token tree at the last step
     if (!spec_infer_old_version) {
+      static double schedule_start = 0.0;
+      if (get_eval_overhead_breakdown()) {
+        schedule_start = Realm::Clock::current_time_in_microseconds();
+      }
       prune_token_tree();
+      if (get_eval_overhead_breakdown()) {
+        eval_schedule_latency_us += Realm::Clock::current_time_in_microseconds() -
+                                    schedule_start;
+      }
     }
     // Update profiling statistics before returning
     profiling.ssm_step_times.push_back(
@@ -3137,6 +3187,25 @@ void RequestManager::terminate_background_server() {
     goodput_str += std::to_string(goodput);
     goodput_str += ")";
     str += goodput_str;
+
+    if (get_eval_overhead_breakdown()) {
+      eval_process_latency_us -= eval_schedule_latency_us;
+      std::string eval_overhead_breakdown_str = "\n eval_overhead_breakdown( ";
+      eval_overhead_breakdown_str += "\n  ssm_prefill_us: " +
+                                     std::to_string(eval_ssm_prefill_latency_us);
+      eval_overhead_breakdown_str += "\n  ssm_spec_us: " +
+                                     std::to_string(eval_ssm_spec_latency_us);
+      eval_overhead_breakdown_str += "\n  llm_prefill_us: " +
+                                     std::to_string(eval_llm_prefill_latency_us);
+      eval_overhead_breakdown_str += "\n  llm_verify_us: " +
+                                     std::to_string(eval_llm_verify_latency_us);
+      eval_overhead_breakdown_str += "\n  process_us: " +
+                                     std::to_string(eval_process_latency_us);
+      eval_overhead_breakdown_str += "\n  scheduling_us: " +
+                                     std::to_string(eval_schedule_latency_us);
+      eval_overhead_breakdown_str += ")";
+      str += eval_overhead_breakdown_str;
+    }
 
     write_to_output_file("", str);
     background_server_status = TERMINATED;

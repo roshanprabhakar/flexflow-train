@@ -86,7 +86,8 @@ void parse_input_args(char **argv,
                       bool &greedy_schedule,
                       bool &equal_schedule,
                       std::string &emission_file_path,
-                      bool &add_special_tokens) {
+                      bool &add_special_tokens,
+                      bool &eval_overhead_breakdown) {
   for (int i = 1; i < argc; i++) {
     // llm model name
     if (!strcmp(argv[i], "-llm-model")) {
@@ -229,6 +230,10 @@ void parse_input_args(char **argv,
     }
     if (!strcmp(argv[i], "--no-special-tokens")) {
       add_special_tokens = false;
+      continue;
+    }
+    if (!strcmp(argv[i], "--eval-overhead-breakdown")) {
+      eval_overhead_breakdown = true;
       continue;
     }
   }
@@ -421,6 +426,7 @@ void FlexFlow::top_level_task(Task const *task,
   bool greedy_schedule = false;
   bool equal_schedule = false;
   bool add_special_tokens = true;
+  bool eval_overhead_breakdown = false;
   std::string emission_file_path;
 
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
@@ -455,7 +461,8 @@ void FlexFlow::top_level_task(Task const *task,
                    greedy_schedule,
                    equal_schedule,
                    emission_file_path,
-                   add_special_tokens);
+                   add_special_tokens,
+                   eval_overhead_breakdown);
   if (max_tokens_per_ssm_batch == -1) {
     max_tokens_per_ssm_batch = max_tokens_per_batch;
   }
@@ -507,6 +514,7 @@ void FlexFlow::top_level_task(Task const *task,
   rm->set_greedy_schedule(greedy_schedule);
   rm->set_equal_schedule(equal_schedule);
   rm->register_output_filepath(file_paths.output_file_path);
+  rm->set_eval_overhead_breakdown(eval_overhead_breakdown);
 
   // Create LLM model
   FFModel tree_model(ffconfig, ffconfig.cpu_offload);

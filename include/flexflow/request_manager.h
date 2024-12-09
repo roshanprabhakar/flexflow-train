@@ -354,6 +354,8 @@ public:
   bool get_fcfs_slo();
   bool get_stta();
   inline double get_slo_constraint(Request &request);
+  void set_eval_overhead_breakdown(bool eval_overhead_breakdown);
+  bool get_eval_overhead_breakdown();
   double get_request_expected_latency(Request &request);
   Request &get_request_with_guid(RequestGuid guid);
   int register_ssm_model(FFModel *model);
@@ -471,6 +473,13 @@ private:
   bool equal_schedule = false;
   bool fcfs_slo = false;
   bool stta = false; // The smallest time to attain policy
+  bool eval_overhead_breakdown = false; // for evaluation purpose
+  double eval_ssm_prefill_latency_us = 0.0;
+  double eval_llm_prefill_latency_us = 0.0;
+  double eval_ssm_spec_latency_us = 0.0;
+  double eval_llm_verify_latency_us = 0.0;
+  double eval_process_latency_us = 0.0;
+  double eval_schedule_latency_us = 0.0;
 
   std::unique_ptr<Tokenizer> tokenizer_;
   bool verbose;
