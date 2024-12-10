@@ -847,6 +847,7 @@ public:
   // Inference APIs
   // ========================================
   std::vector<GenerationResult> generate(std::vector<Request> const &requests);
+  std::vector<GenerationResult> generate_online(std::vector<Request> const &inference_requests, std::vector<Request> const &ft_requests);
 
   Tensor create_tensor_legion_ordering(int num_dim,
                                        int const dims[],

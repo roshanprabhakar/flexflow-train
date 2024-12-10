@@ -112,7 +112,7 @@ def plot_bwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
     # print(f"Standard deviation of step time: {std_step_time:.3f} milliseconds")
     print(f"Step time: {avg_step_time:.3f} ± {std_step_time:.3f} ms ({len(filtered_df)} entries)")
 
-    values_of_interest=[1,10,19,27,36,45,54,62,71,80]
+    values_of_interest=[0, 1,10,19,27,36,45,54,62,71,80]
 
     # Second analysis: Variable finetuning tokens
     filtered_df_2 = df[
@@ -141,7 +141,7 @@ def plot_bwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
         avg_step_time=('step_time', 'mean'),
         std_step_time=('step_time', 'std')
     ).reset_index()
-
+    print(avg_std_df['avg_step_time'])
     plt.errorbar(avg_std_df['num_bwd_layers'], 
                  avg_std_df['avg_step_time'], 
                  yerr=avg_std_df['std_step_time'], 

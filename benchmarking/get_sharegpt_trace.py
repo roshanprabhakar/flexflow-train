@@ -1,9 +1,5 @@
 from dataclasses import asdict, dataclass, field
-import json
-import os
-import random
-import requests
-import argparse
+import json, os, random, requests, argparse
 from tqdm.asyncio import tqdm
 from typing import List, Optional
 from collections import OrderedDict

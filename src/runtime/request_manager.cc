@@ -315,11 +315,11 @@ void RequestManager::set_max_fwd_finetuning_tokens_per_batch(int max_num_tokens)
   max_fwd_finetuning_tokens_per_batch = max_num_tokens;
   assert(max_fwd_finetuning_tokens_per_batch <= BatchConfig::MAX_NUM_TOKENS);
   assert(max_fwd_finetuning_tokens_per_batch <= max_tokens_per_batch);
-  assert(max_fwd_finetuning_tokens_per_batch > 0);
+  // assert(max_fwd_finetuning_tokens_per_batch > 0);
 }
 
 int RequestManager::get_max_fwd_finetuning_tokens_per_batch() {
-  assert(max_fwd_finetuning_tokens_per_batch > 0 && max_fwd_finetuning_tokens_per_batch <= max_tokens_per_batch);
+  // assert(max_fwd_finetuning_tokens_per_batch > 0 && max_fwd_finetuning_tokens_per_batch <= max_tokens_per_batch);
   return max_fwd_finetuning_tokens_per_batch;
 }
 
@@ -586,6 +586,8 @@ RequestGuid RequestManager::register_new_request(Request const &request_) {
               << std::endl;
     std::cout << request << std::endl;
   }
+  std::cout << "Registered new inf request with guid: " << request.guid
+              << std::endl << "\tpending_infr_request_queue length: " << pending_infr_request_queue.size() << std::endl;
 
   GenerationResult gr;
   gr.guid = request.guid;
@@ -632,11 +634,11 @@ RequestGuid RequestManager::register_new_peft_request(Request const &request_) {
   //   }
   //   log_req_mgr.print("%s", input.c_str());
   // }
-  if (verbose) {
-    std::cout << "Registered new request with guid: " << request.guid
+  // if (verbose) {
+    std::cout << "Registered new PEFT request with guid: " << request.guid
               << std::endl;
     std::cout << request << std::endl;
-  }
+  // }
 
   GenerationResult gr;
   gr.guid = request.guid;
@@ -895,8 +897,9 @@ void RequestManager::handle_completed_inf_req(BatchConfig const &old_bc,
   }
   request.status = Request::COMPLETED;
   trigger_request_completion_future(request.guid);
-  log_req_mgr.print("[Done] guid(%zu) final_length(%zu)",
+  log_req_mgr.print("[Done] guid(%zu) initial_len(%d) final_length(%zu)",
                     old_bc.requestsInfo[i].request_guid,
+                    request.initial_len,
                     output_tokens.size());
   // log_req_mgr.print("Final output: %s", output.c_str());
   num_processed_requests++;
@@ -904,29 +907,27 @@ void RequestManager::handle_completed_inf_req(BatchConfig const &old_bc,
   profile_info.finish_time = Realm::Clock::current_time_in_microseconds();
   total_request_run_time += profile_info.finish_time - profile_info.start_time;
   profiling_requests[request.guid] = profile_info;
-  log_req_mgr.print("[%s] guid(%zu) llm_decoding_steps(%d) start(%.1lf) "
-                    "finish(%.1lf) latency(%.1lf) ttft(%.1lf)",
-                    request.warmup ? "Warmup" : "Profile",
-                    request.guid,
-                    profile_info.llm_decoding_steps,
-                    profile_info.start_time,
-                    profile_info.finish_time,
-                    profile_info.finish_time - profile_info.start_time,
-                    profile_info.first_token_time -
-                        profile_info.registration_time);
+  // log_req_mgr.print("[%s] guid(%zu) llm_decoding_steps(%d) initial_len(%d) final_len(%d) latency(%.1lf) ttft(%.1lf)",
+  //                   request.warmup ? "Warmup" : "Profile",
+  //                   request.guid,
+  //                   profile_info.llm_decoding_steps,
+  //                   request.initial_len,
+  //                   request.tokens.size(),
+  //                   (profile_info.finish_time - profile_info.start_time)/1e3,
+  //                   (profile_info.first_token_time - profile_info.registration_time)/1e3);
   // Write output to file if needed:
   if (!output_filepath.empty()) {
     std::ofstream outputFile(output_filepath, std::ios::app);
     if (outputFile.is_open()) {
-      outputFile << "[" << (request.warmup ? "Warmup" : "Profile") << "] guid("
-                 << request.guid << ") llm_decoding_steps("
-                 << profile_info.llm_decoding_steps << ") latency("
-                 << std::fixed << std::setprecision(3)
-                 << (profile_info.finish_time - profile_info.start_time)
-                 << ") ttft(" << std::fixed << std::setprecision(3)
-                 << (profile_info.first_token_time -
-                     profile_info.registration_time)
-                 << ")\n";
+      outputFile << "[" 
+                << (request.warmup ? "Warmup" : "Profile") << 
+                "] guid(" << request.guid 
+                << ") llm_decoding_steps(" << profile_info.llm_decoding_steps 
+                << ") initial_len(" << request.initial_len
+                << ") final_len(" << request.tokens.size()
+                << ") latency(" << std::fixed << std::setprecision(3) << (profile_info.finish_time - profile_info.start_time)/1e3
+                << ") ttft(" << std::fixed << std::setprecision(3) << (profile_info.first_token_time - profile_info.registration_time)/1e3
+                << ")\n";
       // if (request.benchmarking_tokens <= 0) {
       //   outputFile << "token IDs: ";
       //   for (int i = 0; i < request.tokens.size(); i++) {
@@ -1534,7 +1535,7 @@ BatchConfig RequestManager::prepare_next_fwd_batch(BatchConfig const &old_bc,
   }
 
   // Step 4: add finetuning fwd tokens, if there is additional space
-  if (finetuning_fwd_work_available() && new_bc.num_tokens < get_max_tokens_per_batch()) {
+  if (finetuning_fwd_work_available() && new_bc.num_tokens < get_max_tokens_per_batch() && get_max_fwd_finetuning_tokens_per_batch() > 0) {
     add_finetuning_req_fwd_batch(new_bc);
   }
 
@@ -3376,8 +3377,7 @@ std::vector<std::pair<BatchConfig::TokenId, int>>
   return merged_tree;
 }
 
-std::vector<GenerationResult>
-    FFModel::generate(std::vector<Request> const &requests) {
+std::vector<GenerationResult> FFModel::generate(std::vector<Request> const &requests) {
   RequestManager *rm = RequestManager::get_request_manager();
   // reset inference_finished flag
   rm->set_inference_finished(false);
@@ -3403,6 +3403,67 @@ std::vector<GenerationResult>
   if (inf_guids.size() > 0) {
     rm->set_inference_finished();
   }
+  for (int i = 0; i < peft_guids.size(); i++) {
+    results.push_back(rm->get_generation_result(peft_guids[i]));
+  }
+  return results;
+}
+
+bool request_has_arrived(Request const &req, long long start_time_us, long long current_time_us) {
+  return req.arrival_time_us + start_time_us <= current_time_us;
+}
+
+std::vector<GenerationResult> FFModel::generate_online(std::vector<Request> const &inference_requests, std::vector<Request> const &ft_requests) {
+  RequestManager *rm = RequestManager::get_request_manager();
+  
+  // reset inference_finished flag
+  rm->set_inference_finished(false);
+  
+  std::vector<RequestGuid> inf_guids, peft_guids;
+  
+  long long int start_time_us = Realm::Clock::current_time_in_microseconds();
+  bool added_ft_req = (ft_requests.size() == 0) ? true : false;
+  assert(ft_requests.size() <= 1);
+  for (int i = 0; i < inference_requests.size(); ) {
+    long long int current_time_us = Realm::Clock::current_time_in_microseconds();
+    
+    // submit current inf request if it has arrived
+    assert(inference_requests.at(i).req_type == RequestType::REQ_INFERENCE);
+    if (request_has_arrived(inference_requests.at(i), start_time_us, current_time_us)) {
+      // std::cout << "Time " << (current_time_us-start_time_us)/1000 << ": Submitting inference request " << i << std::endl;
+      RequestGuid guid = rm->register_new_request(inference_requests.at(i));
+      if (guid != BatchConfig::INVALID_GUID) {
+        inf_guids.push_back(guid);
+      }
+      i++;
+    }
+    
+    // if the current request has not arrived yet, submit finetuning work if available, then sleep until next request arrives
+    else {
+      if (this->config.enable_peft_finetuning && !added_ft_req) {
+        // std::cout << "Time " << (current_time_us-start_time_us)/1000 << "Registering PEFT request" << std::endl;
+        RequestGuid guid = rm->register_new_peft_request(ft_requests.at(0));
+        if (guid != BatchConfig::INVALID_GUID) {
+          peft_guids.push_back(guid);
+        }
+        added_ft_req = true;
+      }
+      // sleep until inference request arrives
+      long long int sleep_interval = (inference_requests.at(i).arrival_time_us + start_time_us) - current_time_us;
+      // printf("Sleeping for %f ms until request %i arrives\n", (double)sleep_interval/1000.0, i);
+      usleep(static_cast<useconds_t>(sleep_interval));
+    }
+  }
+
+  // block until all inference requests have been processed
+  std::vector<GenerationResult> results;
+  for (int i = 0; i < inf_guids.size(); i++) {
+    results.push_back(rm->get_generation_result(inf_guids[i]));
+  }
+  if (inf_guids.size() > 0) {
+    rm->set_inference_finished();
+  }
+  // block until all PEFT requests have been processed (or get interrupted at the end of the inference workload)
   for (int i = 0; i < peft_guids.size(); i++) {
     results.push_back(rm->get_generation_result(peft_guids[i]));
   }

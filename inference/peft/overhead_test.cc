@@ -50,8 +50,8 @@ void parse_input_args(char **argv,
                       int &max_requests_per_batch,
                       int &max_tokens_per_batch,
                       int &max_sequence_length,
-                      int &num_layers_per_finetuning_step_linspace_size,
-                      int &max_fwd_finetuning_tokens_linspace_size) {
+                      std::vector<int> &num_layers_per_finetuning_step,
+                      std::vector<int> &max_fwd_finetuning_tokens) {
   for (int i = 1; i < argc; i++) {
     // llm model type
     if (!strcmp(argv[i], "-llm-model")) {
@@ -104,12 +104,32 @@ void parse_input_args(char **argv,
       max_sequence_length = std::stoi(argv[++i]);
       continue;
     }
-    if (!strcmp(argv[i], "--num-layers-per-finetuning-step-linspace-size")) {
-      num_layers_per_finetuning_step_linspace_size = std::stoi(argv[++i]);
+    if (!strcmp(argv[i], "--num-layers-per-finetuning-step")) {
+      std::string layers_str = std::string(argv[++i]);
+      std::stringstream ss(layers_str);
+      std::string item;
+      while (std::getline(ss, item, ',')) {
+        num_layers_per_finetuning_step.push_back(std::stoi(item));
+      }
+      // std::cout << "ARG num_layers_per_finetuning_step: ";
+      // for (int num_layers : num_layers_per_finetuning_step) {
+      //   std::cout << num_layers << " ";
+      // }
+      // std::cout << std::endl;
       continue;
     }
-    if (!strcmp(argv[i], "--max-fwd-finetuning-tokens-linspace-size")) {
-      max_fwd_finetuning_tokens_linspace_size = std::stoi(argv[++i]);
+    if (!strcmp(argv[i], "--max-fwd-finetuning-tokens")) {
+      std::string tokens_str = std::string(argv[++i]);
+      std::stringstream ss(tokens_str);
+      std::string item;
+      while (std::getline(ss, item, ',')) {
+        max_fwd_finetuning_tokens.push_back(std::stoi(item));
+      }
+      // std::cout << "ARG max_fwd_finetuning_tokens: ";
+      // for (int num_tokens : max_fwd_finetuning_tokens) {
+      //   std::cout << num_tokens << " ";
+      // }
+      // std::cout << std::endl;
       continue;
     }
   }
@@ -125,30 +145,6 @@ void parse_input_args(char **argv,
   wordfree(&p);
 }
 
-std::vector<int> linspace(int start, int end, int num) {
-  // start and end are inclusive
-  std::vector<int> result;
-  
-  // Handle edge cases
-  if (num <= 0) return result;
-  if (num == 1) {
-      result.push_back(start);
-      return result;
-  }
-  
-  // Calculate step size
-  double step = static_cast<double>(end - start) / (num - 1);
-  
-  // Fill the vector with evenly spaced values
-  for (int i = 0; i < num; i++) {
-      int value = static_cast<int>(round(start + (step * i)));
-      result.push_back(value);
-  }
-  
-  return result;
-}
-
-
 std::vector<Request> make_warmup_requests(int num_inf_request, int num_finetuning_steps, PEFTModelID *peft_model_id) {
   std::vector<Request> warmup_requests;
 
@@ -162,6 +158,7 @@ std::vector<Request> make_warmup_requests(int num_inf_request, int num_finetunin
   Request finetuning_req;
   finetuning_req.req_type = RequestType::REQ_FINETUNING;
   finetuning_req.benchmarking_tokens = 1024;
+  finetuning_req.add_special_tokens = false;
   finetuning_req.max_length = 1024;
   finetuning_req.warmup = true;
   finetuning_req.peft_model_id = (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
@@ -177,22 +174,30 @@ std::vector<Request> make_requests(int max_requests_per_batch,
                                   int bwd_layers_per_step,
                                   PEFTModelID *peft_model_id) {
   std:vector<Request> requests;
+  int target_num_steps = 10;
+  if (max_fwd_tokens_per_batch > 0) {
+    target_num_steps += (finetuning_entry_size + max_fwd_tokens_per_batch - 1) / max_fwd_tokens_per_batch + 
+                                  (tot_llm_layers + bwd_layers_per_step - 1) / bwd_layers_per_step;
+  }
   for (int i = 0; i < max_requests_per_batch; i++) {
     Request inference_req;
     inference_req.benchmarking_tokens = 1;
-    inference_req.max_new_tokens = (finetuning_entry_size + max_fwd_tokens_per_batch - 1) / max_fwd_tokens_per_batch + 
-                                    (tot_llm_layers + bwd_layers_per_step - 1) / bwd_layers_per_step + 5;
+    inference_req.add_special_tokens = false;
+    inference_req.max_new_tokens = target_num_steps;
     inference_req.warmup = false;
     requests.push_back(inference_req);
   }
-  Request finetuning_req;
-  finetuning_req.req_type = RequestType::REQ_FINETUNING;
-  finetuning_req.benchmarking_tokens = finetuning_entry_size;
-  finetuning_req.max_length = finetuning_entry_size;
-  finetuning_req.peft_model_id = (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
-  finetuning_req.peft_finetuning_info.max_training_steps = 1;
-  finetuning_req.warmup = false;
-  requests.push_back(finetuning_req);
+  if (max_fwd_tokens_per_batch > 0) {
+    Request finetuning_req;
+    finetuning_req.req_type = RequestType::REQ_FINETUNING;
+    finetuning_req.add_special_tokens = false;
+    finetuning_req.benchmarking_tokens = finetuning_entry_size;
+    finetuning_req.max_length = finetuning_entry_size;
+    finetuning_req.peft_model_id = (peft_model_id != nullptr) ? *peft_model_id : PEFTModelID::NO_ID;
+    finetuning_req.peft_finetuning_info.max_training_steps = 1;
+    finetuning_req.warmup = false;
+    requests.push_back(finetuning_req);
+  }
   return requests;
 }
 
@@ -217,8 +222,8 @@ void FlexFlow::top_level_task(Task const *task,
   int max_sequence_length = 2048;
   int max_training_steps = -1;
   bool enable_peft_finetuning = true;
-  int num_layers_per_finetuning_step_linspace_size = 10;
-  int max_fwd_finetuning_tokens_linspace_size = 10;
+  std::vector<int> num_layers_per_finetuning_step;
+  std::vector<int> max_fwd_finetuning_tokens;
 
   InputArgs const &command_args = HighLevelRuntime::get_input_args();
   char **argv = command_args.argv;
@@ -234,8 +239,20 @@ void FlexFlow::top_level_task(Task const *task,
                    max_requests_per_batch,
                    max_tokens_per_batch,
                    max_sequence_length,
-                   num_layers_per_finetuning_step_linspace_size,
-                   max_fwd_finetuning_tokens_linspace_size);
+                   num_layers_per_finetuning_step,
+                   max_fwd_finetuning_tokens);
+  // std::cout << "max_fwd_finetuning_tokens: ";
+  // for (int num_tokens : max_fwd_finetuning_tokens) {
+  //   std::cout << num_tokens << " ";
+  // }
+  // std::cout << std::endl;
+  // std::cout << "num_layers_per_finetuning_step: ";
+  // for (int num_layers : num_layers_per_finetuning_step) {
+  //   std::cout << num_layers << " ";
+  // }
+  // std::cout << std::endl;
+  
+  
   assert(ffconfig.data_parallelism_degree * ffconfig.tensor_parallelism_degree *
              ffconfig.pipeline_parallelism_degree ==
          ffconfig.numNodes * ffconfig.workersPerNode);
@@ -407,20 +424,15 @@ void FlexFlow::top_level_task(Task const *task,
 
   // Run workload
   {
+    std::cout << "----------warmup started--------------" << std::endl;
     std::vector<Request> warmup_requests = make_warmup_requests(10, 1000, peft_model_id_finetuning);
     std::vector<GenerationResult> warmup_result = model.generate(warmup_requests);
     rm->set_inference_finished(false); // reset inference finished flag
-    std::cout << "----------warmup finished--------------" << std::endl;
+    std::cout << "----------warmup finished--------------" << std::endl << std::endl << std::endl;
 
-    std::vector<int> max_fwd_tokens_per_batch_array = linspace(1, 
-                                                               max_tokens_per_batch - max_requests_per_batch, 
-                                                               max_fwd_finetuning_tokens_linspace_size);
-    std::vector<int> num_bwd_layers_per_step_array = linspace(1, 
-                                                              tot_num_layers_in_model,
-                                                              num_layers_per_finetuning_step_linspace_size);
-    for (int max_fwd_tokens_per_batch : max_fwd_tokens_per_batch_array) {
+    for (int max_fwd_tokens_per_batch : max_fwd_finetuning_tokens) {
       rm->set_max_fwd_finetuning_tokens_per_batch(max_fwd_tokens_per_batch);
-      for (int num_bwd_layers_per_step : num_bwd_layers_per_step_array) {
+      for (int num_bwd_layers_per_step : num_layers_per_finetuning_step) {
         rm->set_num_layers_per_finetuning_step(num_bwd_layers_per_step);
         std::cout << "Benchmarking overhead of " << max_fwd_tokens_per_batch << " fwd tokens and " << num_bwd_layers_per_step << " bwd layers per step" << std::endl;
         std::vector<Request> requests = make_requests(max_requests_per_batch, 
@@ -430,6 +442,7 @@ void FlexFlow::top_level_task(Task const *task,
                                                       num_bwd_layers_per_step,
                                                       peft_model_id_finetuning);
         std::vector<GenerationResult> result = model.generate(requests);
+        std::cout << "----------inference finished--------------" << std::endl << std::endl << std::endl;
       }
     }
   }

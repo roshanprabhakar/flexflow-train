@@ -18,13 +18,6 @@ NCPUS=16
 FSIZE=76000
 ZSIZE=200000
 
-# MODEL_NAME="meta-llama/Meta-Llama-3-8B"
-# PEFT_MODEL_NAME="goliaro/llama-3-8b-lora-dolly"
-# NGPUS=8
-# NCPUS=16
-# FSIZE=30000
-# ZSIZE=30000
-
 # MODEL_NAME="JackFram/llama-160m"
 # PEFT_MODEL_NAME="goliaro/llama-160m-lora"
 # NGPUS=4
@@ -42,6 +35,13 @@ max_tokens_per_batch_values=(
     512
 )
 
+max_finetuning_fwd_tokens_values=(
+    "0,8,24,56,120"
+    "0,8,24,56,120,248"
+    "0,8,24,56,120,248,504"
+)
+max_finetuning_bwd_layers="1,2,4,8,16,32,64"
+
 mkdir -p $OUTPUT_FOLDER
 
 
@@ -57,6 +57,7 @@ mkdir -p $OUTPUT_FOLDER
 
 for i in "${!max_tokens_per_batch_values[@]}"; do
     MAX_TOKENS_PER_BATCH=${max_tokens_per_batch_values[$i]}
+    MAX_FINETUNING_FWD_TOKENS=${max_finetuning_fwd_tokens_values[$i]}
     LOG_FILE="${OUTPUT_FOLDER}/test_${MAX_TOKENS_PER_BATCH}_tokens_per_batch.log"
     rm $LOG_FILE || true
     ./inference/peft/overhead_test \
@@ -69,5 +70,7 @@ for i in "${!max_tokens_per_batch_values[@]}"; do
         --max-requests-per-batch $BATCH_SIZE \
         --max-tokens-per-batch $MAX_TOKENS_PER_BATCH \
         --max-sequence-length $MAX_SEQ_LEN \
+        --max-fwd-finetuning-tokens $MAX_FINETUNING_FWD_TOKENS \
+        --num-layers-per-finetuning-step $max_finetuning_bwd_layers \
         2>&1 | tee $LOG_FILE
 done

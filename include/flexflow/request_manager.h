@@ -118,6 +118,7 @@ struct Request {
   bool add_special_tokens = true;
   bool warmup = false;
   Status status = PENDING;
+  long long arrival_time_us = 0;
   // inference fields
   std::string prompt;
   std::vector<BatchConfig::TokenId> tokens;
