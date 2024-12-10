@@ -472,7 +472,7 @@ private:
   bool greedy_schedule = false;
   bool equal_schedule = false;
   bool fcfs_slo = false;
-  bool stta = false; // The smallest time to attain policy
+  bool stta = false;                    // The smallest time to attain policy
   bool eval_overhead_breakdown = false; // for evaluation purpose
   double eval_ssm_prefill_latency_us = 0.0;
   double eval_llm_prefill_latency_us = 0.0;

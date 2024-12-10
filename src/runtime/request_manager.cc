@@ -374,7 +374,8 @@ bool RequestManager::get_stta() {
   return stta;
 }
 
-void RequestManager::set_eval_overhead_breakdown(bool eval_overhead_breakdown_) {
+void RequestManager::set_eval_overhead_breakdown(
+    bool eval_overhead_breakdown_) {
   eval_overhead_breakdown = eval_overhead_breakdown_;
 }
 
@@ -703,8 +704,7 @@ BatchConfig
               process_this_start_us - process_last_end_us;
         }
       } else if (request_manager_status == SSM_SPEC) {
-        eval_ssm_spec_latency_us +=
-            process_this_start_us - process_last_end_us;
+        eval_ssm_spec_latency_us += process_this_start_us - process_last_end_us;
       } else if (request_manager_status == LLM_VERIFY) {
         eval_llm_verify_latency_us +=
             process_this_start_us - process_last_end_us;
@@ -730,8 +730,8 @@ bool RequestManager::load_pending_request_to_batch() {
   }
   if (num_running_requests >= get_max_requests_per_batch()) {
     if (get_eval_overhead_breakdown()) {
-      eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
-                                  load_request_start;
+      eval_other_latency_us +=
+          Realm::Clock::current_time_in_microseconds() - load_request_start;
     }
     return false;
   }
@@ -741,8 +741,8 @@ bool RequestManager::load_pending_request_to_batch() {
       // No pending request to process, but there are running requests in the
       // batch. Do nothing and return
       if (get_eval_overhead_breakdown()) {
-        eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
-                                    load_request_start;
+        eval_other_latency_us +=
+            Realm::Clock::current_time_in_microseconds() - load_request_start;
       }
       return false;
     }
@@ -755,8 +755,8 @@ bool RequestManager::load_pending_request_to_batch() {
     // If the background server has been terminated, exit
     if (is_background_server_terminated()) {
       if (get_eval_overhead_breakdown()) {
-        eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
-                                    load_request_start;
+        eval_other_latency_us +=
+            Realm::Clock::current_time_in_microseconds() - load_request_start;
       }
       return false;
     }
@@ -798,8 +798,8 @@ bool RequestManager::load_pending_request_to_batch() {
         Realm::Clock::current_time_in_microseconds();
   }
   if (get_eval_overhead_breakdown()) {
-    eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
-                                load_request_start;
+    eval_other_latency_us +=
+        Realm::Clock::current_time_in_microseconds() - load_request_start;
   }
   return true;
 }
@@ -2158,8 +2158,8 @@ bool RequestManager::update_ssm_inference_results(
     }
     add_tokens_to_spec_token_tree(ssm_inference_result);
     if (get_eval_overhead_breakdown()) {
-      eval_schedule_latency_us += Realm::Clock::current_time_in_microseconds() -
-                                  schedule_start;
+      eval_schedule_latency_us +=
+          Realm::Clock::current_time_in_microseconds() - schedule_start;
     }
   } else {
     add_tokens_to_spec_token_tree_old_version(ssm_inference_result);
@@ -2209,8 +2209,8 @@ bool RequestManager::update_ssm_inference_results(
       }
       prune_token_tree();
       if (get_eval_overhead_breakdown()) {
-        eval_schedule_latency_us += Realm::Clock::current_time_in_microseconds() -
-                                    schedule_start;
+        eval_schedule_latency_us +=
+            Realm::Clock::current_time_in_microseconds() - schedule_start;
       }
     }
     // Update profiling statistics before returning
@@ -3219,22 +3219,23 @@ void RequestManager::terminate_background_server() {
     str += goodput_str;
 
     if (get_eval_overhead_breakdown()) {
-      eval_process_latency_us -= eval_schedule_latency_us + eval_other_latency_us;
+      eval_process_latency_us -=
+          eval_schedule_latency_us + eval_other_latency_us;
       std::string eval_overhead_breakdown_str = "\n eval_overhead_breakdown( ";
-      eval_overhead_breakdown_str += "\n  ssm_prefill_us: " +
-                                     std::to_string(eval_ssm_prefill_latency_us);
-      eval_overhead_breakdown_str += "\n  ssm_spec_us: " +
-                                     std::to_string(eval_ssm_spec_latency_us);
-      eval_overhead_breakdown_str += "\n  llm_prefill_us: " +
-                                     std::to_string(eval_llm_prefill_latency_us);
-      eval_overhead_breakdown_str += "\n  llm_verify_us: " +
-                                     std::to_string(eval_llm_verify_latency_us);
-      eval_overhead_breakdown_str += "\n  process_us: " +
-                                     std::to_string(eval_process_latency_us);
-      eval_overhead_breakdown_str += "\n  scheduling_us: " +
-                                     std::to_string(eval_schedule_latency_us);
-      eval_overhead_breakdown_str += "\n  other_us: " +
-                                     std::to_string(eval_other_latency_us);
+      eval_overhead_breakdown_str +=
+          "\n  ssm_prefill_us: " + std::to_string(eval_ssm_prefill_latency_us);
+      eval_overhead_breakdown_str +=
+          "\n  ssm_spec_us: " + std::to_string(eval_ssm_spec_latency_us);
+      eval_overhead_breakdown_str +=
+          "\n  llm_prefill_us: " + std::to_string(eval_llm_prefill_latency_us);
+      eval_overhead_breakdown_str +=
+          "\n  llm_verify_us: " + std::to_string(eval_llm_verify_latency_us);
+      eval_overhead_breakdown_str +=
+          "\n  process_us: " + std::to_string(eval_process_latency_us);
+      eval_overhead_breakdown_str +=
+          "\n  scheduling_us: " + std::to_string(eval_schedule_latency_us);
+      eval_overhead_breakdown_str +=
+          "\n  other_us: " + std::to_string(eval_other_latency_us);
       eval_overhead_breakdown_str += ")";
       str += eval_overhead_breakdown_str;
     }
@@ -3495,7 +3496,8 @@ void RequestManager::prune_token_tree() {
         max(1.0,
             num_tokens_to_decode_per_step + expected_num_tokens_decoded -
                 request.decode_length());
-    num_tokens_to_decode = min(num_tokens_to_decode, (double)ssm_tree_depth + 1);
+    num_tokens_to_decode =
+        min(num_tokens_to_decode, (double)ssm_tree_depth + 1);
     num_tokens_to_decode_2_request_index.push_back(
         std::make_pair(num_tokens_to_decode, request_index));
   }
