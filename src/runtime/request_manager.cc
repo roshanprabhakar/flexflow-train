@@ -715,14 +715,24 @@ BatchConfig
   BatchConfig bc = prepare_next_batch();
   if (get_eval_overhead_breakdown()) {
     process_last_end_us = Realm::Clock::current_time_in_microseconds();
-    eval_process_latency_us += process_last_end_us - process_this_start_us; 
+    double process_time_us = process_last_end_us - process_this_start_us;
+    // printf("Process time: %.3f us\n", process_time_us);
+    eval_process_latency_us += process_time_us;
   }
   return bc;
 }
 
 // Return value: true if load a pending request to the batch
 bool RequestManager::load_pending_request_to_batch() {
+  static double load_request_start = 0.0;
+  if (get_eval_overhead_breakdown()) {
+    load_request_start = Realm::Clock::current_time_in_microseconds();
+  }
   if (num_running_requests >= get_max_requests_per_batch()) {
+    if (get_eval_overhead_breakdown()) {
+      eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
+                                  load_request_start;
+    }
     return false;
   }
   std::unique_lock<std::mutex> lock(request_queue_mutex);
@@ -730,6 +740,10 @@ bool RequestManager::load_pending_request_to_batch() {
     if (num_running_requests > 0) {
       // No pending request to process, but there are running requests in the
       // batch. Do nothing and return
+      if (get_eval_overhead_breakdown()) {
+        eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
+                                    load_request_start;
+      }
       return false;
     }
     // Wait until there is a pending request or the background server is
@@ -740,6 +754,10 @@ bool RequestManager::load_pending_request_to_batch() {
     });
     // If the background server has been terminated, exit
     if (is_background_server_terminated()) {
+      if (get_eval_overhead_breakdown()) {
+        eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
+                                    load_request_start;
+      }
       return false;
     }
   }
@@ -779,6 +797,10 @@ bool RequestManager::load_pending_request_to_batch() {
     profiling_requests[guid].start_time =
         Realm::Clock::current_time_in_microseconds();
   }
+  if (get_eval_overhead_breakdown()) {
+    eval_other_latency_us += Realm::Clock::current_time_in_microseconds() -
+                                load_request_start;
+  }
   return true;
 }
 
@@ -801,6 +823,10 @@ bool isPrefixAndRemove(std::vector<int> const &prefix, std::vector<int> &vec) {
 }
 
 void RequestManager::request_complete_clean_up(int batch_index) {
+  static double request_complete_start = 0.0;
+  if (get_eval_overhead_breakdown()) {
+    request_complete_start = Realm::Clock::current_time_in_microseconds();
+  }
   RequestGuid guid = guid_of_requests[batch_index];
   profiling_requests[guid].finish_time =
       Realm::Clock::current_time_in_microseconds();
@@ -910,6 +936,10 @@ void RequestManager::request_complete_clean_up(int batch_index) {
   //         std::to_string(profile_info.ssm_decoding_steps) + ")";
   // }
   // write_to_output_file("", str);
+  if (get_eval_overhead_breakdown()) {
+    eval_other_latency_us +=
+        Realm::Clock::current_time_in_microseconds() - request_complete_start;
+  }
 }
 
 void RequestManager::request_offload_from_batch(int batch_index) {
@@ -3189,7 +3219,7 @@ void RequestManager::terminate_background_server() {
     str += goodput_str;
 
     if (get_eval_overhead_breakdown()) {
-      eval_process_latency_us -= eval_schedule_latency_us;
+      eval_process_latency_us -= eval_schedule_latency_us + eval_other_latency_us;
       std::string eval_overhead_breakdown_str = "\n eval_overhead_breakdown( ";
       eval_overhead_breakdown_str += "\n  ssm_prefill_us: " +
                                      std::to_string(eval_ssm_prefill_latency_us);
@@ -3203,6 +3233,8 @@ void RequestManager::terminate_background_server() {
                                      std::to_string(eval_process_latency_us);
       eval_overhead_breakdown_str += "\n  scheduling_us: " +
                                      std::to_string(eval_schedule_latency_us);
+      eval_overhead_breakdown_str += "\n  other_us: " +
+                                     std::to_string(eval_other_latency_us);
       eval_overhead_breakdown_str += ")";
       str += eval_overhead_breakdown_str;
     }

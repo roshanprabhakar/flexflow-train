@@ -480,6 +480,7 @@ private:
   double eval_llm_verify_latency_us = 0.0;
   double eval_process_latency_us = 0.0;
   double eval_schedule_latency_us = 0.0;
+  double eval_other_latency_us = 0.0; // load pending request, request complete
 
   std::unique_ptr<Tokenizer> tokenizer_;
   bool verbose;
