@@ -416,10 +416,12 @@ void FlexFlow::top_level_task(Task const *task,
     std::vector<GenerationResult> warmup_results = model.generate_online(warmup_inf_requests, warmup_ft_requests);
     rm->set_inference_finished(false); // reset inference finished flag
     std::cout << "----------warmup finished--------------" << std::endl;
-    rm->set_num_layers_per_finetuning_step(num_layers_per_finetuning_step);
+    if (num_layers_per_finetuning_step > 0) {
+      rm->set_num_layers_per_finetuning_step(num_layers_per_finetuning_step);
+    }
     std::vector<Request> inf_requests = load_trace(file_paths.prompt_file_path, arrival_rate_sec);
     std::vector<Request> ft_req;
-    if (enable_peft_finetuning) {
+    if (enable_peft_finetuning && num_layers_per_finetuning_step > 0) {
       ft_req = make_ft_request(1024, peft_model_id_finetuning);
     }
     std::vector<GenerationResult> results = model.generate_online(inf_requests, ft_req);

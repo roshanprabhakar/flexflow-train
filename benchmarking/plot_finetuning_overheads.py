@@ -20,23 +20,17 @@ def plot_fwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
         (df['num_finetuning_fwd_tokens'] == 0) &
         (df['num_finetuning_bwd_tokens'] == 0)
     ]
-    
     # Calculate statistics for step_time
     avg_step_time = filtered_df['step_time'].mean()
     std_step_time = filtered_df['step_time'].std()
-    
-    # print(f"Analysis Results:")
-    # print(f"Number of matching rows: {len(filtered_df)}")
-    # print(f"Average step time: {avg_step_time:.3f} milliseconds")
-    # print(f"Standard deviation of step time: {std_step_time:.3f} milliseconds")
     print(f"Step time: {avg_step_time:.3f} ± {std_step_time:.3f} ms ({len(filtered_df)} entries)")
 
-    if num_tokens_per_batch ==128:
-        values_of_interest=[1,14,27,41,54,67,80,94,107,120]
+    if num_tokens_per_batch == 128:
+        values_of_interest = [0, 8, 24, 56, 120]
     elif num_tokens_per_batch == 256:
-        values_of_interest=[1,28,56,83,111,138,166,193,221,248]
+        values_of_interest = [0, 8, 24, 56, 120, 248]
     elif num_tokens_per_batch == 512:
-        values_of_interest=[1,57,113,169,225,280,336,392,448,504]
+        values_of_interest = [0, 8, 24, 56, 120, 248, 504]
 
     # Second analysis: Variable finetuning tokens
     filtered_df_2 = df[
@@ -47,11 +41,6 @@ def plot_fwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
         (df['num_finetuning_fwd_tokens'].isin(values_of_interest))
     ]
     filtered_df_2 = filtered_df_2[['num_finetuning_fwd_tokens', 'step_time']]
-    # filtered_df_2 = filtered_df_2.groupby('num_finetuning_fwd_tokens').mean().reset_index()
-    # sort by num_finetuning_fwd_tokens
-    # filtered_df_2 = filtered_df_2.sort_values('num_finetuning_fwd_tokens')
-    # print(filtered_df_2)
-    # print(filtered_df_2[['num_finetuning_fwd_tokens', 'step_time']].head())
     
     # Create scatter plot
     plt.figure(figsize=(10, 6))
@@ -105,14 +94,9 @@ def plot_bwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
     # Calculate statistics for step_time
     avg_step_time = filtered_df['step_time'].mean()
     std_step_time = filtered_df['step_time'].std()
-    
-    # print(f"Analysis Results:")
-    # print(f"Number of matching rows: {len(filtered_df)}")
-    # print(f"Average step time: {avg_step_time:.3f} milliseconds")
-    # print(f"Standard deviation of step time: {std_step_time:.3f} milliseconds")
     print(f"Step time: {avg_step_time:.3f} ± {std_step_time:.3f} ms ({len(filtered_df)} entries)")
 
-    values_of_interest=[0, 1,10,19,27,36,45,54,62,71,80]
+    values_of_interest=[0, 1,2,4,8,16,32,64]
 
     # Second analysis: Variable finetuning tokens
     filtered_df_2 = df[
@@ -141,7 +125,7 @@ def plot_bwd_overhead(filepath, model_name, tp_degree, bz, num_tokens_per_batch,
         avg_step_time=('step_time', 'mean'),
         std_step_time=('step_time', 'std')
     ).reset_index()
-    print(avg_std_df['avg_step_time'])
+    # print(avg_std_df['avg_step_time'])
     plt.errorbar(avg_std_df['num_bwd_layers'], 
                  avg_std_df['avg_step_time'], 
                  yerr=avg_std_df['std_step_time'], 
@@ -170,12 +154,13 @@ if __name__ == "__main__":
         os.makedirs('./plots/overhead_test')
 
     model_name="meta-llama/Llama-3.1-70B"
+    model_name_=model_name.replace("/", "_").lower()
     tp_degree=4
     ft_bwd_tokens=1024
     bz=8
 
     for tokens_per_batch in [128, 256, 512]:
-        fp=f"../benchmarking/data/overhead_test/step_profiling_meta-llama_llama-3.1-70b_tensor_parallelism_{tp_degree}_max_requests_per_batch_8_max_tokens_per_batch_{tokens_per_batch}_arrival_rate_0.000000_num_warmup_requests_10.csv"
+        fp=f"./data/overhead_test/step_profiling_overhead_test_{model_name_}_tensor_parallelism_{tp_degree}_max_requests_per_batch_8_max_tokens_per_batch_{tokens_per_batch}_arrival_rate_0.000000_num_warmup_requests_10.csv"
         
         plot_fwd_overhead(fp, model_name, tp_degree, bz, tokens_per_batch, ft_bwd_tokens)
         plot_bwd_overhead(fp, model_name, tp_degree, bz, tokens_per_batch, ft_bwd_tokens)

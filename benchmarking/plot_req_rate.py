@@ -340,7 +340,7 @@ if __name__ == "__main__":
     # arrival_rates = ["0.000000"]
     datasets=["wildchat"]
     max_tokens_per_batch=[128]
-    arrival_rates = ["0.280000"]
+    arrival_rates = ["0.200000"]
     # inference_request_profiling_wildchat_meta-llama_llama-3.1-70b_tensor_parallelism_4_max_requests_per_batch_8_max_tokens_per_batch_128_arrival_rate__num_warmup_requests_10.csv
     # Change working directory to folder containing this script
     abspath = os.path.abspath(__file__)
@@ -350,7 +350,7 @@ if __name__ == "__main__":
     incr_dec_req_profiling_dfs, incr_dec_step_profiling_dfs = get_dfs(models, datasets, max_tokens_per_batch, arrival_rates)
     
     # Print sample statistics
-    target_df = incr_dec_req_profiling_dfs[IncrDecExpKey(model='meta-llama_llama-3.1-70b', dataset='wildchat', max_tokens_per_batch=128, arrival_rate='0.280000')]
+    target_df = incr_dec_req_profiling_dfs[IncrDecExpKey(model='meta-llama_llama-3.1-70b', dataset='wildchat', max_tokens_per_batch=128, arrival_rate='0.200000')]
     tpot_mean, tpot_median, tpot_p99 = get_tpot(target_df)
     print(f"TPOT mean: {tpot_mean:.3f} ms/token, TPOT median: {tpot_median:.3f} ms/token, TPOT p99: {tpot_p99:.3f} ms/token")
     throughput = get_throughput(target_df)

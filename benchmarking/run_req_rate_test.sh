@@ -18,13 +18,6 @@ NCPUS=16
 FSIZE=76000
 ZSIZE=200000
 
-# MODEL_NAME="meta-llama/Meta-Llama-3-8B"
-# PEFT_MODEL_NAME="goliaro/llama-3-8b-lora-dolly"
-# NGPUS=8
-# NCPUS=16
-# FSIZE=30000
-# ZSIZE=30000
-
 # MODEL_NAME="JackFram/llama-160m"
 # PEFT_MODEL_NAME="goliaro/llama-160m-lora"
 # NGPUS=4
@@ -45,18 +38,16 @@ trace_files=(
 )
 
 arrival_rates=(
-    0.25
     0.20
     0.15
-    0.11
-    0.06
+    0.10
+    0.05
 )
 max_bwd_layers_per_step_values=(
     1
-    3
-    5
-    7
-    10
+    2
+    4
+    16
 )
 
 max_tokens_per_batch_values=(
@@ -108,7 +99,7 @@ for k in "${!arrival_rates[@]}"; do
     
     MAX_TOKENS_PER_BATCH=${max_tokens_per_batch_values[$i]}
 
-    LOG_FILE="${OUTPUT_FOLDER}/req_rate_${trace_files[$i]}_${MAX_TOKENS_PER_BATCH}_tokens_per_batch.log"
+    LOG_FILE="${OUTPUT_FOLDER}/req_rate_${trace_files[$i]}_${MAX_TOKENS_PER_BATCH}_tokens_per_batch_${NUM_BWD_LAYERS_PER_STEP}_bwd_layers.log"
     rm $LOG_FILE || true
     
     echo "Running $TRACE_FILE with $MAX_TOKENS_PER_BATCH tokens/batch and $NUM_BWD_LAYERS_PER_STEP bwd layers/step"
@@ -119,7 +110,8 @@ for k in "${!arrival_rates[@]}"; do
         -llm-model $MODEL_NAME --fusion  \
         -tensor-parallelism-degree $NGPUS \
         -prompt $TRACE_FILE \
-        -enable-peft -peft-model $PEFT_MODEL_NAME \ --num-layers-per-finetuning-step $NUM_BWD_LAYERS_PER_STEP \
+        -enable-peft -peft-model $PEFT_MODEL_NAME \
+        --num-layers-per-finetuning-step $NUM_BWD_LAYERS_PER_STEP \
         -output-folder $OUTPUT_FOLDER \
         --max-requests-per-batch $BATCH_SIZE \
         --max-tokens-per-batch $MAX_TOKENS_PER_BATCH \
@@ -128,5 +120,3 @@ for k in "${!arrival_rates[@]}"; do
 done
 done
 done
-
-#

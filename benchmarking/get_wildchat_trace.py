@@ -83,7 +83,11 @@ def generate_arrival_rates_splitwise(n, target_arrival_rate_sec, seed):
         arrival_times = arrival_times[:n]
     elif len(arrival_times) < n:
         print(f"Warning: not enough arrival_times ({len(arrival_times)}) in scaled trace to generate arrival times for all requests ({n})")
-        arrival_times += arrival_times[:n-len(arrival_times)]
+        last_arrival_time=arrival_times[-1]
+        wrap_around_arrival_times=arrival_times[:n-len(arrival_times)]
+        for i in range(len(wrap_around_arrival_times)):
+            wrap_around_arrival_times[i] += last_arrival_time
+        arrival_times += wrap_around_arrival_times
         assert(len(arrival_times) == n)
     return arrival_times
 
