@@ -15,6 +15,7 @@ build_targets = [
   "models",
   "export-model-arch",
   "substitution-to-dot",
+  "runtime-dev",
 ]
 
 test_targets = [
