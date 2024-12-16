@@ -20,17 +20,16 @@ TEST_SUITE(FF_TEST_SUITE) {
     Allocator allocator = create_local_cuda_memory_allocator();
 
     SUBCASE("forward_kernel") {
-      std::vector<GenericTensorAccessorR> input_accessors(num_inputs);
-      generate_n(input_accessors.begin(), num_inputs, [&]() {
-        return read_only_accessor_from_write_accessor(
-            create_random_filled_accessor_w(input_shape, allocator));
-      });
+      std::vector<GenericTensorAccessorR> input_accessors =
+          repeat<GenericTensorAccessorR>(num_inputs, [&]() {
+            return read_only_accessor_from_write_accessor(
+                create_random_filled_accessor_w(input_shape, allocator));
+          });
       GenericTensorAccessorW output_accessor =
           allocator.allocate_tensor(output_shape);
 
       Kernels::Concat::forward_kernel(managed_stream.raw_stream(),
-                                      output_accessor,
-                                      input_accessors,
+                                      output_accessor, input_accessors,
                                       concat_axis);
 
       std::vector<float> host_output_data =
@@ -44,14 +43,13 @@ TEST_SUITE(FF_TEST_SUITE) {
       GenericTensorAccessorR output_grad_accessor =
           read_only_accessor_from_write_accessor(
               create_random_filled_accessor_w(output_shape, allocator));
-      std::vector<GenericTensorAccessorW> input_grad_accessors(num_inputs);
-      generate_n(input_grad_accessors.begin(), num_inputs, [&]() {
-        return allocator.allocate_tensor(input_shape);
-
-        Kernels::Concat::backward_kernel(managed_stream.raw_stream(),
-                                         output_grad_accessor,
-                                         input_grad_accessors,
-                                         concat_axis);
-    }
+      std::vector<GenericTensorAccessorW> input_grad_accessors =
+          repeat<GenericTensorAccessorW>(num_inputs, [&]() {
+            return allocator.allocate_tensor(input_shape);
+          });
+      Kernels::Concat::backward_kernel(managed_stream.raw_stream(),
+                                       output_grad_accessor,
+                                       input_grad_accessors, concat_axis);
     }
   }
+}

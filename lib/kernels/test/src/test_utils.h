@@ -5,6 +5,10 @@
 #include "kernels/local_cuda_allocator.h"
 #include "kernels/managed_ff_stream.h"
 #include "kernels/managed_per_device_ff_handle.h"
+#include <doctest/doctest.h>
+#include <vector>
+#include <string>
+#include <sstream>
 #include <random>
 
 using namespace FlexFlow;
@@ -47,5 +51,30 @@ bool contains_non_zero(std::vector<T> &data) {
   return !all_of(
       data.begin(), data.end(), [](T const &val) { return val == 0; });
 }
+
+template <typename T, typename Func>
+std::vector<T> repeat(std::size_t n, Func&& func) {
+    std::vector<T> result;
+    // result.reserve(n); // Sometimes we don't have default constructor for T
+    for (std::size_t i = 0; i < n; ++i) {
+        result.push_back(func());
+    }
+    return result;
+}
+
+// Specialize doctest's StringMaker for std::vector<float>
+template <>
+struct doctest::StringMaker<std::vector<float>> {
+    static doctest::String convert(const std::vector<float>& vec) {
+        std::ostringstream oss;
+        for (size_t i = 0; i < vec.size(); ++i) {
+            oss << vec[i];
+            if (i != vec.size() - 1) {
+                oss << ", ";
+            }
+        }
+        return doctest::String(("[" + oss.str() + "]").c_str());
+    }
+};
 
 #endif
