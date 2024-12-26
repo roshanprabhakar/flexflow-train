@@ -22,13 +22,16 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
+
+    nixGL.url = "github:nix-community/nixGL";
   };
 
-  outputs = { self, nixpkgs, flake-utils, proj-repo, ... }: flake-utils.lib.eachSystem [ "x86_64-linux" ] (system: 
+  outputs = { self, nixpkgs, flake-utils, proj-repo, nixGL, ... }: flake-utils.lib.eachSystem [ "x86_64-linux" ] (system: 
     let 
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
+        overlays = [ nixGL.overlay ];
       };
       lib = pkgs.lib;
 
@@ -62,6 +65,7 @@
         ci = mkShell {
           shellHook = ''
             export PATH="$HOME/ff/.scripts/:$PATH"
+            export NIX_GL=1
           '';
           
           CMAKE_FLAGS = lib.strings.concatStringsSep " " [
